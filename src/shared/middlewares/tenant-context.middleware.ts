@@ -5,15 +5,18 @@ import { HttpError } from '../utils/http-error';
 
 export interface TenantResolver {
   findById(id: string): Promise<ResolvedTenant | null>;
+  findBySlug(slug: string): Promise<ResolvedTenant | null>;
   findByHost(hostname: string): Promise<ResolvedTenant | null>;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /**
  * Resolves the tenant for every /api request and binds an RLS-scoped DB client to it.
  *
- * Resolution order: `x-tenant-id` header -> custom domain / `<slug>.BASE_DOMAIN` subdomain.
+ * Resolution order: `x-tenant-id` header -> `x-tenant-slug` header (used by the web frontend's
+ * path-based routes, e.g. /alfaisal) -> custom domain / `<slug>.BASE_DOMAIN` subdomain.
  *
  * Note on the PRD reference: running `SET LOCAL` here, in middleware, cannot work — SET LOCAL
  * only lives until the end of the current transaction, and the middleware's statement is its
@@ -27,6 +30,7 @@ export const createTenantContextMiddleware =
   (resolver: TenantResolver, scopeDb: (tenantId: string) => TenantPrismaClient) =>
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const headerTenantId = req.get('x-tenant-id');
+    const headerTenantSlug = req.get('x-tenant-slug');
 
     let tenant: ResolvedTenant | null;
     if (headerTenantId !== undefined) {
@@ -34,6 +38,11 @@ export const createTenantContextMiddleware =
         throw HttpError.badRequest('INVALID_TENANT_ID', 'x-tenant-id must be a UUID');
       }
       tenant = await resolver.findById(headerTenantId);
+    } else if (headerTenantSlug !== undefined) {
+      if (!SLUG_RE.test(headerTenantSlug)) {
+        throw HttpError.badRequest('INVALID_TENANT_SLUG', 'x-tenant-slug must be a lowercase slug');
+      }
+      tenant = await resolver.findBySlug(headerTenantSlug);
     } else {
       tenant = await resolver.findByHost(req.hostname);
     }

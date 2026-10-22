@@ -1,85 +1,12 @@
 /**
  * HTTP contract test for POST /api/v1/enrollments/checkout (SWET §9).
- * Exercises the real middleware chain (helmet, tenant context, RS256 auth, RBAC, validation,
- * error envelope) with in-memory infrastructure, so it runs without Postgres or Redis.
+ * Exercises the real middleware chain via helpers/test-app.ts (no Postgres or Redis needed).
  * RLS itself is covered by rls-isolation.test.ts against a real database.
  */
-import { generateKeyPairSync } from 'node:crypto';
-import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { createApp } from '../../src/app';
-import type { TenantPrismaClient } from '../../src/config/database';
-import { PaymentDeclinedError } from '../../src/modules/billing/payment-gateway';
-import { CheckoutService } from '../../src/modules/lms/enrollments/checkout.service';
-import { EnrollmentController } from '../../src/modules/lms/enrollments/enrollment.controller';
-import type { EnrollmentCheckoutRepository } from '../../src/modules/lms/enrollments/enrollment.repository';
-import type { TenantResolver } from '../../src/shared/middlewares/tenant-context.middleware';
-import type { ResolvedTenant } from '../../src/shared/types/express';
 import { ZatcaTlvEncoder } from '../../src/shared/utils/zatca-tlv.encoder';
-
-const TENANT_A = '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11';
-const TENANT_B = '0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10';
-const SUSPENDED = '5e4d3c2b-1a09-4f8e-9d7c-6b5a49382716';
-const USER = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a01';
-const COURSE = 'c0a80121-872f-41ed-a1eb-0242ac120002';
-
-const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const publicPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
-const jwtOpts = { publicKey: publicPem, issuer: 't3leem.my', audience: 't3leem.my/api' };
-
-const sign = (claims: Record<string, unknown>, opts: jwt.SignOptions = {}) =>
-  jwt.sign(claims, privateKey, { algorithm: 'RS256', issuer: jwtOpts.issuer, audience: jwtOpts.audience, expiresIn: '5m', ...opts });
-
-const learnerToken = sign({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
-
-const tenants: Record<string, ResolvedTenant> = {
-  [TENANT_A]: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', status: 'ACTIVE', legalName: 'Al-Faisal Academy', vatNumber: '300000000000003' },
-  [TENANT_B]: { id: TENANT_B, slug: 'gulf', name: 'Gulf Institute', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113' },
-  [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null },
-};
-
-const resolver: TenantResolver = {
-  findById: async (id) => tenants[id] ?? null,
-  findByHost: async (host) => Object.values(tenants).find((t) => host === `${t.slug}.t3leem.my`) ?? null,
-};
-
-function buildApp() {
-  const enrolled = new Set<string>();
-  const repository: EnrollmentCheckoutRepository = {
-    // Mimics RLS: the course exists only inside TENANT_A.
-    findCourseForCheckout: async (tenantId, courseId) =>
-      tenantId === TENANT_A && courseId === COURSE ? { id: COURSE, title: 'PMP', isPublished: true, priceHalalas: 100000 } : null,
-    hasEnrollment: async (t, u, c) => enrolled.has(`${t}:${u}:${c}`),
-    createPaidEnrollment: async (input) => {
-      enrolled.add(`${input.tenantId}:${input.userId}:${input.courseId}`);
-      return { enrollmentId: 'e581f122-872f-41ed-a1eb-0242ac120002', enrollmentStatus: 'ACTIVE', invoiceId: 'inv-1', invoiceNumber: 'INV-2026-00892' };
-    },
-  };
-  const service = new CheckoutService({
-    repository,
-    paymentGateway: {
-      charge: async (r) => {
-        if (r.token.startsWith('tok_decline')) throw new PaymentDeclinedError('declined');
-        return { reference: 'pay_1' };
-      },
-      refund: async () => undefined,
-    },
-    zatcaQueue: { enqueueZatcaSync: async () => undefined },
-    vatRatePercent: 15,
-    clock: () => new Date('2026-10-22T19:40:00Z'),
-  });
-  const passThrough: RequestHandler = (_req, _res, next) => next();
-
-  return createApp({
-    tenantResolver: resolver,
-    scopeDb: () => ({}) as TenantPrismaClient,
-    rateLimiter: passThrough,
-    jwt: jwtOpts,
-    corsOrigins: [],
-    enrollmentController: new EnrollmentController(service),
-  });
-}
+import { COURSE, SUSPENDED, TENANT_A, TENANT_B, USER, buildApp, jwtOpts, learnerToken, publicPem, sign } from './helpers/test-app';
 
 const validBody = { course_id: COURSE, payment_method: 'MADA', payment_token: 'tok_mada_3829103820192' };
 

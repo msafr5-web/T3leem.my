@@ -8,6 +8,7 @@ const tenantSelect = {
   status: true,
   legalName: true,
   vatNumber: true,
+  brandSettings: true,
 } as const;
 
 /** Reads the tenant registry with the base client: `tenants` is not under RLS by design. */

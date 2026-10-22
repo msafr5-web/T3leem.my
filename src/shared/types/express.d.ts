@@ -1,4 +1,4 @@
-import type { TenantStatus, UserRole } from '@prisma/client';
+import type { Prisma, TenantStatus, UserRole } from '@prisma/client';
 import type { TenantPrismaClient } from '../../config/database';
 
 export interface ResolvedTenant {
@@ -8,6 +8,7 @@ export interface ResolvedTenant {
   status: TenantStatus;
   legalName: string | null;
   vatNumber: string | null;
+  brandSettings: Prisma.JsonValue;
 }
 
 export interface AuthenticatedUser {

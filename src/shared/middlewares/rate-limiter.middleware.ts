@@ -4,7 +4,7 @@ import { RateLimiterMemory, RateLimiterRedis, RateLimiterRes } from 'rate-limite
 import { HttpError } from '../utils/http-error';
 
 export interface RateLimitOptions {
-  redis: Redis;
+  redis: Redis | null;
   points: number;
   durationSec: number;
   keyPrefix?: string;
@@ -13,16 +13,13 @@ export interface RateLimitOptions {
 /**
  * Per-tenant, per-IP limiter backed by Redis so limits hold across all API replicas.
  * If Redis is unreachable, the in-memory insurance limiter keeps a (per-instance) cap
- * instead of failing open.
+ * instead of failing open. Without Redis configured at all, the memory limiter is used directly.
  */
 export function createRateLimiter({ redis, points, durationSec, keyPrefix = 'rl:api' }: RateLimitOptions) {
-  const limiter = new RateLimiterRedis({
-    storeClient: redis,
-    keyPrefix,
-    points,
-    duration: durationSec,
-    insuranceLimiter: new RateLimiterMemory({ points, duration: durationSec }),
-  });
+  const memory = new RateLimiterMemory({ keyPrefix, points, duration: durationSec });
+  const limiter = redis
+    ? new RateLimiterRedis({ storeClient: redis, keyPrefix, points, duration: durationSec, insuranceLimiter: memory })
+    : memory;
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const key = `${req.tenantId ?? 'no-tenant'}:${req.ip ?? 'unknown'}`;

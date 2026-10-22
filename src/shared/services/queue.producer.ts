@@ -18,6 +18,16 @@ export interface ZatcaQueue {
 }
 
 /**
+ * Used when REDIS_URL is not configured (local dev / staging trials). The invoice keeps its
+ * PENDING_ZATCA status, so nothing is lost: the reconciliation sweep reports it later.
+ */
+export class DeferredZatcaQueue implements ZatcaQueue {
+  async enqueueZatcaSync(job: ZatcaSyncJob): Promise<void> {
+    logger.warn('Redis not configured; ZATCA sync deferred (invoice stays PENDING_ZATCA)', { invoiceId: job.invoiceId });
+  }
+}
+
+/**
  * BullMQ producer. Heavy or slow work (XML signing + ZATCA reporting, PDF certificates,
  * HLS transcoding) is pushed here so the Express event loop never blocks on it.
  */

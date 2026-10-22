@@ -7,3 +7,7 @@ coverage/
 *.pem
 *.log
 keys/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.vercel
