@@ -5,8 +5,10 @@ import { toDateOnly, toHalalas } from '../lms/courses/course.repository';
 import type {
   Actor,
   AdminCourseRow,
-  ClassroomInput,
+  ClassroomRecord,
   ClassroomRow,
+  ClassroomUpdate,
+  DeleteOutcome,
   CourseInput,
   OverviewRow,
   PlanInput,
@@ -36,7 +38,17 @@ export interface ProviderRepository {
   createTrainer(tenantId: string, actor: Actor, input: TrainerInput): Promise<string>;
   createTrainee(tenantId: string, actor: Actor, input: TraineeInput): Promise<string>;
   createPlan(tenantId: string, actor: Actor, input: PlanInput): Promise<string>;
-  createClassroom(tenantId: string, actor: Actor, input: ClassroomInput): Promise<string>;
+  createClassroom(tenantId: string, actor: Actor, input: ClassroomRecord): Promise<string>;
+  deleteCourse(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome>;
+  updateTrainer(tenantId: string, actor: Actor, id: string, input: Partial<TrainerInput>): Promise<boolean>;
+  deleteTrainer(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome>;
+  updateTrainee(tenantId: string, actor: Actor, id: string, input: { fullName: string }): Promise<boolean>;
+  deleteTrainee(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome>;
+  updatePlan(tenantId: string, actor: Actor, id: string, input: Partial<PlanInput>): Promise<boolean>;
+  deletePlan(tenantId: string, actor: Actor, id: string): Promise<boolean>;
+  getClassroom(tenantId: string, id: string): Promise<ClassroomRow | null>;
+  updateClassroom(tenantId: string, actor: Actor, id: string, input: ClassroomUpdate & { externalMeetingId?: string | null }): Promise<boolean>;
+  deleteClassroom(tenantId: string, actor: Actor, id: string): Promise<boolean>;
 }
 
 const audit = (
@@ -99,6 +111,7 @@ const classroomSelect = {
   provider: true,
   joinUrl: true,
   status: true,
+  externalMeetingId: true,
   course: { select: { id: true, title: true } },
   trainer: { select: { id: true, fullName: true } },
 } as const;
@@ -322,11 +335,116 @@ export class PrismaProviderRepository implements ProviderRepository {
     });
   }
 
-  createClassroom(tenantId: string, actor: Actor, input: ClassroomInput): Promise<string> {
+  createClassroom(tenantId: string, actor: Actor, input: ClassroomRecord): Promise<string> {
     return withTenantTransaction(tenantId, async (tx) => {
       const { id } = await tx.virtualClassroom.create({ data: { ...input, tenantId }, select: { id: true } });
       await audit(tx, tenantId, actor, 'classroom.created', 'virtual_classroom', id, { title: input.title, startsAt: input.startsAt.toISOString() });
       return id;
+    });
+  }
+
+  deleteCourse(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const course = await tx.course.findFirst({ where: { tenantId, id }, select: { title: true, _count: { select: { enrollments: true } } } });
+      if (!course) return 'not_found';
+      // Enrollments are tied to paid invoices (ZATCA records must be kept): never cascade them away.
+      if (course._count.enrollments > 0) return 'in_use';
+      await tx.lesson.deleteMany({ where: { tenantId, module: { courseId: id } } });
+      await tx.module.deleteMany({ where: { tenantId, courseId: id } });
+      await tx.course.delete({ where: { id } });
+      await audit(tx, tenantId, actor, 'course.deleted', 'course', id, { title: course.title });
+      return 'deleted';
+    });
+  }
+
+  updateTrainer(tenantId: string, actor: Actor, id: string, input: Partial<TrainerInput>): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.trainer.updateMany({ where: { tenantId, id }, data: input });
+      if (count === 0) return false;
+      await audit(tx, tenantId, actor, 'trainer.updated', 'trainer', id, { fields: Object.keys(input) });
+      return true;
+    });
+  }
+
+  deleteTrainer(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const trainer = await tx.trainer.findFirst({ where: { tenantId, id }, select: { fullName: true, _count: { select: { courses: true } } } });
+      if (!trainer) return 'not_found';
+      // Courses require a trainer; reassign them first. Classrooms just lose the trainer (SET NULL).
+      if (trainer._count.courses > 0) return 'in_use';
+      await tx.trainer.delete({ where: { id } });
+      await audit(tx, tenantId, actor, 'trainer.deleted', 'trainer', id, { fullName: trainer.fullName });
+      return 'deleted';
+    });
+  }
+
+  updateTrainee(tenantId: string, actor: Actor, id: string, input: { fullName: string }): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.user.updateMany({ where: { tenantId, id, role: 'LEARNER' }, data: { fullName: input.fullName } });
+      if (count === 0) return false;
+      await audit(tx, tenantId, actor, 'trainee.updated', 'user', id, { fields: ['fullName'] });
+      return true;
+    });
+  }
+
+  deleteTrainee(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const user = await tx.user.findFirst({ where: { tenantId, id, role: 'LEARNER' }, select: { email: true, _count: { select: { enrollments: true } } } });
+      if (!user) return 'not_found';
+      if (user._count.enrollments > 0) return 'in_use';
+      await tx.user.delete({ where: { id } });
+      await audit(tx, tenantId, actor, 'trainee.deleted', 'user', id, { email: user.email });
+      return 'deleted';
+    });
+  }
+
+  updatePlan(tenantId: string, actor: Actor, id: string, input: Partial<PlanInput>): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { courseIds, ...fields } = input;
+      const { count } = await tx.trainingPlan.updateMany({ where: { tenantId, id }, data: fields });
+      if (count === 0) return false;
+      if (courseIds !== undefined) {
+        // Replace the ordered course list atomically.
+        await tx.trainingPlanCourse.deleteMany({ where: { tenantId, planId: id } });
+        if (courseIds.length) {
+          await tx.trainingPlanCourse.createMany({ data: courseIds.map((courseId, sortOrder) => ({ tenantId, planId: id, courseId, sortOrder })) });
+        }
+      }
+      await audit(tx, tenantId, actor, 'plan.updated', 'training_plan', id, { fields: Object.keys(input) });
+      return true;
+    });
+  }
+
+  deletePlan(tenantId: string, actor: Actor, id: string): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const plan = await tx.trainingPlan.findFirst({ where: { tenantId, id }, select: { title: true } });
+      if (!plan) return false;
+      await tx.trainingPlan.delete({ where: { id } }); // plan courses cascade
+      await audit(tx, tenantId, actor, 'plan.deleted', 'training_plan', id, { title: plan.title });
+      return true;
+    });
+  }
+
+  getClassroom(tenantId: string, id: string): Promise<ClassroomRow | null> {
+    return forTenant(tenantId).virtualClassroom.findFirst({ where: { tenantId, id }, select: classroomSelect });
+  }
+
+  updateClassroom(tenantId: string, actor: Actor, id: string, input: ClassroomUpdate & { externalMeetingId?: string | null }): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.virtualClassroom.updateMany({ where: { tenantId, id }, data: input });
+      if (count === 0) return false;
+      await audit(tx, tenantId, actor, 'classroom.updated', 'virtual_classroom', id, { fields: Object.keys(input) });
+      return true;
+    });
+  }
+
+  deleteClassroom(tenantId: string, actor: Actor, id: string): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const room = await tx.virtualClassroom.findFirst({ where: { tenantId, id }, select: { title: true } });
+      if (!room) return false;
+      await tx.virtualClassroom.delete({ where: { id } });
+      await audit(tx, tenantId, actor, 'classroom.deleted', 'virtual_classroom', id, { title: room.title });
+      return true;
     });
   }
 }

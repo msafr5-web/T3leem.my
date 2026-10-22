@@ -2,7 +2,9 @@ import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
 import { createTrainerAction } from '@/lib/admin-actions';
 import { formatNumber } from '@/lib/format';
+import Link from 'next/link';
 import { AdminForm } from '../admin-form';
+import { TrainerFields } from './trainer-fields';
 
 export default async function DashboardTrainers({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
@@ -34,7 +36,7 @@ export default async function DashboardTrainers({ params }: { params: Promise<{ 
               {trainers.map((t) => (
                 <tr key={t.id}>
                   <td>
-                    {t.full_name}
+                    <Link href={`/${slug}/dashboard/trainers/${t.id}`}>{t.full_name}</Link>
                     {t.bio && <div className="small muted">{t.bio}</div>}
                   </td>
                   <td>{t.specialization ?? '—'}</td>
@@ -51,24 +53,7 @@ export default async function DashboardTrainers({ params }: { params: Promise<{ 
       <section className="card stack" aria-labelledby="add-trainer">
         <h2 id="add-trainer">إضافة مدرب</h2>
         <AdminForm action={createTrainerAction.bind(null, slug)} submitLabel="إضافة المدرب">
-          <div className="form-grid">
-            <label htmlFor="full_name">
-              الاسم الكامل
-              <input id="full_name" name="full_name" type="text" required minLength={3} maxLength={120} placeholder="مثال: د. سارة الغامدي" />
-            </label>
-            <label htmlFor="specialization">
-              التخصص
-              <input id="specialization" name="specialization" type="text" maxLength={200} />
-            </label>
-            <label htmlFor="email">
-              البريد الإلكتروني <span className="hint">(اختياري)</span>
-              <input id="email" name="email" type="email" dir="ltr" />
-            </label>
-            <label htmlFor="bio" className="full">
-              نبذة
-              <textarea id="bio" name="bio" maxLength={2000} />
-            </label>
-          </div>
+          <TrainerFields />
         </AdminForm>
       </section>
     </>

@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { Express } from 'express';
 import { createApp } from './app';
-import { env, jwtPrivateKey, jwtPublicKey } from './config/env';
+import { env, jwtPrivateKey, jwtPublicKey, zoomCredentials } from './config/env';
+import { ManualMeetingScheduler, ZoomMeetingScheduler } from './modules/live/meeting-scheduler';
+import { BrandingService } from './modules/tenant/branding.service';
+import { RegistrationService } from './modules/tenant/registration.service';
 import { forTenant, prisma } from './config/database';
 import { createBullConnection, redis } from './config/redis';
 import { AuthController } from './modules/auth/auth.controller';
@@ -60,11 +63,18 @@ export function createServerApp(): ServerApp {
   });
 
   const tenantRepository = new TenantRepository(prisma);
+  const tenantResolver = new TenantResolverService(tenantRepository, redis, env.BASE_DOMAIN);
   const catalogService = new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT);
-  const providerService = new ProviderService({ repository: new PrismaProviderRepository(), hashPassword });
+  const meetings = zoomCredentials ? new ZoomMeetingScheduler(zoomCredentials) : new ManualMeetingScheduler();
+  if (!zoomCredentials) logger.info('Zoom not configured: virtual classroom links are entered manually');
+  const providerService = new ProviderService({ repository: new PrismaProviderRepository(), hashPassword, meetings });
+  const brandingService = new BrandingService(tenantRepository, async (tenantId) => {
+    const tenant = await tenantRepository.findById(tenantId);
+    if (tenant) await tenantResolver.invalidate(tenant).catch(() => undefined);
+  });
 
   const app = createApp({
-    tenantResolver: new TenantResolverService(tenantRepository, redis, env.BASE_DOMAIN),
+    tenantResolver,
     scopeDb: forTenant,
     rateLimiter: createRateLimiter({ redis, points: env.RATE_LIMIT_POINTS, durationSec: env.RATE_LIMIT_DURATION_SEC }),
     // 10 attempts / 15 min per tenant+IP: slows password guessing to a crawl.
@@ -76,6 +86,10 @@ export function createServerApp(): ServerApp {
     enrollmentController: new EnrollmentController(checkoutService),
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
+    brandingService,
+    registrationService: new RegistrationService(tenantRepository, hashPassword, env.PROVIDER_SIGNUP_ENABLED),
+    // 5 academy sign-ups per IP per hour: stops scripted mass registration.
+    signupRateLimiter: createRateLimiter({ redis, points: 5, durationSec: 60 * 60, keyPrefix: 'rl:signup' }),
   });
 
   return {

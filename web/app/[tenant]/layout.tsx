@@ -4,6 +4,7 @@ import { getTenant, isMissingTenant, type Tenant } from '@/lib/api';
 import { logoutAction } from '@/lib/actions';
 import { isValidSlug, safeBrandColor } from '@/lib/format';
 import { getSession } from '@/lib/session';
+import { LogoMark } from '../logo-mark';
 
 /** White-label shell: every page under /[tenant] renders with that academy's name and color. */
 export default async function TenantLayout({ children, params }: { children: React.ReactNode; params: Promise<{ tenant: string }> }) {
@@ -26,7 +27,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
       <header className="site-header">
         <div className="container">
           <Link href={`/${slug}`} className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">{tenant.name.charAt(0)}</span>
+            <LogoMark slug={slug} name={tenant.name} version={tenant.logo_version} size={36} />
             {tenant.name}
           </Link>
           <div className="header-actions">

@@ -2,6 +2,7 @@ import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
 import { createTraineeAction } from '@/lib/admin-actions';
 import { formatDate, formatNumber } from '@/lib/format';
+import Link from 'next/link';
 import { AdminForm } from '../admin-form';
 
 export default async function DashboardTrainees({ params }: { params: Promise<{ tenant: string }> }) {
@@ -32,7 +33,9 @@ export default async function DashboardTrainees({ params }: { params: Promise<{ 
             <tbody>
               {trainees.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.full_name ?? '—'}</td>
+                  <td>
+                    <Link href={`/${slug}/dashboard/trainees/${t.id}`}>{t.full_name ?? t.email}</Link>
+                  </td>
                   <td className="ltr">{t.email}</td>
                   <td className="num">{formatNumber(t.enrollment_count)}</td>
                   <td className="small muted">{formatDate(t.created_at)}</td>

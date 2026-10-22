@@ -100,6 +100,10 @@ model Tenant {
   // ZATCA seller identity (TLV tags 1 and 2).
   legalName     String?      @map("legal_name")
   vatNumber     String?      @map("vat_number") @db.VarChar(15)
+  // Small raster logo (PNG/JPEG/WebP, <= 512 KB) stored in-row until object storage (S3) is wired.
+  logo          Bytes?
+  logoMimeType  String?      @map("logo_mime_type")
+  logoUpdatedAt DateTime?    @map("logo_updated_at")
   planId        String?      @map("plan_id") @db.Uuid
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
@@ -237,6 +241,8 @@ model VirtualClassroom {
   capacity        Int?
   provider        MeetingProvider @default(ZOOM)
   joinUrl         String?         @map("join_url")
+  // Meeting id at the provider (Zoom) when the meeting was created through the API.
+  externalMeetingId String?       @map("external_meeting_id")
   status          ClassroomStatus @default(SCHEDULED)
   createdAt       DateTime        @default(now()) @map("created_at")
 

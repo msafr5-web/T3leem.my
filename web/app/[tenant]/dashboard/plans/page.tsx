@@ -29,7 +29,9 @@ export default async function DashboardPlans({ params }: { params: Promise<{ ten
                 <span className={`badge ${p.status === 'ACTIVE' ? 'ok' : p.status === 'DRAFT' ? 'draft' : ''}`}>{planStatusLabel[p.status]}</span>
                 <span className="badge num">{formatNumber(p.total_hours)} ساعة</span>
               </div>
-              <h3>{p.title}</h3>
+              <h3>
+                <Link href={`/${slug}/dashboard/plans/${p.id}`}>{p.title}</Link>
+              </h3>
               {p.description && <p className="small muted">{p.description}</p>}
               <p className="small">
                 {formatDate(p.starts_on)} ← {formatDate(p.ends_on)}

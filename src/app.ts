@@ -12,6 +12,8 @@ import { buildCourseRouter } from './modules/lms/courses/course.routes';
 import type { EnrollmentController } from './modules/lms/enrollments/enrollment.controller';
 import { buildEnrollmentRouter } from './modules/lms/enrollments/enrollment.routes';
 import { buildTenantRouter } from './modules/tenant/tenant.controller';
+import type { BrandingService } from './modules/tenant/branding.service';
+import type { RegistrationService } from './modules/tenant/registration.service';
 import { buildPlatformRouter, type ProviderDirectorySource } from './modules/platform/platform.routes';
 import type { ProviderController } from './modules/provider/provider.controller';
 import { buildProviderAdminRouter, buildProviderPublicRouter } from './modules/provider/provider.routes';
@@ -28,6 +30,9 @@ export interface AppDependencies {
   enrollmentController: EnrollmentController;
   providerController: ProviderController;
   providerDirectory: ProviderDirectorySource;
+  brandingService: BrandingService;
+  registrationService: RegistrationService;
+  signupRateLimiter: RequestHandler;
 }
 
 /**
@@ -58,13 +63,13 @@ export function createApp(deps: AppDependencies): Express {
 
   // Platform-wide endpoints (provider directory). Mounted BEFORE the tenant-scoped router,
   // which would otherwise reject them for lacking a tenant.
-  app.use('/api/v1/platform', deps.rateLimiter, buildPlatformRouter(deps.providerDirectory));
+  app.use('/api/v1/platform', deps.rateLimiter, buildPlatformRouter(deps.providerDirectory, deps.registrationService, deps.signupRateLimiter));
 
   const api = express.Router();
   // Order matters: tenant first (rate-limit keys and auth both depend on req.tenantId).
   api.use(createTenantContextMiddleware(deps.tenantResolver, deps.scopeDb));
   api.use(deps.rateLimiter);
-  api.use('/tenant', buildTenantRouter());
+  api.use('/tenant', buildTenantRouter(deps.brandingService, deps.jwt));
   api.use('/auth', buildAuthRouter(deps.authController, deps.loginRateLimiter));
   api.use('/courses', buildCourseRouter(deps.courseController));
   api.use('/enrollments', buildEnrollmentRouter(deps.enrollmentController, deps.jwt));

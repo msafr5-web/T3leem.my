@@ -10,7 +10,7 @@ describe('tenant resolution by slug (web frontend)', () => {
     expect(res.headers['x-tenant-id']).toBe(TENANT_A);
     expect(res.body).toEqual({
       success: true,
-      data: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', brand_settings: { primaryColor: '#0d6b62' } },
+      data: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', brand_settings: { primaryColor: '#0d6b62' }, logo_version: String(new Date('2026-10-01T00:00:00Z').getTime()) },
     });
   });
 
@@ -62,7 +62,7 @@ describe('GET /api/v1/courses', () => {
   });
 
   it("another academy's catalog does not include tenant A's courses", async () => {
-    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'gulf');
+    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'rukn');
     expect(res.body.data).toEqual([]);
   });
 
@@ -116,7 +116,7 @@ describe('POST /api/v1/auth/login', () => {
   });
 
   it('the same credentials do not work in another academy', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'gulf');
+    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn');
     expect(res.status).toBe(401);
   });
 

@@ -84,6 +84,10 @@ main { padding-block: 40px 72px; }
 .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn-ghost:hover { border-color: var(--brand); }
 .btn-block { width: 100%; }
+.btn-danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: var(--danger-soft); }
+.danger-zone { border-color: var(--danger); }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* hero */
 .hero { display: grid; gap: 16px; padding-block: 16px 40px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }

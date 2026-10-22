@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body, param, type ValidationChain } from 'express-validator';
-import { CourseType, MeetingProvider, PlanStatus, PlanType, UserRole } from '@prisma/client';
+import { ClassroomStatus, CourseType, MeetingProvider, PlanStatus, PlanType, UserRole } from '@prisma/client';
 import { authenticate, requireRoles, type JwtVerifyOptions } from '../../shared/middlewares/auth.middleware';
 import { validate } from '../../shared/middlewares/validate.middleware';
 import type { ProviderController } from './provider.controller';
@@ -37,17 +37,21 @@ export function buildProviderPublicRouter(controller: ProviderController): Route
   return router;
 }
 
+const uuidParam = param('id').isUUID().withMessage('id must be a UUID');
+
 /** Provider dashboard. Mounted under /api/v1/admin — TENANT_ADMIN only. */
 export function buildProviderAdminRouter(controller: ProviderController, jwt: JwtVerifyOptions): Router {
   const router = Router();
   router.use(authenticate(jwt), requireRoles(UserRole.TENANT_ADMIN));
 
   router.get('/overview', controller.overview);
+  router.get('/integrations', controller.integrations);
 
   router.get('/courses', controller.listCourses);
   router.get('/courses/:id', param('id').isUUID(), validate, controller.getCourse);
   router.post('/courses', ...courseValidators('create'), validate, controller.createCourse);
   router.put('/courses/:id', param('id').isUUID(), ...courseValidators('update'), validate, controller.updateCourse);
+  router.delete('/courses/:id', uuidParam, validate, controller.deleteCourse);
 
   router.get('/trainers', controller.listTrainers);
   router.post(
@@ -59,6 +63,17 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     validate,
     controller.createTrainer,
   );
+  router.put(
+    '/trainers/:id',
+    uuidParam,
+    body('full_name').optional().isString().trim().isLength({ min: 3, max: 120 }),
+    optionalText('specialization', 200),
+    optionalText('bio', 2000),
+    body('email').optional({ values: 'falsy' }).isEmail(),
+    validate,
+    controller.updateTrainer,
+  );
+  router.delete('/trainers/:id', uuidParam, validate, controller.deleteTrainer);
 
   router.get('/trainees', controller.listTrainees);
   router.post(
@@ -69,6 +84,8 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     validate,
     controller.createTrainee,
   );
+  router.put('/trainees/:id', uuidParam, body('full_name').isString().trim().isLength({ min: 3, max: 120 }), validate, controller.updateTrainee);
+  router.delete('/trainees/:id', uuidParam, validate, controller.deleteTrainee);
 
   router.get('/plans', controller.listPlans);
   router.post(
@@ -84,6 +101,21 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     validate,
     controller.createPlan,
   );
+  router.put(
+    '/plans/:id',
+    uuidParam,
+    body('title').optional().isString().trim().isLength({ min: 3, max: 200 }),
+    body('type').optional().isIn(Object.values(PlanType)),
+    body('status').optional().isIn(Object.values(PlanStatus)),
+    optionalText('description', 5000),
+    optionalDate('starts_on'),
+    optionalDate('ends_on'),
+    body('course_ids').optional().isArray({ max: 50 }),
+    body('course_ids.*').isUUID(),
+    validate,
+    controller.updatePlan,
+  );
+  router.delete('/plans/:id', uuidParam, validate, controller.deletePlan);
 
   router.get('/classrooms', controller.listClassrooms);
   router.post(
@@ -100,6 +132,23 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     validate,
     controller.createClassroom,
   );
+  router.get('/classrooms/:id', uuidParam, validate, controller.getClassroom);
+  router.put(
+    '/classrooms/:id',
+    uuidParam,
+    body('title').optional().isString().trim().isLength({ min: 3, max: 200 }),
+    body('starts_at').optional().isISO8601({ strict: true }),
+    body('duration_minutes').optional().isInt({ min: 15, max: 720 }),
+    body('capacity').optional({ values: 'falsy' }).isInt({ min: 1, max: 10_000 }),
+    body('course_id').optional({ values: 'falsy' }).isUUID(),
+    body('trainer_id').optional({ values: 'falsy' }).isUUID(),
+    body('provider').optional().isIn(Object.values(MeetingProvider)),
+    body('join_url').optional({ values: 'falsy' }).isURL({ protocols: ['https'], require_protocol: true }),
+    body('status').optional().isIn(Object.values(ClassroomStatus)),
+    validate,
+    controller.updateClassroom,
+  );
+  router.delete('/classrooms/:id', uuidParam, validate, controller.deleteClassroom);
 
   return router;
 }

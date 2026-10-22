@@ -1,14 +1,15 @@
 import Link from 'next/link';
 import { getProviders, type Provider } from '@/lib/api';
 import { safeBrandColor } from '@/lib/format';
+import { LogoMark } from './logo-mark';
 
 // Directory refreshes every minute; the rest of the page is static.
 export const revalidate = 60;
 
 /** Shown if the API is unreachable, so the home page never breaks. */
 const FALLBACK_PROVIDERS: Provider[] = [
-  { slug: 'alfaisal', name: 'أكاديمية الفيصل', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62' },
-  { slug: 'gulf', name: 'معهد الخليج', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89' },
+  { slug: 'alfaisal', name: 'أكاديمية الفيصل', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62', logo_version: null },
+  { slug: 'rukn', name: 'ركن تدريب', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89', logo_version: null },
 ];
 
 const STEPS = [
@@ -71,6 +72,7 @@ export default async function PlatformHome() {
             <a href="#how">كيف تعمل</a>
             <a href="#features">المزايا</a>
             <a href="#faq">الأسئلة الشائعة</a>
+            <Link href="/join" className="btn btn-primary">انضم كمزود خدمة</Link>
           </nav>
         </div>
       </header>
@@ -84,8 +86,8 @@ export default async function PlatformHome() {
             التدريبية والتطويرية، ويدير متدربيه وفصوله الافتراضية من لوحة تحكم واحدة.
           </p>
           <div className="cta-row">
-            <a href="#providers" className="btn btn-primary">تصفح مزودي الخدمة</a>
-            <a href="#how" className="btn btn-ghost">كيف تعمل المنصة</a>
+            <Link href="/join" className="btn btn-primary">أنشئ أكاديميتك الآن</Link>
+            <a href="#providers" className="btn btn-ghost">تصفح مزودي الخدمة</a>
           </div>
         </section>
 
@@ -105,7 +107,7 @@ export default async function PlatformHome() {
                 style={safeBrandColor(p.primary_color) ? ({ ['--brand' as string]: p.primary_color } as React.CSSProperties) : undefined}
               >
                 <span className="brand-mark">
-                  <span className="brand-dot" aria-hidden="true">{p.name.charAt(0)}</span>
+                  <LogoMark slug={p.slug} name={p.name} version={p.logo_version} size={36} />
                   {p.name}
                 </span>
                 {p.tagline && <p className="muted">{p.tagline}</p>}

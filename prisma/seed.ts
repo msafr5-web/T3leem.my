@@ -73,7 +73,7 @@ const AF = {
   leadership: 'c0a80121-872f-41ed-a1eb-0242ac120005',
 };
 
-// ----- Gulf -----------------------------------------------------------------
+// ----- Rukn Training (formerly Gulf Institute; same tenant id) --------------
 const GI = {
   admin: 'b5c9a3c1-2222-4d3b-9b44-0a3d2e1f8b00',
   learner: 'b5c9a3c1-2222-4d3b-9b44-0a3d2e1f8b01',
@@ -246,9 +246,9 @@ const tenants: SeedTenant[] = [
   },
   {
     id: '0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10',
-    slug: 'gulf',
-    name: 'معهد الخليج',
-    legalName: 'Gulf Institute for Training',
+    slug: 'rukn',
+    name: 'ركن تدريب',
+    legalName: 'Rukn Training',
     vatNumber: '311111111111113',
     brandSettings: {
       primaryColor: '#1d4e89',
@@ -259,9 +259,9 @@ const tenants: SeedTenant[] = [
       city: 'جدة',
     },
     users: [
-      { id: GI.admin, email: 'admin@gulf.test', fullName: 'ماجد الزهراني', role: 'TENANT_ADMIN' },
-      { id: GI.trainerUser, email: 'trainer@gulf.test', fullName: 'أ. منى الحربي', role: 'INSTRUCTOR' },
-      { id: GI.learner, email: 'learner@gulf.test', fullName: 'سلطان العنزي', role: 'LEARNER' },
+      { id: GI.admin, email: 'admin@rukn.test', fullName: 'ماجد الزهراني', role: 'TENANT_ADMIN' },
+      { id: GI.trainerUser, email: 'trainer@rukn.test', fullName: 'أ. منى الحربي', role: 'INSTRUCTOR' },
+      { id: GI.learner, email: 'learner@rukn.test', fullName: 'سلطان العنزي', role: 'LEARNER' },
     ],
     trainers: [
       {
@@ -270,7 +270,7 @@ const tenants: SeedTenant[] = [
         fullName: 'أ. منى الحربي',
         specialization: 'المحاسبة المالية والمعايير الدولية',
         bio: 'محاسبة قانونية بخبرة ١٢ عاماً في المراجعة وتطبيق معايير IFRS.',
-        email: 'trainer@gulf.test',
+        email: 'trainer@rukn.test',
       },
     ],
     courses: [

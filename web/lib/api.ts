@@ -25,6 +25,7 @@ export interface Tenant {
     about?: string;
     city?: string;
   } | null;
+  logo_version: string | null;
 }
 
 export interface CourseSummary {
@@ -59,6 +60,20 @@ export interface Provider {
   tagline: string | null;
   city: string | null;
   primary_color: string | null;
+  logo_version: string | null;
+}
+
+export interface AdminBranding {
+  name: string;
+  slug: string;
+  tagline: string | null;
+  about: string | null;
+  city: string | null;
+  primary_color: string | null;
+  legal_name: string | null;
+  vat_number: string | null;
+  has_logo: boolean;
+  logo_version: string | null;
 }
 
 export interface Trainer {
@@ -168,9 +183,11 @@ export class ApiUnavailableError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   token?: string;
   body?: unknown;
+  /** Binary upload (e.g. a logo) sent as-is with its own content type, instead of JSON. */
+  raw?: { data: Uint8Array; contentType: string };
   /** Seconds to cache a GET in Next's data cache; omit for no caching. */
   revalidate?: number;
 }
@@ -201,15 +218,18 @@ async function request<T>(path: string, scope: Record<string, string>, opts: Req
         ...scope,
         Accept: 'application/json',
         ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(opts.raw ? { 'Content-Type': opts.raw.contentType } : {}),
         ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
       },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.raw ? (opts.raw.data as BodyInit) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       ...(opts.revalidate !== undefined && !opts.token ? { next: { revalidate: opts.revalidate } } : { cache: 'no-store' }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {
     throw new ApiUnavailableError(err instanceof Error ? err.message : 'network error');
   }
+
+  if (res.status === 204) return undefined as T;
 
   let payload: Envelope<T>;
   try {
@@ -238,6 +258,9 @@ export const admin = {
   trainees: (slug: string, token: string) => api<Trainee[]>(slug, '/admin/trainees', { token }),
   plans: (slug: string, token: string) => api<Plan[]>(slug, '/admin/plans', { token }),
   classrooms: (slug: string, token: string) => api<Classroom[]>(slug, '/admin/classrooms', { token }),
+  classroom: (slug: string, token: string, id: string) => api<Classroom>(slug, `/admin/classrooms/${encodeURIComponent(id)}`, { token }),
+  integrations: (slug: string, token: string) => api<{ zoom: boolean }>(slug, '/admin/integrations', { token }),
+  branding: (slug: string, token: string) => api<AdminBranding>(slug, '/tenant/branding', { token }),
 };
 
 /** Tenant-not-found and bad-slug both mean "no such academy" for page routing. */

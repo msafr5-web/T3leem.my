@@ -9,6 +9,8 @@ export interface ResolvedTenant {
   legalName: string | null;
   vatNumber: string | null;
   brandSettings: Prisma.JsonValue;
+  /** Date from the DB; an ISO string when read back from the Redis cache. */
+  logoUpdatedAt: Date | string | null;
 }
 
 export interface AuthenticatedUser {

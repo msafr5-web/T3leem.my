@@ -40,6 +40,14 @@ const FIELD_LABELS: Record<string, string> = {
   duration_minutes: 'المدة بالدقائق',
   capacity: 'السعة',
   join_url: 'رابط الانضمام',
+  name: 'اسم الأكاديمية',
+  tagline: 'الشعار النصي',
+  about: 'نبذة',
+  city: 'المدينة',
+  primary_color: 'اللون الرئيسي',
+  legal_name: 'الاسم القانوني',
+  vat_number: 'الرقم الضريبي',
+  status: 'الحالة',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -50,6 +58,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   START_IN_PAST: 'موعد الفصل الافتراضي يجب أن يكون في المستقبل.',
   EMAIL_TAKEN: 'يوجد مستخدم بهذا البريد في أكاديميتك.',
   COURSE_NOT_FOUND: 'الدورة غير موجودة.',
+  COURSE_HAS_ENROLLMENTS: 'لا يمكن حذف دورة فيها متدربون مسجلون. ألغِ نشرها بدلاً من ذلك.',
+  TRAINER_IN_USE: 'هذا المدرب مسند إلى دورات. انقل دوراته إلى مدرب آخر أولاً.',
+  TRAINEE_HAS_ENROLLMENTS: 'لا يمكن حذف متدرب لديه تسجيلات وفواتير.',
+  MEETING_PROVIDER_ERROR: 'تعذّر إنشاء اجتماع Zoom. حاول مرة أخرى أو ألصق رابطاً يدوياً.',
+  INVALID_VAT_NUMBER: 'الرقم الضريبي يتكون من ١٥ رقماً ويبدأ وينتهي بالرقم ٣.',
+  UNSUPPORTED_IMAGE: 'الشعار يجب أن يكون صورة PNG أو JPEG أو WebP.',
+  LOGO_TOO_LARGE: 'حجم الشعار يجب ألا يتجاوز ٥١٢ كيلوبايت.',
+  PAYLOAD_TOO_LARGE: 'حجم الملف أكبر من المسموح.',
+  EMPTY_FILE: 'الملف فارغ.',
   FORBIDDEN: 'ليست لديك صلاحية لهذه العملية.',
   RATE_LIMITED: 'طلبات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.',
 };
@@ -79,10 +96,17 @@ const optionalNumber = (form: FormData, key: string): number | null => {
 };
 
 /** Turns API validation details into the Arabic names of the offending fields. */
-async function save(slug: string, path: string, method: 'POST' | 'PUT', body: unknown, done: string): Promise<AdminFormState> {
+async function save(
+  slug: string,
+  path: string,
+  method: 'POST' | 'PUT' | 'DELETE',
+  body: unknown,
+  done: string,
+  raw?: { data: Uint8Array; contentType: string },
+): Promise<AdminFormState> {
   const token = await adminToken(slug);
   try {
-    await api(slug, path, { method, token, body });
+    await api(slug, path, { method, token, body, raw });
   } catch (err) {
     const state = describeError(err);
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
@@ -91,6 +115,8 @@ async function save(slug: string, path: string, method: 'POST' | 'PUT', body: un
     return state;
   }
   revalidatePath(`/${slug}`, 'layout');
+  // Name, color and logo also appear in the platform's provider directory.
+  revalidatePath('/');
   redirect(done);
 }
 
@@ -120,13 +146,7 @@ export async function updateCourseAction(slug: string, courseId: string, _prev: 
 }
 
 export async function createTrainerAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  return save(
-    slug,
-    '/admin/trainers',
-    'POST',
-    { full_name: str(form, 'full_name'), specialization: optional(form, 'specialization'), bio: optional(form, 'bio'), email: optional(form, 'email') },
-    `/${slug}/dashboard/trainers`,
-  );
+  return save(slug, '/admin/trainers', 'POST', trainerBody(form), `/${slug}/dashboard/trainers`);
 }
 
 export async function createTraineeAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
@@ -140,41 +160,116 @@ export async function createTraineeAction(slug: string, _prev: AdminFormState, f
 }
 
 export async function createPlanAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  return save(
-    slug,
-    '/admin/plans',
-    'POST',
-    {
-      title: str(form, 'title'),
-      type: str(form, 'type'),
-      status: str(form, 'status') || 'DRAFT',
-      description: optional(form, 'description'),
-      starts_on: optional(form, 'starts_on'),
-      ends_on: optional(form, 'ends_on'),
-      course_ids: form.getAll('course_ids').map(String),
-    },
-    `/${slug}/dashboard/plans`,
-  );
+  return save(slug, '/admin/plans', 'POST', planBody(form), `/${slug}/dashboard/plans`);
+}
+
+/** <input type="datetime-local"> has no timezone; providers schedule in Saudi time (UTC+3, no DST). */
+const riyadhToIso = (local: string): string => (local ? new Date(`${local}:00+03:00`).toISOString() : '');
+
+function classroomBody(form: FormData) {
+  return {
+    title: str(form, 'title'),
+    starts_at: riyadhToIso(str(form, 'starts_at')),
+    duration_minutes: Number(str(form, 'duration_minutes') || 0),
+    capacity: optionalNumber(form, 'capacity'),
+    course_id: optional(form, 'course_id'),
+    trainer_id: optional(form, 'trainer_id'),
+    provider: str(form, 'provider') || 'ZOOM',
+    join_url: optional(form, 'join_url'),
+  };
 }
 
 export async function createClassroomAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  // <input type="datetime-local"> has no timezone; providers schedule in Saudi time (UTC+3, no DST).
-  const local = str(form, 'starts_at');
-  const startsAt = local ? new Date(`${local}:00+03:00`).toISOString() : '';
+  return save(slug, '/admin/classrooms', 'POST', classroomBody(form), `/${slug}/dashboard/classrooms`);
+}
+
+export async function updateClassroomAction(slug: string, id: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
   return save(
     slug,
-    '/admin/classrooms',
-    'POST',
-    {
-      title: str(form, 'title'),
-      starts_at: startsAt,
-      duration_minutes: Number(str(form, 'duration_minutes') || 0),
-      capacity: optionalNumber(form, 'capacity'),
-      course_id: optional(form, 'course_id'),
-      trainer_id: optional(form, 'trainer_id'),
-      provider: str(form, 'provider') || 'ZOOM',
-      join_url: optional(form, 'join_url'),
-    },
+    `/admin/classrooms/${encodeURIComponent(id)}`,
+    'PUT',
+    { ...classroomBody(form), status: str(form, 'status') || 'SCHEDULED' },
     `/${slug}/dashboard/classrooms`,
   );
+}
+
+function trainerBody(form: FormData) {
+  return { full_name: str(form, 'full_name'), specialization: optional(form, 'specialization'), bio: optional(form, 'bio'), email: optional(form, 'email') };
+}
+
+export async function updateTrainerAction(slug: string, id: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, `/admin/trainers/${encodeURIComponent(id)}`, 'PUT', trainerBody(form), `/${slug}/dashboard/trainers`);
+}
+
+export async function updateTraineeAction(slug: string, id: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, `/admin/trainees/${encodeURIComponent(id)}`, 'PUT', { full_name: str(form, 'full_name') }, `/${slug}/dashboard/trainees`);
+}
+
+function planBody(form: FormData) {
+  return {
+    title: str(form, 'title'),
+    type: str(form, 'type'),
+    status: str(form, 'status') || 'DRAFT',
+    description: optional(form, 'description'),
+    starts_on: optional(form, 'starts_on'),
+    ends_on: optional(form, 'ends_on'),
+    course_ids: form.getAll('course_ids').map(String),
+  };
+}
+
+export async function updatePlanAction(slug: string, id: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, `/admin/plans/${encodeURIComponent(id)}`, 'PUT', planBody(form), `/${slug}/dashboard/plans`);
+}
+
+// ----- deletes (one generic action: resource kind is whitelisted, never a free-form path) -----
+
+const DELETABLE = {
+  courses: 'courses',
+  trainers: 'trainers',
+  trainees: 'trainees',
+  plans: 'plans',
+  classrooms: 'classrooms',
+} as const;
+
+export async function deleteAction(slug: string, kind: keyof typeof DELETABLE, id: string, _prev: AdminFormState): Promise<AdminFormState> {
+  const resource = DELETABLE[kind];
+  if (!resource || !/^[0-9a-f-]{36}$/i.test(id)) return { error: 'طلب غير صالح.' };
+  return save(slug, `/admin/${resource}/${id}`, 'DELETE', undefined, `/${slug}/dashboard/${resource}`);
+}
+
+// ----- settings & branding -----
+
+export async function updateBrandingAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    '/tenant/branding',
+    'PUT',
+    {
+      name: str(form, 'name'),
+      tagline: optional(form, 'tagline'),
+      about: optional(form, 'about'),
+      city: optional(form, 'city'),
+      primary_color: optional(form, 'primary_color'),
+      legal_name: optional(form, 'legal_name'),
+      vat_number: optional(form, 'vat_number'),
+    },
+    `/${slug}/dashboard/settings?saved=1`,
+  );
+}
+
+const LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MAX_LOGO = 512 * 1024;
+
+export async function uploadLogoAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const file = form.get('logo');
+  if (!(file instanceof File) || file.size === 0) return { error: 'اختر ملف الشعار.' };
+  // Early, friendly checks; the API re-verifies the actual bytes (magic numbers) regardless.
+  if (!LOGO_TYPES.has(file.type)) return { error: ERROR_MESSAGES.UNSUPPORTED_IMAGE };
+  if (file.size > MAX_LOGO) return { error: ERROR_MESSAGES.LOGO_TOO_LARGE };
+  const data = new Uint8Array(await file.arrayBuffer());
+  return save(slug, '/tenant/branding/logo', 'PUT', undefined, `/${slug}/dashboard/settings?saved=1`, { data, contentType: file.type });
+}
+
+export async function removeLogoAction(slug: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, '/tenant/branding/logo', 'DELETE', undefined, `/${slug}/dashboard/settings?saved=1`);
 }

@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
-import { ApiError, ApiUnavailableError, api, type CheckoutResponse, type LoginResponse } from './api';
+import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse } from './api';
 import { isValidSlug, safeNextPath } from './format';
 import { clearSession, getSession, setSession } from './session';
 
@@ -49,6 +49,57 @@ export async function loginAction(slug: string, _prev: FormState, form: FormData
   const next = form.get('next');
   const fallback = role === 'TENANT_ADMIN' ? `/${slug}/dashboard` : `/${slug}`;
   redirect(typeof next === 'string' && next ? safeNextPath(slug, next) : fallback);
+}
+
+export interface JoinState extends FormState {
+  fields?: string[];
+}
+
+const JOIN_FIELDS: Record<string, string> = {
+  academy_name: 'اسم الأكاديمية',
+  slug: 'عنوان الموقع',
+  city: 'المدينة',
+  admin_name: 'اسم المسؤول',
+  admin_email: 'البريد الإلكتروني',
+  password: 'كلمة المرور',
+  accept_terms: 'الموافقة على الشروط',
+};
+
+const JOIN_ERRORS: Record<string, string> = {
+  SLUG_TAKEN: 'عنوان الموقع مستخدم من أكاديمية أخرى. اختر عنواناً آخر.',
+  SLUG_RESERVED: 'هذا العنوان محجوز للمنصة. اختر عنواناً آخر.',
+  FORBIDDEN: 'التسجيل الذاتي للمزودين مغلق حالياً. تواصل مع فريق المنصة.',
+  RATE_LIMITED: 'محاولات تسجيل كثيرة من هذا الجهاز. حاول بعد ساعة.',
+};
+
+/** Self-service provider sign-up: creates the academy, then signs its admin straight in. */
+export async function registerProviderAction(_prev: JoinState, form: FormData): Promise<JoinState> {
+  const slug = String(form.get('slug') ?? '').trim().toLowerCase();
+  const email = String(form.get('admin_email') ?? '').trim();
+  const password = String(form.get('password') ?? '');
+  try {
+    await platformApi('/providers', {
+      method: 'POST',
+      body: {
+        academy_name: String(form.get('academy_name') ?? '').trim(),
+        slug,
+        city: String(form.get('city') ?? '').trim() || null,
+        admin_name: String(form.get('admin_name') ?? '').trim(),
+        admin_email: email,
+        password,
+        accept_terms: form.get('accept_terms') === 'on',
+      },
+    });
+    const login = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email, password } });
+    await setSession(slug, { token: login.access_token, email: login.user.email, role: login.user.role }, login.expires_in);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
+      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => JOIN_FIELDS[d.field] ?? d.field))] };
+    }
+    if (err instanceof ApiError && JOIN_ERRORS[err.code]) return { error: JOIN_ERRORS[err.code] };
+    return { error: describe(err) };
+  }
+  redirect(`/${slug}/dashboard/settings?welcome=1`);
 }
 
 export async function logoutAction(slug: string): Promise<void> {

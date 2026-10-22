@@ -6,7 +6,7 @@ import { halalasToNumber } from '../../shared/utils/money';
 import type { CourseCatalogService } from '../lms/courses/course.service';
 import { priceJson } from '../lms/courses/course.controller';
 import type { ProviderService } from './provider.service';
-import type { Actor, AdminCourseRow, ClassroomRow, CourseInput, PlanRow, TrainerRow } from './provider.types';
+import type { Actor, AdminCourseRow, ClassroomRow, ClassroomUpdate, CourseInput, PlanRow, TrainerRow } from './provider.types';
 
 // ----- request parsing (bodies are already validated by express-validator) -----
 
@@ -236,6 +236,87 @@ export class ProviderController {
       joinUrl: text(b.join_url),
     });
     res.status(201).json(ok({ id }));
+  };
+
+  // ----- edit / delete -----
+
+  integrations = (_req: Request, res: Response): void => {
+    res.json(ok({ zoom: this.provider.meetingsAutomated }));
+  };
+
+  deleteCourse = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.deleteCourse(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
+  };
+
+  updateTrainer = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const b = req.body as Body;
+    const input: Partial<{ fullName: string; specialization: string | null; bio: string | null; email: string | null }> = {};
+    if ('full_name' in b) input.fullName = String(b.full_name).trim();
+    if ('specialization' in b) input.specialization = text(b.specialization);
+    if ('bio' in b) input.bio = text(b.bio);
+    if ('email' in b) input.email = text(b.email)?.toLowerCase() ?? null;
+    await this.provider.updateTrainer(tenantOf(req), actorOf(req), req.params.id, input);
+    res.json(ok({ id: req.params.id }));
+  };
+
+  deleteTrainer = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.deleteTrainer(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
+  };
+
+  updateTrainee = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.updateTrainee(tenantOf(req), actorOf(req), req.params.id, { fullName: String((req.body as Body).full_name).trim() });
+    res.json(ok({ id: req.params.id }));
+  };
+
+  deleteTrainee = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.deleteTrainee(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
+  };
+
+  updatePlan = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const b = req.body as Body;
+    const input: Partial<{ title: string; description: string | null; type: PlanType; status: PlanStatus; startsOn: Date | null; endsOn: Date | null; courseIds: string[] }> = {};
+    if ('title' in b) input.title = String(b.title).trim();
+    if ('description' in b) input.description = text(b.description);
+    if ('type' in b) input.type = b.type as PlanType;
+    if ('status' in b) input.status = b.status as PlanStatus;
+    if ('starts_on' in b) input.startsOn = dateOnly(b.starts_on);
+    if ('ends_on' in b) input.endsOn = dateOnly(b.ends_on);
+    if ('course_ids' in b && Array.isArray(b.course_ids)) input.courseIds = b.course_ids.map(String);
+    await this.provider.updatePlan(tenantOf(req), actorOf(req), req.params.id, input);
+    res.json(ok({ id: req.params.id }));
+  };
+
+  deletePlan = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.deletePlan(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
+  };
+
+  getClassroom = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    res.json(ok(classroomJson(await this.provider.getClassroom(tenantOf(req), req.params.id), { includeLink: true })));
+  };
+
+  updateClassroom = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const b = req.body as Body;
+    const input: ClassroomUpdate = {};
+    if ('title' in b) input.title = String(b.title).trim();
+    if ('course_id' in b) input.courseId = text(b.course_id);
+    if ('trainer_id' in b) input.trainerId = text(b.trainer_id);
+    if ('starts_at' in b) input.startsAt = new Date(String(b.starts_at));
+    if ('duration_minutes' in b) input.durationMinutes = Number(b.duration_minutes);
+    if ('capacity' in b) input.capacity = numberOrNull(b.capacity);
+    if ('provider' in b) input.provider = b.provider as MeetingProvider;
+    if ('join_url' in b) input.joinUrl = text(b.join_url);
+    if ('status' in b) input.status = b.status as ClassroomStatus;
+    await this.provider.updateClassroom(tenantOf(req), actorOf(req), req.params.id, input);
+    res.json(ok({ id: req.params.id }));
+  };
+
+  deleteClassroom = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.deleteClassroom(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
   };
 }
 

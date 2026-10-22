@@ -10,6 +10,7 @@ const ITEMS = [
   { href: '/trainers', label: 'المدربون' },
   { href: '/trainees', label: 'المتدربون' },
   { href: '/classrooms', label: 'الفصول الافتراضية' },
+  { href: '/settings', label: 'الإعدادات والهوية' },
 ];
 
 export function DashNav({ slug }: { slug: string }) {

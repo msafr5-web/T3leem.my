@@ -27,6 +27,12 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
+  // Body over the parser's limit (express.json / express.raw)
+  if (typeof err === 'object' && err !== null && (err as { type?: unknown }).type === 'entity.too.large') {
+    res.status(413).json(fail('PAYLOAD_TOO_LARGE', 'The request body is too large'));
+    return;
+  }
+
   logger.error('Unhandled error', { err, method: req.method, path: req.path, tenantId: req.tenantId, userId: req.user?.id });
   res.status(500).json(fail('INTERNAL_ERROR', 'An unexpected error occurred'));
 };

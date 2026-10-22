@@ -36,6 +36,15 @@ const envSchema = z
     JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),
     VAT_RATE_PERCENT: z.coerce.number().min(0).max(100).default(15),
     PAYMENT_GATEWAY: z.enum(['sandbox']).default('sandbox'),
+    // Zoom Server-to-Server OAuth app. All three set = meetings are created automatically.
+    ZOOM_ACCOUNT_ID: optionalString,
+    ZOOM_CLIENT_ID: optionalString,
+    ZOOM_CLIENT_SECRET: optionalString,
+    // Self-service provider sign-up (/join). Disable to onboard providers manually only.
+    PROVIDER_SIGNUP_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((v) => v === 'true'),
     RATE_LIMIT_POINTS: z.coerce.number().int().positive().default(100),
     RATE_LIMIT_DURATION_SEC: z.coerce.number().int().positive().default(60),
   })
@@ -62,6 +71,11 @@ function loadEnv(): Env {
 export const env = loadEnv();
 
 export const jwtPublicKey = Buffer.from(env.JWT_PUBLIC_KEY_BASE64, 'base64').toString('utf8');
+
+export const zoomCredentials =
+  env.ZOOM_ACCOUNT_ID && env.ZOOM_CLIENT_ID && env.ZOOM_CLIENT_SECRET
+    ? { accountId: env.ZOOM_ACCOUNT_ID, clientId: env.ZOOM_CLIENT_ID, clientSecret: env.ZOOM_CLIENT_SECRET }
+    : null;
 
 /** Undefined when no signing key is configured — login then answers 503 instead of crashing boot. */
 export const jwtPrivateKey: string | undefined = env.JWT_PRIVATE_KEY_BASE64

@@ -71,9 +71,14 @@ export interface ClassroomRow {
   provider: MeetingProvider;
   joinUrl: string | null;
   status: ClassroomStatus;
+  /** Internal: id at the meeting provider. Never serialized to clients. */
+  externalMeetingId: string | null;
   course: { id: string; title: string } | null;
   trainer: { id: string; fullName: string } | null;
 }
+
+/** Outcome of a delete that may be blocked by dependent records. */
+export type DeleteOutcome = 'deleted' | 'not_found' | 'in_use';
 
 export interface OverviewRow {
   courses: number;
@@ -137,3 +142,10 @@ export interface ClassroomInput {
   provider: MeetingProvider;
   joinUrl: string | null;
 }
+
+export interface ClassroomUpdate extends Partial<ClassroomInput> {
+  status?: ClassroomStatus;
+}
+
+/** What the repository persists: the input plus provider-side linkage. */
+export type ClassroomRecord = ClassroomInput & { externalMeetingId: string | null };

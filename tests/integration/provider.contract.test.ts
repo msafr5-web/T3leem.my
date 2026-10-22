@@ -10,8 +10,8 @@ describe('GET /api/v1/platform/providers (no tenant needed)', () => {
     const res = await request(buildApp()).get('/api/v1/platform/providers');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([
-      { slug: 'alfaisal', name: 'Al-Faisal', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62' },
-      { slug: 'gulf', name: 'Gulf Institute', tagline: null, city: null, primary_color: null },
+      { slug: 'alfaisal', name: 'Al-Faisal', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62', logo_version: null },
+      { slug: 'rukn', name: 'Rukn Training', tagline: null, city: null, primary_color: null, logo_version: null },
     ]);
   });
 });
@@ -34,7 +34,7 @@ describe('public provider data', () => {
   });
 
   it("another provider sees none of tenant A's data", async () => {
-    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'gulf');
+    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'rukn');
     expect(res.body.data).toEqual([]);
   });
 });

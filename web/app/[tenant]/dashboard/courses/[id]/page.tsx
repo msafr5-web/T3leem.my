@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, admin, type AdminCourse } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { updateCourseAction } from '@/lib/admin-actions';
+import { deleteAction, updateCourseAction } from '@/lib/admin-actions';
+import { DeleteButton } from '../../delete-button';
 import { CourseForm } from '../course-form';
 
 export default async function EditCourse({ params }: { params: Promise<{ tenant: string; id: string }> }) {
@@ -35,6 +36,11 @@ export default async function EditCourse({ params }: { params: Promise<{ tenant:
       <div className="card">
         <CourseForm action={updateCourseAction.bind(null, slug, course.id)} trainers={trainers} course={course} />
       </div>
+      <section className="card stack danger-zone" aria-labelledby="delete-heading">
+        <h2 id="delete-heading" style={{ fontSize: 18 }}>حذف الدورة</h2>
+        <p className="small muted">لا يمكن حذف دورة فيها متدربون مسجلون (فواتيرهم يجب أن تبقى). ألغِ نشرها بدلاً من ذلك.</p>
+        <DeleteButton action={deleteAction.bind(null, slug, 'courses', course.id)} label="حذف الدورة" confirmText={`حذف «${course.title}» نهائياً؟`} />
+      </section>
     </>
   );
 }

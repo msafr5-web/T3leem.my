@@ -22,6 +22,9 @@ import type { EnrollmentCheckoutRepository } from '../../../src/modules/lms/enro
 import { ProviderController } from '../../../src/modules/provider/provider.controller';
 import type { ProviderRepository } from '../../../src/modules/provider/provider.repository';
 import { ProviderService } from '../../../src/modules/provider/provider.service';
+import type { MeetingScheduler } from '../../../src/modules/live/meeting-scheduler';
+import { BrandingService, type BrandingRepository } from '../../../src/modules/tenant/branding.service';
+import { RegistrationService, type RegistrationRepository } from '../../../src/modules/tenant/registration.service';
 import type { TenantResolver } from '../../../src/shared/middlewares/tenant-context.middleware';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
@@ -46,9 +49,9 @@ export const learnerToken = sign({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
 
 const brand = { primaryColor: '#0d6b62' };
 const tenants: Record<string, ResolvedTenant> = {
-  [TENANT_A]: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', status: 'ACTIVE', legalName: 'Al-Faisal Academy', vatNumber: '300000000000003', brandSettings: brand },
-  [TENANT_B]: { id: TENANT_B, slug: 'gulf', name: 'Gulf Institute', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {} },
-  [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {} },
+  [TENANT_A]: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', status: 'ACTIVE', legalName: 'Al-Faisal Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z') },
+  [TENANT_B]: { id: TENANT_B, slug: 'rukn', name: 'Rukn Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null },
+  [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {}, logoUpdatedAt: null },
 };
 
 const resolver: TenantResolver = {
@@ -93,7 +96,7 @@ const pmp: CourseDetailRow = {
 const learnerHash = hashPassword(LEARNER_PASSWORD);
 const dummyHash = hashPassword('dummy-password-for-timing');
 
-export function buildApp(opts: { signingKey?: string | null } = {}) {
+export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean } = {}) {
   const enrolled = new Set<string>();
 
   // Each fake mimics RLS: data exists only inside TENANT_A.
@@ -164,6 +167,7 @@ export function buildApp(opts: { signingKey?: string | null } = {}) {
     provider: 'ZOOM' as const,
     joinUrl: 'https://example.com/join/demo',
     status: 'SCHEDULED' as const,
+    externalMeetingId: null,
     course: { id: COURSE, title: 'PMP' },
     trainer: { id: TRAINER, fullName: 'Khalid' },
   };
@@ -217,6 +221,57 @@ export function buildApp(opts: { signingKey?: string | null } = {}) {
     },
     createPlan: async () => 'p-new',
     createClassroom: async () => 'cl-new',
+    deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
+    updateTrainer: async (t, _a, id) => t === TENANT_A && ownedTrainers.has(id),
+    deleteTrainer: async (t, _a, id) => (t !== TENANT_A ? 'not_found' : id === TRAINER ? 'in_use' : 'not_found'),
+    updateTrainee: async (t, _a, id) => t === TENANT_A && id === USER,
+    deleteTrainee: async (t, _a, id) => (t === TENANT_A && id === USER ? 'in_use' : 'not_found'),
+    updatePlan: async (t, _a, id) => t === TENANT_A && id === plan.id,
+    deletePlan: async (t, _a, id) => t === TENANT_A && id === plan.id,
+    getClassroom: async (t, id) => (t === TENANT_A && id === classroom.id ? classroom : null),
+    updateClassroom: async (t, _a, id) => t === TENANT_A && id === classroom.id,
+    deleteClassroom: async (t, _a, id) => t === TENANT_A && id === classroom.id,
+  };
+
+  // In-memory branding store for TENANT_A.
+  const brandingState = { name: 'Al-Faisal', legalName: 'Al-Faisal Academy' as string | null, vatNumber: '300000000000003' as string | null, brandSettings: { primaryColor: '#0d6b62' } as Record<string, unknown>, logo: null as { bytes: Buffer; mime: string; updatedAt: Date } | null };
+  const brandingRepo: BrandingRepository = {
+    getBranding: async (t) =>
+      t !== TENANT_A
+        ? null
+        : {
+            brandSettings: brandingState.brandSettings as never,
+            profile: {
+              name: brandingState.name,
+              slug: 'alfaisal',
+              tagline: (brandingState.brandSettings.tagline as string) ?? null,
+              about: null,
+              city: (brandingState.brandSettings.city as string) ?? null,
+              primaryColor: (brandingState.brandSettings.primaryColor as string) ?? null,
+              legalName: brandingState.legalName,
+              vatNumber: brandingState.vatNumber,
+              hasLogo: brandingState.logo !== null,
+              logoUpdatedAt: brandingState.logo?.updatedAt ?? null,
+            },
+          },
+    updateBranding: async (_t, _a, data) => {
+      if (data.name !== undefined) brandingState.name = data.name;
+      if (data.legalName !== undefined) brandingState.legalName = data.legalName;
+      if (data.vatNumber !== undefined) brandingState.vatNumber = data.vatNumber;
+      brandingState.brandSettings = data.brandSettings as Record<string, unknown>;
+    },
+    setLogo: async (_t, _a, logo) => {
+      brandingState.logo = logo ? { ...logo, updatedAt: new Date('2026-10-23T10:00:00Z') } : null;
+    },
+    getLogo: async (t) => (t === TENANT_A ? brandingState.logo : null),
+  };
+  const takenSlugs = new Set(['alfaisal', 'rukn']);
+  const registrationRepo: RegistrationRepository = {
+    slugTaken: async (slug) => takenSlugs.has(slug),
+    register: async (input) => {
+      takenSlugs.add(input.slug);
+      return { tenantId: 'new-tenant-id' };
+    },
   };
   const catalog = new CourseCatalogService(catalogRepo, 15);
 
@@ -231,14 +286,22 @@ export function buildApp(opts: { signingKey?: string | null } = {}) {
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
     providerController: new ProviderController(
-      new ProviderService({ repository: providerRepo, hashPassword: async (p) => `hashed:${p}`, clock: () => new Date('2026-10-23T00:00:00Z') }),
+      new ProviderService({
+        repository: providerRepo,
+        hashPassword: async (p) => `hashed:${p}`,
+        meetings: opts.meetings,
+        clock: () => new Date('2026-10-23T00:00:00Z'),
+      }),
       catalog,
     ),
     providerDirectory: {
       listActive: async () => [
         { slug: 'alfaisal', name: 'Al-Faisal', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' } },
-        { slug: 'gulf', name: 'Gulf Institute', brandSettings: {} },
+        { slug: 'rukn', name: 'Rukn Training', brandSettings: {} },
       ],
     },
+    brandingService: new BrandingService(brandingRepo, async () => undefined),
+    registrationService: new RegistrationService(registrationRepo, async (p) => `hashed:${p}`, opts.signupEnabled ?? true),
+    signupRateLimiter: passThrough,
   });
 }

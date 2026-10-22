@@ -27,6 +27,16 @@ function setup(owned = { courses: ['c1', 'c2'], trainers: ['t1'] }) {
     createTrainee: jest.fn(async () => 'new-trainee'),
     createPlan: jest.fn(async () => 'new-plan'),
     createClassroom: jest.fn(async () => 'new-classroom'),
+    deleteCourse: jest.fn(async () => 'deleted'),
+    updateTrainer: jest.fn(async () => true),
+    deleteTrainer: jest.fn(async () => 'deleted'),
+    updateTrainee: jest.fn(async () => true),
+    deleteTrainee: jest.fn(async () => 'deleted'),
+    updatePlan: jest.fn(async () => true),
+    deletePlan: jest.fn(async () => true),
+    getClassroom: jest.fn(async () => null),
+    updateClassroom: jest.fn(async () => true),
+    deleteClassroom: jest.fn(async () => true),
   } as unknown as jest.Mocked<ProviderRepository>;
   const hashPassword = jest.fn(async (p: string) => `hash(${p})`);
   const service = new ProviderService({ repository: repo, hashPassword, clock: () => NOW });
@@ -151,6 +161,141 @@ describe('ProviderService', () => {
         service.createPlan(T, actor, { ...plan, startsOn: new Date('2027-05-01'), endsOn: new Date('2027-01-01') }),
       ).rejects.toMatchObject({ code: 'INVALID_PERIOD' });
       expect(repo.createPlan).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('edit / delete', () => {
+    it('maps delete outcomes to 204 / 404 / 409', async () => {
+      const { service, repo } = setup();
+      await expect(service.deleteCourse(T, actor, 'c1')).resolves.toBeUndefined();
+      repo.deleteCourse.mockResolvedValueOnce('in_use');
+      await expect(service.deleteCourse(T, actor, 'c1')).rejects.toMatchObject({ code: 'COURSE_HAS_ENROLLMENTS' });
+      repo.deleteCourse.mockResolvedValueOnce('not_found');
+      await expect(service.deleteCourse(T, actor, 'x')).rejects.toMatchObject({ status: 404 });
+      repo.deleteTrainer.mockResolvedValueOnce('in_use');
+      await expect(service.deleteTrainer(T, actor, 't1')).rejects.toMatchObject({ code: 'TRAINER_IN_USE' });
+      await expect(service.deleteTrainer(T, actor, 't1')).resolves.toBeUndefined();
+      repo.deleteTrainee.mockResolvedValueOnce('in_use');
+      await expect(service.deleteTrainee(T, actor, 'u1')).rejects.toMatchObject({ code: 'TRAINEE_HAS_ENROLLMENTS' });
+      await expect(service.deleteTrainee(T, actor, 'u1')).resolves.toBeUndefined();
+      repo.deletePlan.mockResolvedValueOnce(false);
+      await expect(service.deletePlan(T, actor, 'p')).rejects.toMatchObject({ code: 'PLAN_NOT_FOUND' });
+      await expect(service.deletePlan(T, actor, 'p')).resolves.toBeUndefined();
+    });
+
+    it('updates trainers and trainees; 404 when missing; rejects empty trainer updates', async () => {
+      const { service, repo } = setup();
+      await expect(service.updateTrainer(T, actor, 't1', {})).rejects.toMatchObject({ code: 'NOTHING_TO_UPDATE' });
+      await expect(service.updateTrainer(T, actor, 't1', { bio: 'x' })).resolves.toBeUndefined();
+      repo.updateTrainer.mockResolvedValueOnce(false);
+      await expect(service.updateTrainer(T, actor, 'x', { bio: 'x' })).rejects.toMatchObject({ code: 'TRAINER_NOT_FOUND' });
+      await expect(service.updateTrainee(T, actor, 'u1', { fullName: 'New' })).resolves.toBeUndefined();
+      repo.updateTrainee.mockResolvedValueOnce(false);
+      await expect(service.updateTrainee(T, actor, 'x', { fullName: 'New' })).rejects.toMatchObject({ code: 'TRAINEE_NOT_FOUND' });
+    });
+
+    it('validates plan updates the same way as creation', async () => {
+      const { service, repo } = setup();
+      await expect(service.updatePlan(T, actor, 'p', {})).rejects.toMatchObject({ code: 'NOTHING_TO_UPDATE' });
+      await expect(service.updatePlan(T, actor, 'p', { courseIds: ['c1', 'c1'] })).rejects.toMatchObject({ code: 'DUPLICATE_COURSES' });
+      await expect(service.updatePlan(T, actor, 'p', { courseIds: ['foreign'] })).rejects.toMatchObject({ code: 'UNKNOWN_COURSE' });
+      await expect(service.updatePlan(T, actor, 'p', { startsOn: new Date('2027-05-01'), endsOn: new Date('2027-01-01') })).rejects.toMatchObject({
+        code: 'INVALID_PERIOD',
+      });
+      await expect(service.updatePlan(T, actor, 'p', { status: 'ARCHIVED', courseIds: ['c2'] })).resolves.toBeUndefined();
+      repo.updatePlan.mockResolvedValueOnce(false);
+      await expect(service.updatePlan(T, actor, 'gone', { title: 'x' })).rejects.toMatchObject({ code: 'PLAN_NOT_FOUND' });
+    });
+  });
+
+  describe('classrooms with Zoom', () => {
+    const room = {
+      id: 'r1',
+      title: 'Old title',
+      startsAt: new Date('2026-11-05T15:00:00Z'),
+      durationMinutes: 60,
+      capacity: null,
+      provider: 'ZOOM' as const,
+      joinUrl: 'https://zoom.us/j/1',
+      status: 'SCHEDULED' as const,
+      externalMeetingId: 'zm-1',
+      course: null,
+      trainer: null,
+    };
+    const zoomSetup = () => {
+      const meetings = {
+        available: true,
+        create: jest.fn(async () => ({ externalId: 'zm-new', joinUrl: 'https://zoom.us/j/new' })),
+        update: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      };
+      const base = setup();
+      const service = new ProviderService({ repository: base.repo, hashPassword: async (p) => p, meetings, clock: () => NOW });
+      base.repo.getClassroom.mockResolvedValue(room);
+      return { ...base, service, meetings };
+    };
+
+    it('creates the Zoom meeting automatically when no link is given', async () => {
+      const { service, repo, meetings } = zoomSetup();
+      expect(service.meetingsAutomated).toBe(true);
+      await service.createClassroom(T, actor, classroom);
+      expect(meetings.create).toHaveBeenCalledWith({ topic: 'Live', startsAt: classroom.startsAt, durationMinutes: 60 });
+      expect(repo.createClassroom).toHaveBeenCalledWith(T, actor, { ...classroom, joinUrl: 'https://zoom.us/j/new', externalMeetingId: 'zm-new' });
+    });
+
+    it('keeps a manually pasted link and does not call Zoom', async () => {
+      const { service, meetings, repo } = zoomSetup();
+      await service.createClassroom(T, actor, { ...classroom, joinUrl: 'https://zoom.us/j/manual' });
+      expect(meetings.create).not.toHaveBeenCalled();
+      expect(repo.createClassroom).toHaveBeenCalledWith(T, actor, expect.objectContaining({ joinUrl: 'https://zoom.us/j/manual', externalMeetingId: null }));
+    });
+
+    it('502 when Zoom fails; deletes the orphan meeting when the DB write fails', async () => {
+      const { service, meetings, repo } = zoomSetup();
+      meetings.create.mockRejectedValueOnce(new Error('zoom down'));
+      await expect(service.createClassroom(T, actor, classroom)).rejects.toMatchObject({ status: 502, code: 'MEETING_PROVIDER_ERROR' });
+      repo.createClassroom.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.createClassroom(T, actor, classroom)).rejects.toThrow('db down');
+      expect(meetings.remove).toHaveBeenCalledWith('zm-new');
+    });
+
+    it('syncs title/time changes to Zoom, and fails loudly if Zoom rejects them', async () => {
+      const { service, meetings, repo } = zoomSetup();
+      const startsAt = new Date('2026-11-06T16:00:00Z');
+      await service.updateClassroom(T, actor, 'r1', { startsAt });
+      expect(meetings.update).toHaveBeenCalledWith('zm-1', { topic: 'Old title', startsAt, durationMinutes: 60 });
+      expect(repo.updateClassroom).toHaveBeenCalledWith(T, actor, 'r1', { startsAt });
+      meetings.update.mockRejectedValueOnce(new Error('zoom down'));
+      await expect(service.updateClassroom(T, actor, 'r1', { title: 'New' })).rejects.toMatchObject({ status: 502 });
+    });
+
+    it('removes the Zoom meeting when cancelled or moved to another platform', async () => {
+      const { service, meetings, repo } = zoomSetup();
+      await service.updateClassroom(T, actor, 'r1', { status: 'CANCELLED' });
+      expect(meetings.remove).toHaveBeenCalledWith('zm-1');
+      expect(repo.updateClassroom).toHaveBeenCalledWith(T, actor, 'r1', { status: 'CANCELLED', externalMeetingId: null });
+      await service.updateClassroom(T, actor, 'r1', { provider: 'TEAMS' });
+      expect(repo.updateClassroom).toHaveBeenLastCalledWith(T, actor, 'r1', { provider: 'TEAMS', externalMeetingId: null, joinUrl: null });
+    });
+
+    it('a failed Zoom removal does not block cancelling or deleting', async () => {
+      const { service, meetings, repo } = zoomSetup();
+      meetings.remove.mockRejectedValue(new Error('zoom down'));
+      await expect(service.updateClassroom(T, actor, 'r1', { status: 'CANCELLED' })).resolves.toBeUndefined();
+      await expect(service.deleteClassroom(T, actor, 'r1')).resolves.toBeUndefined();
+      expect(repo.deleteClassroom).toHaveBeenCalledWith(T, actor, 'r1');
+    });
+
+    it('update validation: empty, past start, foreign refs, missing classroom', async () => {
+      const { service, repo } = zoomSetup();
+      await expect(service.updateClassroom(T, actor, 'r1', {})).rejects.toMatchObject({ code: 'NOTHING_TO_UPDATE' });
+      await expect(service.updateClassroom(T, actor, 'r1', { startsAt: new Date('2026-01-01T00:00:00Z') })).rejects.toMatchObject({ code: 'START_IN_PAST' });
+      await expect(service.updateClassroom(T, actor, 'r1', { courseId: 'foreign' })).rejects.toMatchObject({ code: 'UNKNOWN_COURSE' });
+      await expect(service.updateClassroom(T, actor, 'r1', { trainerId: 'foreign' })).rejects.toMatchObject({ code: 'UNKNOWN_TRAINER' });
+      repo.updateClassroom.mockResolvedValueOnce(false);
+      await expect(service.updateClassroom(T, actor, 'r1', { capacity: 10 })).rejects.toMatchObject({ code: 'CLASSROOM_NOT_FOUND' });
+      repo.getClassroom.mockResolvedValueOnce(null);
+      await expect(service.getClassroom(T, 'gone')).rejects.toMatchObject({ code: 'CLASSROOM_NOT_FOUND' });
     });
   });
 
