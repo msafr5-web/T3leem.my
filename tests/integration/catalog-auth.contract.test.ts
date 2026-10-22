@@ -33,7 +33,7 @@ describe('tenant resolution by slug (web frontend)', () => {
 });
 
 describe('GET /api/v1/courses', () => {
-  it('lists published courses with a VAT-inclusive price breakdown, without auth', async () => {
+  it('lists published courses with a VAT-inclusive price breakdown and accreditation data, without auth', async () => {
     const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'alfaisal');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([
@@ -42,10 +42,23 @@ describe('GET /api/v1/courses', () => {
         title: 'PMP',
         type: 'RECORDED',
         price: { net: 1000, vat: 150, total: 1150, currency: 'SAR' },
+        training_hours: 35,
+        duration_days: 5,
+        accreditation_number: 'DEMO-ACC-1',
+        trainer_name: 'Khalid',
         module_count: 1,
         lesson_count: 2,
       },
     ]);
+  });
+
+  it('course detail includes license, trainer profile and description', async () => {
+    const res = await request(buildApp()).get(`/api/v1/courses/${COURSE}`).set('x-tenant-slug', 'alfaisal');
+    expect(res.body.data).toMatchObject({
+      description: 'Exam prep',
+      license: { number: 'DEMO-LIC-1', authority: 'TVTC', expires_on: '2027-06-30' },
+      trainer: { full_name: 'Khalid', specialization: 'PM', bio: 'Consultant' },
+    });
   });
 
   it("another academy's catalog does not include tenant A's courses", async () => {

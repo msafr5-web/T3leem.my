@@ -15,6 +15,9 @@ import { CourseCatalogService } from './modules/lms/courses/course.service';
 import { CheckoutService } from './modules/lms/enrollments/checkout.service';
 import { EnrollmentController } from './modules/lms/enrollments/enrollment.controller';
 import { PrismaEnrollmentRepository } from './modules/lms/enrollments/enrollment.repository';
+import { ProviderController } from './modules/provider/provider.controller';
+import { PrismaProviderRepository } from './modules/provider/provider.repository';
+import { ProviderService } from './modules/provider/provider.service';
 import { TenantResolverService } from './modules/tenant/tenant-resolver.service';
 import { TenantRepository } from './modules/tenant/tenant.repository';
 import { createRateLimiter } from './shared/middlewares/rate-limiter.middleware';
@@ -56,8 +59,12 @@ export function createServerApp(): ServerApp {
     vatRatePercent: env.VAT_RATE_PERCENT,
   });
 
+  const tenantRepository = new TenantRepository(prisma);
+  const catalogService = new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT);
+  const providerService = new ProviderService({ repository: new PrismaProviderRepository(), hashPassword });
+
   const app = createApp({
-    tenantResolver: new TenantResolverService(new TenantRepository(prisma), redis, env.BASE_DOMAIN),
+    tenantResolver: new TenantResolverService(tenantRepository, redis, env.BASE_DOMAIN),
     scopeDb: forTenant,
     rateLimiter: createRateLimiter({ redis, points: env.RATE_LIMIT_POINTS, durationSec: env.RATE_LIMIT_DURATION_SEC }),
     // 10 attempts / 15 min per tenant+IP: slows password guessing to a crawl.
@@ -65,8 +72,10 @@ export function createServerApp(): ServerApp {
     jwt: { publicKey: jwtPublicKey, issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE },
     corsOrigins: env.CORS_ORIGINS,
     authController: new AuthController(authService),
-    courseController: new CourseController(new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT)),
+    courseController: new CourseController(catalogService),
     enrollmentController: new EnrollmentController(checkoutService),
+    providerController: new ProviderController(providerService, catalogService),
+    providerDirectory: tenantRepository,
   });
 
   return {

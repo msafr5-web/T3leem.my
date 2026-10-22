@@ -36,14 +36,19 @@ export async function loginAction(slug: string, _prev: FormState, form: FormData
   const password = String(form.get('password') ?? '');
   if (!email || !password) return { error: 'أدخل البريد الإلكتروني وكلمة المرور.' };
 
+  let role: string;
   try {
     const res = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email, password } });
     await setSession(slug, { token: res.access_token, email: res.user.email, role: res.user.role }, res.expires_in);
+    role = res.user.role;
   } catch (err) {
     return { error: describe(err) };
   }
-  // redirect() throws, so it must stay outside the try block.
-  redirect(safeNextPath(slug, form.get('next')));
+  // redirect() throws, so it must stay outside the try block. Admins land on their
+  // dashboard unless they were sent to login from a specific page.
+  const next = form.get('next');
+  const fallback = role === 'TENANT_ADMIN' ? `/${slug}/dashboard` : `/${slug}`;
+  redirect(typeof next === 'string' && next ? safeNextPath(slug, next) : fallback);
 }
 
 export async function logoutAction(slug: string): Promise<void> {

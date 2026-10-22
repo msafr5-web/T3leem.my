@@ -38,7 +38,9 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     ] as const) {
       await db.withTenantTransaction(tenantId, async (tx) => {
         await tx.user.create({ data: { id: userId, tenantId, email: `i@${tenantId}.test`, passwordHash: 'x', role: 'INSTRUCTOR' } });
-        await tx.course.create({ data: { id: courseId, tenantId, instructorId: userId, title: `Course ${tenantId}`, type: 'RECORDED', price: '1000.00', isPublished: true } });
+        // Trainer shares the user's id, mirroring how the provider_management migration moved instructors.
+        await tx.trainer.create({ data: { id: userId, tenantId, userId, fullName: `Trainer ${tenantId}` } });
+        await tx.course.create({ data: { id: courseId, tenantId, trainerId: userId, title: `Course ${tenantId}`, type: 'RECORDED', price: '1000.00', isPublished: true } });
       });
     }
   });
@@ -47,6 +49,7 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     for (const tenantId of [tenantA, tenantB]) {
       await db.withTenantTransaction(tenantId, async (tx) => {
         await tx.course.deleteMany({ where: { tenantId } });
+        await tx.trainer.deleteMany({ where: { tenantId } });
         await tx.user.deleteMany({ where: { tenantId } });
       });
     }
@@ -83,9 +86,15 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
   it("WITH CHECK blocks inserting rows tagged with another tenant's id", async () => {
     await expect(
       db.withTenantTransaction(tenantA, (tx) =>
-        tx.course.create({ data: { tenantId: tenantB, instructorId: userB, title: 'smuggled', type: 'RECORDED', price: '1.00' } }),
+        tx.course.create({ data: { tenantId: tenantB, trainerId: userB, title: 'smuggled', type: 'RECORDED', price: '1.00' } }),
       ),
     ).rejects.toThrow(/row-level security/i);
+  });
+
+  it('provider tables (trainers) are isolated too', async () => {
+    const trainers = await db.forTenant(tenantA).trainer.findMany({ select: { id: true } });
+    expect(trainers.map((t) => t.id)).toEqual([userA]);
+    await expect(db.prisma.trainer.count()).resolves.toBe(0);
   });
 
   it('tenant context does not leak across pooled connections', async () => {

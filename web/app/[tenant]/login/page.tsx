@@ -14,8 +14,9 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const [{ tenant: slug }, { next }] = await Promise.all([params, searchParams]);
-  const target = safeNextPath(slug, next);
-  if (await getSession(slug)) redirect(target);
+  // Empty when login was opened directly: the action then picks the role's home page.
+  const target = next ? safeNextPath(slug, next) : '';
+  if (await getSession(slug)) redirect(target || `/${slug}`);
 
   return (
     <div className="narrow stack">
@@ -24,9 +25,14 @@ export default async function LoginPage({
       <div className="card">
         <LoginForm slug={slug} next={target} />
       </div>
-      <p className="small muted">
-        حساب تجريبي: <span className="ltr">learner@{slug}.test</span> · كلمة المرور <span className="ltr">Demo@2026</span>
-      </p>
+      <div className="creds" aria-label="حسابات تجريبية">
+        <span className="muted">مدير المزود</span>
+        <span className="ltr">admin@{slug}.test</span>
+        <span className="muted">متدرب</span>
+        <span className="ltr">{slug === 'alfaisal' ? 'student' : 'learner'}@{slug}.test</span>
+        <span className="muted">كلمة المرور</span>
+        <span className="ltr">Demo@2026</span>
+      </div>
     </div>
   );
 }

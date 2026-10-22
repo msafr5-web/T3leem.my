@@ -60,10 +60,30 @@ describe('JwtTokenSigner', () => {
 });
 
 describe('CourseCatalogService', () => {
-  const row = { id: 'c1', title: 'PMP', type: 'RECORDED' as const, priceHalalas: 199900, moduleCount: 1, lessonCount: 3 };
+  const row = {
+    id: 'c1',
+    title: 'PMP',
+    type: 'RECORDED' as const,
+    priceHalalas: 199900,
+    trainingHours: 35,
+    durationDays: 5,
+    accreditationNumber: null,
+    trainerName: 'Khalid',
+    moduleCount: 1,
+    lessonCount: 3,
+  };
+  const detail = {
+    ...row,
+    description: null,
+    licenseNumber: null,
+    licenseAuthority: null,
+    licenseExpiresOn: null,
+    trainer: { id: 't1', fullName: 'Khalid', specialization: null, bio: null },
+    modules: [],
+  };
   const repository: CourseCatalogRepository = {
     listPublished: async () => [row],
-    findPublished: async (_t, id) => (id === 'c1' ? { ...row, modules: [] } : null),
+    findPublished: async (_t, id) => (id === 'c1' ? detail : null),
   };
   const service = new CourseCatalogService(repository, 15);
 

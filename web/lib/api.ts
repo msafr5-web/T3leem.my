@@ -17,7 +17,14 @@ export interface Tenant {
   id: string;
   slug: string;
   name: string;
-  brand_settings: { primaryColor?: string; logoUrl?: string | null; locale?: string } | null;
+  brand_settings: {
+    primaryColor?: string;
+    logoUrl?: string | null;
+    locale?: string;
+    tagline?: string;
+    about?: string;
+    city?: string;
+  } | null;
 }
 
 export interface CourseSummary {
@@ -25,12 +32,106 @@ export interface CourseSummary {
   title: string;
   type: 'RECORDED' | 'LIVE';
   price: Price;
+  training_hours: number | null;
+  duration_days: number | null;
+  accreditation_number: string | null;
+  trainer_name: string;
   module_count: number;
   lesson_count: number;
 }
 
+export interface License {
+  number: string | null;
+  authority: string | null;
+  expires_on: string | null;
+}
+
 export interface CourseDetail extends CourseSummary {
+  description: string | null;
+  license: License;
+  trainer: { id: string; full_name: string; specialization: string | null; bio: string | null };
   modules: { id: string; title: string; lessons: { id: string; title: string; content_type: 'VIDEO' | 'ZOOM' | 'PDF' }[] }[];
+}
+
+export interface Provider {
+  slug: string;
+  name: string;
+  tagline: string | null;
+  city: string | null;
+  primary_color: string | null;
+}
+
+export interface Trainer {
+  id: string;
+  full_name: string;
+  specialization: string | null;
+  bio: string | null;
+  course_count: number;
+}
+
+export interface AdminTrainer extends Trainer {
+  email: string | null;
+  has_account: boolean;
+}
+
+export type PlanType = 'TRAINING' | 'DEVELOPMENT';
+export type PlanStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
+export interface Plan {
+  id: string;
+  title: string;
+  description: string | null;
+  type: PlanType;
+  status: PlanStatus;
+  starts_on: string | null;
+  ends_on: string | null;
+  total_hours: number;
+  courses: { id: string; title: string; training_hours: number | null; is_published: boolean }[];
+}
+
+export type MeetingProvider = 'ZOOM' | 'TEAMS' | 'GOOGLE_MEET' | 'OTHER';
+
+export interface Classroom {
+  id: string;
+  title: string;
+  starts_at: string;
+  duration_minutes: number;
+  capacity: number | null;
+  provider: MeetingProvider;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  join_url?: string | null;
+  course: { id: string; title: string } | null;
+  trainer: { id: string; full_name: string } | null;
+}
+
+export interface AdminCourse {
+  id: string;
+  title: string;
+  description: string | null;
+  type: 'RECORDED' | 'LIVE';
+  price: Price;
+  trainer: { id: string; full_name: string };
+  license: License;
+  accreditation_number: string | null;
+  training_hours: number | null;
+  duration_days: number | null;
+  is_published: boolean;
+  enrollment_count: number;
+}
+
+export interface Trainee {
+  id: string;
+  email: string;
+  full_name: string | null;
+  enrollment_count: number;
+  created_at: string;
+}
+
+export interface Overview {
+  counts: { courses: number; published_courses: number; trainers: number; trainees: number; active_plans: number; enrollments: number };
+  revenue_total: number;
+  upcoming_classrooms: Classroom[];
+  recent_enrollments: { id: string; created_at: string; trainee_name: string; course_title: string }[];
 }
 
 export interface LoginResponse {
@@ -51,6 +152,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly details?: { field: string; message: string }[],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -66,16 +168,28 @@ export class ApiUnavailableError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   token?: string;
   body?: unknown;
   /** Seconds to cache a GET in Next's data cache; omit for no caching. */
   revalidate?: number;
 }
 
-type Envelope<T> = { success: true; data: T } | { success: false; error: { code: string; message: string } };
+type Envelope<T> =
+  | { success: true; data: T }
+  | { success: false; error: { code: string; message: string; details?: { field: string; message: string }[] } };
 
-export async function api<T>(slug: string, path: string, opts: RequestOptions = {}): Promise<T> {
+/** Tenant-scoped request (the academy is identified by its slug). */
+export function api<T>(slug: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  return request<T>(path, { 'x-tenant-slug': slug }, opts);
+}
+
+/** Platform-level request: no tenant (e.g. the provider directory). */
+export function platformApi<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  return request<T>(`/platform${path}`, {}, opts);
+}
+
+async function request<T>(path: string, scope: Record<string, string>, opts: RequestOptions): Promise<T> {
   const base = process.env.API_URL;
   if (!base) throw new ApiUnavailableError('API_URL is not configured');
 
@@ -84,7 +198,7 @@ export async function api<T>(slug: string, path: string, opts: RequestOptions = 
     res = await fetch(`${base.replace(/\/$/, '')}/api/v1${path}`, {
       method: opts.method ?? 'GET',
       headers: {
-        'x-tenant-slug': slug,
+        ...scope,
         Accept: 'application/json',
         ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
@@ -103,13 +217,28 @@ export async function api<T>(slug: string, path: string, opts: RequestOptions = 
   } catch {
     throw new ApiUnavailableError(`non-JSON response (HTTP ${res.status})`);
   }
-  if (!payload.success) throw new ApiError(res.status, payload.error.code, payload.error.message);
+  if (!payload.success) throw new ApiError(res.status, payload.error.code, payload.error.message, payload.error.details);
   return payload.data;
 }
 
 export const getTenant = (slug: string) => api<Tenant>(slug, '/tenant', { revalidate: 60 });
 export const getCourses = (slug: string) => api<CourseSummary[]>(slug, '/courses', { revalidate: 60 });
 export const getCourse = (slug: string, id: string) => api<CourseDetail>(slug, `/courses/${encodeURIComponent(id)}`, { revalidate: 60 });
+export const getPlans = (slug: string) => api<Plan[]>(slug, '/plans', { revalidate: 60 });
+export const getTrainers = (slug: string) => api<Trainer[]>(slug, '/trainers', { revalidate: 60 });
+export const getUpcomingClassrooms = (slug: string) => api<Classroom[]>(slug, '/classrooms/upcoming', { revalidate: 60 });
+export const getProviders = () => platformApi<Provider[]>('/providers', { revalidate: 60 });
+
+/** Provider dashboard reads (TENANT_ADMIN token; never cached). */
+export const admin = {
+  overview: (slug: string, token: string) => api<Overview>(slug, '/admin/overview', { token }),
+  courses: (slug: string, token: string) => api<AdminCourse[]>(slug, '/admin/courses', { token }),
+  course: (slug: string, token: string, id: string) => api<AdminCourse>(slug, `/admin/courses/${encodeURIComponent(id)}`, { token }),
+  trainers: (slug: string, token: string) => api<AdminTrainer[]>(slug, '/admin/trainers', { token }),
+  trainees: (slug: string, token: string) => api<Trainee[]>(slug, '/admin/trainees', { token }),
+  plans: (slug: string, token: string) => api<Plan[]>(slug, '/admin/plans', { token }),
+  classrooms: (slug: string, token: string) => api<Classroom[]>(slug, '/admin/classrooms', { token }),
+};
 
 /** Tenant-not-found and bad-slug both mean "no such academy" for page routing. */
 export const isMissingTenant = (err: unknown) =>

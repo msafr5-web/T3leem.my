@@ -26,4 +26,13 @@ export class TenantRepository {
   findByCustomDomain(domain: string): Promise<ResolvedTenant | null> {
     return this.db.tenant.findUnique({ where: { customDomain: domain }, select: tenantSelect });
   }
+
+  /** Public provider directory: active academies only, public fields only. */
+  listActive(): Promise<{ slug: string; name: string; brandSettings: ResolvedTenant['brandSettings'] }[]> {
+    return this.db.tenant.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+      select: { slug: true, name: true, brandSettings: true },
+    });
+  }
 }

@@ -1,7 +1,6 @@
-import type { ContentType, CourseType } from '@prisma/client';
 import { HttpError } from '../../../shared/utils/http-error';
 import { calculateVatHalalas } from '../../../shared/utils/money';
-import type { CourseCatalogRepository, CourseSummaryRow } from './course.repository';
+import type { CourseCatalogRepository, CourseDetailRow, CourseSummaryRow } from './course.repository';
 
 export interface PriceBreakdown {
   netHalalas: number;
@@ -9,18 +8,8 @@ export interface PriceBreakdown {
   totalHalalas: number;
 }
 
-export interface CourseSummary {
-  id: string;
-  title: string;
-  type: CourseType;
-  price: PriceBreakdown;
-  moduleCount: number;
-  lessonCount: number;
-}
-
-export interface CourseDetail extends CourseSummary {
-  modules: { id: string; title: string; lessons: { id: string; title: string; contentType: ContentType }[] }[];
-}
+export type CourseSummary = Omit<CourseSummaryRow, 'priceHalalas'> & { price: PriceBreakdown };
+export type CourseDetail = Omit<CourseDetailRow, 'priceHalalas'> & { price: PriceBreakdown };
 
 /**
  * Catalog reads. Prices are stored VAT-exclusive; Saudi consumer-pricing rules require
@@ -35,24 +24,22 @@ export class CourseCatalogService {
 
   async list(tenantId: string): Promise<CourseSummary[]> {
     const rows = await this.repository.listPublished(tenantId);
-    return rows.map((row) => this.toSummary(row));
+    return rows.map((row) => this.withPrice(row));
   }
 
   async get(tenantId: string, courseId: string): Promise<CourseDetail> {
     const row = await this.repository.findPublished(tenantId, courseId);
     if (!row) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
-    return { ...this.toSummary(row), modules: row.modules };
+    return this.withPrice(row);
   }
 
-  private toSummary(row: CourseSummaryRow): CourseSummary {
-    const vatHalalas = calculateVatHalalas(row.priceHalalas, this.vatRatePercent);
-    return {
-      id: row.id,
-      title: row.title,
-      type: row.type,
-      price: { netHalalas: row.priceHalalas, vatHalalas, totalHalalas: row.priceHalalas + vatHalalas },
-      moduleCount: row.moduleCount,
-      lessonCount: row.lessonCount,
-    };
+  priceOf(netHalalas: number): PriceBreakdown {
+    const vatHalalas = calculateVatHalalas(netHalalas, this.vatRatePercent);
+    return { netHalalas, vatHalalas, totalHalalas: netHalalas + vatHalalas };
+  }
+
+  private withPrice<T extends CourseSummaryRow>(row: T): Omit<T, 'priceHalalas'> & { price: PriceBreakdown } {
+    const { priceHalalas, ...rest } = row;
+    return { ...rest, price: this.priceOf(priceHalalas) };
   }
 }

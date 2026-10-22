@@ -32,6 +32,9 @@ export default async function TenantLayout({ children, params }: { children: Rea
           <div className="header-actions">
             {session ? (
               <>
+                {session.role === 'TENANT_ADMIN' && (
+                  <Link href={`/${slug}/dashboard`} className="btn btn-primary">لوحة التحكم</Link>
+                )}
                 <span className="small muted ltr">{session.email}</span>
                 <form action={logoutAction.bind(null, slug)}>
                   <button type="submit" className="btn btn-ghost">تسجيل الخروج</button>

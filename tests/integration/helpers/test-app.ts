@@ -19,6 +19,9 @@ import { CourseCatalogService } from '../../../src/modules/lms/courses/course.se
 import { CheckoutService } from '../../../src/modules/lms/enrollments/checkout.service';
 import { EnrollmentController } from '../../../src/modules/lms/enrollments/enrollment.controller';
 import type { EnrollmentCheckoutRepository } from '../../../src/modules/lms/enrollments/enrollment.repository';
+import { ProviderController } from '../../../src/modules/provider/provider.controller';
+import type { ProviderRepository } from '../../../src/modules/provider/provider.repository';
+import { ProviderService } from '../../../src/modules/provider/provider.service';
 import type { TenantResolver } from '../../../src/shared/middlewares/tenant-context.middleware';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
@@ -54,13 +57,26 @@ const resolver: TenantResolver = {
   findByHost: async (host) => Object.values(tenants).find((t) => host === `${t.slug}.t3leem.my`) ?? null,
 };
 
+export const TRAINER = 'f1000000-0000-4000-8000-000000000001';
+export const ADMIN = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00';
+export const adminToken = sign({ sub: ADMIN, tid: TENANT_A, role: 'TENANT_ADMIN' });
+
 const pmp: CourseDetailRow = {
   id: COURSE,
   title: 'PMP',
   type: 'RECORDED',
   priceHalalas: 100000,
+  trainingHours: 35,
+  durationDays: 5,
+  accreditationNumber: 'DEMO-ACC-1',
+  trainerName: 'Khalid',
   moduleCount: 1,
   lessonCount: 2,
+  description: 'Exam prep',
+  licenseNumber: 'DEMO-LIC-1',
+  licenseAuthority: 'TVTC',
+  licenseExpiresOn: '2027-06-30',
+  trainer: { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant' },
   modules: [
     {
       id: 'd1000000-0000-4000-8000-000000000001',
@@ -124,6 +140,86 @@ export function buildApp(opts: { signingKey?: string | null } = {}) {
   });
   const passThrough: RequestHandler = (_req, _res, next) => next();
 
+  // In-memory provider data; only TENANT_A owns anything (mimics RLS + the ownership checks).
+  const audits: string[] = [];
+  const ownedCourses = new Set([COURSE]);
+  const ownedTrainers = new Set([TRAINER]);
+  const trainer = { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant', email: 'k@a.test', hasAccount: true, courseCount: 1 };
+  const plan = {
+    id: 'a2000000-0000-4000-8000-000000000001',
+    title: 'Leadership',
+    description: null,
+    type: 'DEVELOPMENT' as const,
+    status: 'ACTIVE' as const,
+    startsOn: '2027-01-03',
+    endsOn: '2027-06-24',
+    courses: [{ id: COURSE, title: 'PMP', trainingHours: 35, isPublished: true }],
+  };
+  const classroom = {
+    id: 'a3000000-0000-4000-8000-000000000001',
+    title: 'Scheduling',
+    startsAt: new Date('2030-01-01T15:00:00Z'),
+    durationMinutes: 90,
+    capacity: 40,
+    provider: 'ZOOM' as const,
+    joinUrl: 'https://example.com/join/demo',
+    status: 'SCHEDULED' as const,
+    course: { id: COURSE, title: 'PMP' },
+    trainer: { id: TRAINER, fullName: 'Khalid' },
+  };
+  const adminCourse = {
+    id: COURSE,
+    title: 'PMP',
+    description: 'Exam prep',
+    type: 'RECORDED' as const,
+    priceHalalas: 100000,
+    trainerId: TRAINER,
+    trainerName: 'Khalid',
+    licenseNumber: 'DEMO-LIC-1',
+    licenseAuthority: 'TVTC',
+    licenseExpiresOn: '2027-06-30',
+    accreditationNumber: 'DEMO-ACC-1',
+    trainingHours: 35,
+    durationDays: 5,
+    isPublished: true,
+    enrollmentCount: 1,
+  };
+  const mine = <T>(tenantId: string, rows: T[]): T[] => (tenantId === TENANT_A ? rows : []);
+  const providerRepo: ProviderRepository = {
+    listPlans: async (t) => mine(t, [plan]),
+    listTrainers: async (t) => mine(t, [trainer]),
+    overview: async (t) => ({
+      courses: mine(t, [1]).length,
+      publishedCourses: mine(t, [1]).length,
+      trainers: mine(t, [1]).length,
+      trainees: mine(t, [1, 2]).length,
+      activePlans: mine(t, [1]).length,
+      enrollments: mine(t, [1]).length,
+      revenueHalalas: t === TENANT_A ? 115000 : 0,
+      upcomingClassrooms: mine(t, [classroom]),
+      recentEnrollments: mine(t, [{ id: 'e1', createdAt: new Date('2026-10-22T19:40:00Z'), traineeName: 'Reem', courseTitle: 'PMP' }]),
+    }),
+    listCourses: async (t) => mine(t, [adminCourse]),
+    getCourse: async (t, id) => mine(t, [adminCourse]).find((c) => c.id === id) ?? null,
+    listTrainees: async (t) => mine(t, [{ id: USER, email: LEARNER_EMAIL, fullName: 'Abdullah', enrollmentCount: 1, createdAt: new Date('2026-10-01T00:00:00Z') }]),
+    listClassrooms: async (t) => mine(t, [classroom]),
+    listUpcomingClassrooms: async (t) => mine(t, [classroom]),
+    countOwned: async (t, ids) => ({
+      courses: t === TENANT_A ? (ids.courseIds ?? []).filter((id) => ownedCourses.has(id)).length : 0,
+      trainers: t === TENANT_A ? (ids.trainerIds ?? []).filter((id) => ownedTrainers.has(id)).length : 0,
+    }),
+    createCourse: async (_t, _a, i) => (audits.push(`course.created:${i.title}`), 'c-new'),
+    updateCourse: async (t, _a, id) => t === TENANT_A && ownedCourses.has(id),
+    createTrainer: async (_t, _a, i) => (audits.push(`trainer.created:${i.fullName}`), 't-new'),
+    createTrainee: async (_t, _a, i) => {
+      if (i.email === LEARNER_EMAIL) throw Object.assign(new Error('unique'), { code: 'P2002' });
+      return 'u-new';
+    },
+    createPlan: async () => 'p-new',
+    createClassroom: async () => 'cl-new',
+  };
+  const catalog = new CourseCatalogService(catalogRepo, 15);
+
   return createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
@@ -132,7 +228,17 @@ export function buildApp(opts: { signingKey?: string | null } = {}) {
     jwt: jwtOpts,
     corsOrigins: [],
     authController: new AuthController(auth),
-    courseController: new CourseController(new CourseCatalogService(catalogRepo, 15)),
+    courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
+    providerController: new ProviderController(
+      new ProviderService({ repository: providerRepo, hashPassword: async (p) => `hashed:${p}`, clock: () => new Date('2026-10-23T00:00:00Z') }),
+      catalog,
+    ),
+    providerDirectory: {
+      listActive: async () => [
+        { slug: 'alfaisal', name: 'Al-Faisal', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' } },
+        { slug: 'gulf', name: 'Gulf Institute', brandSettings: {} },
+      ],
+    },
   });
 }
