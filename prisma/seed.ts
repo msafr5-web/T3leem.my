@@ -51,6 +51,8 @@ const tenants: SeedTenant[] = [
       { id: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00', email: 'admin@alfaisal.test', role: 'TENANT_ADMIN' },
       { id: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a02', email: 'trainer@alfaisal.test', role: 'INSTRUCTOR' },
       { id: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a01', email: 'learner@alfaisal.test', role: 'LEARNER' },
+      // A second learner with no purchases, for trying checkout from scratch.
+      { id: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a03', email: 'student@alfaisal.test', role: 'LEARNER' },
     ],
     courses: [
       {
