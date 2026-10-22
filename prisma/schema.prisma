@@ -7,8 +7,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime: t3leem_app (DML only, subject to RLS).
+  url       = env("DATABASE_URL")
+  // Migrations: t3leem_owner (DDL). Used by the Prisma CLI only, never by the API.
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 enum TenantStatus {

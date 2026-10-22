@@ -1,5 +1,6 @@
 -- Row Level Security for every tenant-owned table.
--- Idempotent: safe to re-run after each `prisma migrate deploy`.
+-- Applied as a regular Prisma migration. New tenant-owned tables must be added to the list
+-- in a follow-up migration (copy the DO block with the new table names).
 --
 -- The application sets the tenant per transaction with
 --   SELECT set_config('app.current_tenant_id', $1, true)   -- true = transaction-local (SET LOCAL)

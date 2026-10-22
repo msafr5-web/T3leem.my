@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -17,9 +17,13 @@
     "test:integration": "jest tests/integration --runInBand",
     "test:coverage": "jest --coverage",
     "prisma:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy && npm run db:rls",
+    "db:setup": "powershell -ExecutionPolicy Bypass -File scripts/db/setup.ps1",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:test": "node scripts/db/with-test-db.mjs npx prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "db:rls": "prisma db execute --file prisma/rls/001_enable_rls.sql --schema prisma/schema.prisma"
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "token:dev": "tsx --env-file=.env scripts/dev/issue-token.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",
