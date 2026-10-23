@@ -1,8 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    // Node16 mirrors how Node actually resolves packages (honors "exports" maps). With no
+    // "type": "module" in package.json the output is still CommonJS — same runtime as before.
+    // Replaces "moduleResolution": "Node" (node10), deprecated in TS 6 and removed in TS 7.
+    "module": "Node16",
+    "moduleResolution": "Node16",
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": ".",

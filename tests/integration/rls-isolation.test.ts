@@ -24,7 +24,10 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     process.env.DATABASE_URL = TEST_DATABASE_URL;
     process.env.REDIS_URL ??= 'redis://localhost:6379';
     process.env.JWT_PUBLIC_KEY_BASE64 ??= Buffer.from('unused').toString('base64');
-    db = await import('../../src/config/database');
+    // Loaded lazily (after DATABASE_URL is pointed at the test DB). require(), not import():
+    // under module=Node16 a CommonJS file keeps import() as a native ESM load, bypassing ts-jest.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    db = require('../../src/config/database') as typeof import('../../src/config/database');
 
     await db.prisma.tenant.createMany({
       data: [
