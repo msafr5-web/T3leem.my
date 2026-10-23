@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getTenant, isMissingTenant, type Tenant } from '@/lib/api';
+import { ApiUnavailableError, getTenant, isMissingTenant, type Tenant } from '@/lib/api';
 import { logoutAction } from '@/lib/actions';
 import { isValidSlug, safeBrandColor } from '@/lib/format';
 import { getSession } from '@/lib/session';
 import { LogoMark } from '../logo-mark';
+import { ServiceUnavailable } from '../service-unavailable';
 
 /** White-label shell: every page under /[tenant] renders with that academy's name and color. */
 export default async function TenantLayout({ children, params }: { children: React.ReactNode; params: Promise<{ tenant: string }> }) {
@@ -16,7 +17,10 @@ export default async function TenantLayout({ children, params }: { children: Rea
     tenant = await getTenant(slug);
   } catch (err) {
     if (isMissingTenant(err)) notFound();
-    throw err; // API outage -> error.tsx
+    // API unreachable: render the outage page here. Throwing would NOT reach ./error.tsx —
+    // a segment's error boundary only wraps its page, not its own layout.
+    if (err instanceof ApiUnavailableError) return <ServiceUnavailable detail={err.message} />;
+    throw err;
   }
 
   const session = await getSession(slug);

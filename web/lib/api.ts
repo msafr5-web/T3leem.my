@@ -321,6 +321,12 @@ async function request<T>(path: string, scope: Record<string, string>, opts: Req
   } catch {
     throw new ApiUnavailableError(`non-JSON response (HTTP ${res.status})`);
   }
+  // Only OUR envelope counts as an API answer. A misconfigured API_URL can return foreign JSON
+  // (e.g. Vercel's {"error":{"code":"DEPLOYMENT_NOT_FOUND"}}) that would otherwise be mistaken
+  // for an application error and crash pages instead of showing the outage screen.
+  if (typeof payload !== 'object' || payload === null || typeof (payload as { success?: unknown }).success !== 'boolean') {
+    throw new ApiUnavailableError(`unexpected response from API_URL (HTTP ${res.status}) — is it the t3leem API?`);
+  }
   if (!payload.success) throw new ApiError(res.status, payload.error.code, payload.error.message, payload.error.details);
   return payload.data;
 }

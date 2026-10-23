@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import QRCode from 'qrcode';
-import { verifyCertificate } from '@/lib/api';
+import { ApiUnavailableError, verifyCertificate } from '@/lib/api';
+import { ServiceUnavailable } from '../../service-unavailable';
 import { formatDate, formatNumber } from '@/lib/format';
 import { PrintButton } from './print-button';
 
@@ -19,7 +20,13 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 export default async function VerifyCertificate({ params }: { params: Params }) {
   const { code: raw } = await params;
   const code = decodeURIComponent(raw).trim().toUpperCase();
-  const cert = await verifyCertificate(code);
+  let cert: Awaited<ReturnType<typeof verifyCertificate>>;
+  try {
+    cert = await verifyCertificate(code);
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) return <ServiceUnavailable detail={err.message} />;
+    throw err;
+  }
   const base = (process.env.PUBLIC_WEB_URL ?? 'http://localhost:3001').replace(/\/$/, '');
 
   return (
