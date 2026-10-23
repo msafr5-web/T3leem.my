@@ -77,6 +77,14 @@ export interface ClassroomRow {
   trainer: { id: string; fullName: string } | null;
 }
 
+export interface AttendanceRow {
+  name: string;
+  email: string | null;
+  joinedAt: Date;
+  /** Matched to a learner account in this academy by email. */
+  isTrainee: boolean;
+}
+
 /** Outcome of a delete that may be blocked by dependent records. */
 export type DeleteOutcome = 'deleted' | 'not_found' | 'in_use';
 

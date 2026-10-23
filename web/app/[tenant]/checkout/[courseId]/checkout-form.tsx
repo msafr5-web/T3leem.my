@@ -42,9 +42,14 @@ export function CheckoutForm({ slug, courseId, totalLabel }: { slug: string; cou
           <div className="qr" role="img" aria-label="رمز QR للفاتورة الضريبية" dangerouslySetInnerHTML={{ __html: inv.qrSvg }} />
         </div>
         <p className="small muted">امسح الرمز بتطبيق ZATCA للتحقق من الفاتورة.</p>
-        <Link href={`/${slug}`} className="btn btn-ghost">
-          تصفّح دورات أخرى
-        </Link>
+        <div className="row-actions">
+          <Link href={`/${slug}/learn/${courseId}`} className="btn btn-primary">
+            ابدأ التعلم الآن
+          </Link>
+          <Link href={`/${slug}`} className="btn btn-ghost">
+            تصفّح دورات أخرى
+          </Link>
+        </div>
       </div>
     );
   }

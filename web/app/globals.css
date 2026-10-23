@@ -218,4 +218,30 @@ textarea { min-height: 96px; resize: vertical; }
 .checklist { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
 .hint { font-size: 13px; color: var(--muted); font-weight: 400; }
 
+/* ---------- learner ---------- */
+.progress { height: 8px; border-radius: 999px; background: var(--brand-soft); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--brand); border-radius: inherit; }
+.two-col.learn { grid-template-columns: minmax(0, 1fr) 320px; }
+@media (max-width: 820px) { .two-col.learn { grid-template-columns: 1fr; } }
+.lesson-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.lesson-list a { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 14px; }
+.lesson-list a:hover { background: var(--brand-soft); }
+.lesson-list li[aria-current='true'] a { background: var(--brand); color: var(--brand-ink); }
+.lesson-list li[aria-current='true'] .muted { color: inherit; opacity: 0.85; }
+
+/* ---------- certificate (screen + print) ---------- */
+.certificate { position: relative; background: #fffdf7; color: #1b2a28; border: 10px double #b08d3c; border-radius: 6px; padding: 48px 40px; display: grid; gap: 18px; text-align: center; }
+.certificate h1 { font-size: clamp(26px, 4vw, 38px); color: #1b2a28; }
+.certificate .learner { font-family: var(--font-display), sans-serif; font-size: clamp(24px, 4vw, 34px); font-weight: 700; color: #0d6b62; border-bottom: 1px solid #d9c9a0; padding-bottom: 8px; display: inline-block; justify-self: center; min-width: 60%; }
+.certificate .meta-row { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; font-size: 14px; color: #4a5654; }
+.certificate .qr-wrap { display: grid; justify-items: center; gap: 4px; font-size: 12px; color: #4a5654; }
+.certificate .qr-wrap svg { width: 110px; height: 110px; }
+@media print {
+  .site-header, .site-footer, .no-print { display: none !important; }
+  body { background: #fff; }
+  main { padding: 0 !important; }
+  .certificate { border-width: 8px; box-shadow: none; }
+  @page { size: A4 landscape; margin: 12mm; }
+}
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

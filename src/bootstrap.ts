@@ -1,37 +1,83 @@
 import { randomBytes } from 'node:crypto';
+import { promises as dns } from 'node:dns';
 import type { Express } from 'express';
+import ffmpegPath from 'ffmpeg-static';
 import { createApp } from './app';
-import { env, jwtPrivateKey, jwtPublicKey, zoomCredentials } from './config/env';
-import { ManualMeetingScheduler, ZoomMeetingScheduler } from './modules/live/meeting-scheduler';
-import { BrandingService } from './modules/tenant/branding.service';
-import { RegistrationService } from './modules/tenant/registration.service';
 import { forTenant, prisma } from './config/database';
+import { env, jwtPrivateKey, jwtPublicKey, zoomCredentials } from './config/env';
 import { createBullConnection, redis } from './config/redis';
 import { AuthController } from './modules/auth/auth.controller';
 import { PrismaAuthRepository } from './modules/auth/auth.repository';
 import { AuthService } from './modules/auth/auth.service';
 import { JwtTokenSigner } from './modules/auth/token-signer';
 import { SandboxPaymentGateway } from './modules/billing/gateways/sandbox.gateway';
+import { ManualMeetingScheduler, ZoomMeetingScheduler } from './modules/live/meeting-scheduler';
+import { PrismaZoomWebhookRepository } from './modules/live/zoom-webhook.repository';
+import { ZoomWebhookService } from './modules/live/zoom-webhook.service';
+import { PrismaContentRepository } from './modules/lms/content/content.repository';
+import { ContentService } from './modules/lms/content/content.service';
 import { CourseController } from './modules/lms/courses/course.controller';
 import { PrismaCourseCatalogRepository } from './modules/lms/courses/course.repository';
 import { CourseCatalogService } from './modules/lms/courses/course.service';
 import { CheckoutService } from './modules/lms/enrollments/checkout.service';
 import { EnrollmentController } from './modules/lms/enrollments/enrollment.controller';
 import { PrismaEnrollmentRepository } from './modules/lms/enrollments/enrollment.repository';
+import { PrismaLearningRepository } from './modules/lms/learning/learning.repository';
+import { LearningService } from './modules/lms/learning/learning.service';
+import { PrismaMediaRepository } from './modules/lms/media/media.repository';
+import { FfmpegTranscoder } from './modules/lms/media/transcoder';
+import { VideoService, type MediaToken, type VideoJob, type VideoQueue } from './modules/lms/media/video.service';
 import { ProviderController } from './modules/provider/provider.controller';
 import { PrismaProviderRepository } from './modules/provider/provider.repository';
 import { ProviderService } from './modules/provider/provider.service';
+import { BrandingService } from './modules/tenant/branding.service';
+import { DomainService } from './modules/tenant/domain.service';
+import { RegistrationService } from './modules/tenant/registration.service';
 import { TenantResolverService } from './modules/tenant/tenant-resolver.service';
 import { TenantRepository } from './modules/tenant/tenant.repository';
 import { createRateLimiter } from './shared/middlewares/rate-limiter.middleware';
 import { logger } from './shared/services/logger';
-import { DeferredZatcaQueue, QueueProducer, type ZatcaQueue } from './shared/services/queue.producer';
+import { BullVideoQueue, DeferredZatcaQueue, InlineVideoQueue, QueueProducer, type ZatcaQueue } from './shared/services/queue.producer';
+import { LocalFileStorage } from './shared/services/storage';
+import { FieldCipher, HmacTokens } from './shared/utils/crypto';
 import { hashPassword, verifyPassword } from './shared/utils/password';
 
 export interface ServerApp {
   app: Express;
   /** Releases pools and connections (graceful shutdown). */
   close(): Promise<void>;
+}
+
+/**
+ * Video pipeline wiring, shared by the API and the worker process (src/worker.ts).
+ * With Redis: jobs go to BullMQ for the worker. Without: they run in-process, one at a time.
+ */
+export function createVideoService(opts: { inlineFallback?: boolean } = {}): { video: VideoService; queue: VideoQueue; close(): Promise<void> } {
+  if (!ffmpegPath) throw new Error('ffmpeg binary not available for this platform (ffmpeg-static)');
+  const connection = createBullConnection();
+  const bull = connection ? new BullVideoQueue<VideoJob>(connection) : null;
+  const inline = !bull && opts.inlineFallback ? new InlineVideoQueue<VideoJob>() : null;
+  const queue: VideoQueue = bull ?? inline ?? { enqueue: async () => { throw new Error('No video queue configured'); } };
+
+  const video = new VideoService({
+    repository: new PrismaMediaRepository(),
+    storage: new LocalFileStorage(env.STORAGE_DIR),
+    transcoder: new FfmpegTranscoder(ffmpegPath),
+    cipher: new FieldCipher(env.FIELD_ENCRYPTION_KEY_BASE64),
+    tokens: new HmacTokens<MediaToken>(env.MEDIA_SIGNING_SECRET),
+    queue,
+    maxUploadBytes: env.MAX_VIDEO_MB * 1024 * 1024,
+  });
+  inline?.setProcessor((job) => video.process(job));
+  if (inline) logger.info('REDIS_URL not set: video jobs run inside the API process');
+
+  return {
+    video,
+    queue,
+    async close() {
+      await Promise.allSettled([bull?.close(), inline?.idle(), connection?.quit()]);
+    },
+  };
 }
 
 /**
@@ -52,6 +98,7 @@ export function createServerApp(): ServerApp {
       ttlSeconds: env.JWT_ACCESS_TTL_SEC,
     }),
     verifyPassword,
+    hashPassword,
     dummyHash: hashPassword(randomBytes(16).toString('hex')),
   });
 
@@ -64,14 +111,18 @@ export function createServerApp(): ServerApp {
 
   const tenantRepository = new TenantRepository(prisma);
   const tenantResolver = new TenantResolverService(tenantRepository, redis, env.BASE_DOMAIN);
+  const invalidateTenant = async (tenantId: string, oldDomain?: string | null) => {
+    const tenant = await tenantRepository.findById(tenantId);
+    if (tenant) await tenantResolver.invalidate(tenant, oldDomain).catch(() => undefined);
+  };
+
   const catalogService = new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT);
   const meetings = zoomCredentials ? new ZoomMeetingScheduler(zoomCredentials) : new ManualMeetingScheduler();
   if (!zoomCredentials) logger.info('Zoom not configured: virtual classroom links are entered manually');
   const providerService = new ProviderService({ repository: new PrismaProviderRepository(), hashPassword, meetings });
-  const brandingService = new BrandingService(tenantRepository, async (tenantId) => {
-    const tenant = await tenantRepository.findById(tenantId);
-    if (tenant) await tenantResolver.invalidate(tenant).catch(() => undefined);
-  });
+
+  const media = createVideoService({ inlineFallback: true });
+  const learningService = new LearningService({ repository: new PrismaLearningRepository(), publicWebUrl: env.PUBLIC_WEB_URL });
 
   const app = createApp({
     tenantResolver,
@@ -79,6 +130,9 @@ export function createServerApp(): ServerApp {
     rateLimiter: createRateLimiter({ redis, points: env.RATE_LIMIT_POINTS, durationSec: env.RATE_LIMIT_DURATION_SEC }),
     // 10 attempts / 15 min per tenant+IP: slows password guessing to a crawl.
     loginRateLimiter: createRateLimiter({ redis, points: 10, durationSec: 15 * 60, keyPrefix: 'rl:login' }),
+    // Academy sign-up AND learner sign-up: 20 accounts per IP per hour (a classroom on one
+    // corporate IP can still register; a script can't mass-create accounts).
+    signupRateLimiter: createRateLimiter({ redis, points: 20, durationSec: 60 * 60, keyPrefix: 'rl:signup' }),
     jwt: { publicKey: jwtPublicKey, issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE },
     corsOrigins: env.CORS_ORIGINS,
     authController: new AuthController(authService),
@@ -86,16 +140,27 @@ export function createServerApp(): ServerApp {
     enrollmentController: new EnrollmentController(checkoutService),
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
-    brandingService,
+    brandingService: new BrandingService(tenantRepository, (id) => invalidateTenant(id)),
     registrationService: new RegistrationService(tenantRepository, hashPassword, env.PROVIDER_SIGNUP_ENABLED),
-    // 5 academy sign-ups per IP per hour: stops scripted mass registration.
-    signupRateLimiter: createRateLimiter({ redis, points: 5, durationSec: 60 * 60, keyPrefix: 'rl:signup' }),
+    domainService: new DomainService(tenantRepository, env.BASE_DOMAIN, (name) => dns.resolveTxt(name), invalidateTenant),
+    contentService: new ContentService({
+      repository: new PrismaContentRepository(),
+      removeLessonMedia: (tenantId, lessonId) => media.video.removeLessonMedia(tenantId, lessonId),
+    }),
+    learningService,
+    videoService: media.video,
+    zoomWebhooks: new ZoomWebhookService({
+      secretToken: env.ZOOM_WEBHOOK_SECRET_TOKEN,
+      repository: new PrismaZoomWebhookRepository(),
+      // Zoom wants a 200 within 3 s: queue the download + transcode, never do it in the request.
+      enqueueRecording: (job) => media.queue.enqueue(job),
+    }),
   });
 
   return {
     app,
     async close() {
-      await Promise.allSettled([queueProducer?.close(), prisma.$disconnect(), redis?.quit(), bullConnection?.quit()]);
+      await Promise.allSettled([queueProducer?.close(), media.close(), prisma.$disconnect(), redis?.quit(), bullConnection?.quit()]);
     },
   };
 }

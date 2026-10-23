@@ -42,7 +42,9 @@ export default async function DashboardCourses({ params }: { params: Promise<{ t
                 <tr key={c.id}>
                   <td>
                     <Link href={`${base}/${c.id}`}>{c.title}</Link>
-                    <div className="small muted">{courseTypeLabel[c.type]}</div>
+                    <div className="small muted">
+                      {courseTypeLabel[c.type]} · <Link href={`${base}/${c.id}/content`}>المحتوى</Link>
+                    </div>
                   </td>
                   <td>{c.trainer.full_name}</td>
                   <td className="num">{c.training_hours !== null ? formatNumber(c.training_hours) : '—'}</td>

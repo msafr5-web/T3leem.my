@@ -149,6 +149,7 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     controller.updateClassroom,
   );
   router.delete('/classrooms/:id', uuidParam, validate, controller.deleteClassroom);
+  router.get('/classrooms/:id/attendance', uuidParam, validate, controller.attendance);
 
   return router;
 }

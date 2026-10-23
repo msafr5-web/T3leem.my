@@ -10,6 +10,7 @@ const ITEMS = [
   { href: '/trainers', label: 'المدربون' },
   { href: '/trainees', label: 'المتدربون' },
   { href: '/classrooms', label: 'الفصول الافتراضية' },
+  { href: '/certificates', label: 'الشهادات الصادرة' },
   { href: '/settings', label: 'الإعدادات والهوية' },
 ];
 

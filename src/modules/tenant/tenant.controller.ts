@@ -6,6 +6,7 @@ import { validate } from '../../shared/middlewares/validate.middleware';
 import { ok } from '../../shared/utils/api-response';
 import type { Actor } from '../provider/provider.types';
 import { MAX_LOGO_BYTES, type BrandingService, type BrandingUpdate } from './branding.service';
+import type { DomainService, DomainStatus } from './domain.service';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const VAT = /^3\d{13}3$/;
@@ -28,7 +29,7 @@ const actorOf = (req: Request): Actor => {
  *   PUT  /branding/logo admin: upload logo (raw PNG/JPEG/WebP body)
  *   DELETE /branding/logo
  */
-export function buildTenantRouter(branding: BrandingService, jwt: JwtVerifyOptions): Router {
+export function buildTenantRouter(branding: BrandingService, domains: DomainService, jwt: JwtVerifyOptions): Router {
   const router = Router();
 
   router.get('/', (req: Request, res: Response) => {
@@ -108,6 +109,30 @@ export function buildTenantRouter(branding: BrandingService, jwt: JwtVerifyOptio
 
   router.delete('/branding/logo', ...adminOnly, async (req: Request, res: Response) => {
     await branding.removeLogo(requireAuthContext(req).tenantId, actorOf(req));
+    res.status(204).end();
+  });
+
+  // ----- custom domain (PRD §6: "الشعار، الألوان، النطاق") -----
+  const domainJson = (d: DomainStatus) => ({
+    domain: d.domain,
+    verified: d.verified,
+    dns: d.domain ? { txt: { name: d.txtName, value: d.txtValue }, cname: { name: d.domain, target: d.cnameTarget } } : null,
+  });
+
+  router.get('/domain', ...adminOnly, async (req: Request, res: Response) => {
+    res.json(ok(domainJson(await domains.status(requireAuthContext(req).tenantId))));
+  });
+
+  router.put('/domain', ...adminOnly, body('domain').isString().trim().isLength({ min: 4, max: 253 }), validate, async (req: Request, res: Response) => {
+    res.json(ok(domainJson(await domains.set(requireAuthContext(req).tenantId, actorOf(req), String(req.body.domain)))));
+  });
+
+  router.post('/domain/verify', ...adminOnly, async (req: Request, res: Response) => {
+    res.json(ok(domainJson(await domains.verify(requireAuthContext(req).tenantId, actorOf(req)))));
+  });
+
+  router.delete('/domain', ...adminOnly, async (req: Request, res: Response) => {
+    await domains.remove(requireAuthContext(req).tenantId, actorOf(req));
     res.status(204).end();
   });
 

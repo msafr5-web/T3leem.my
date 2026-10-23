@@ -3,6 +3,7 @@ import { withTenantTransaction } from '../../config/database';
 import type { ResolvedTenant } from '../../shared/types/express';
 import type { Actor } from '../provider/provider.types';
 import type { BrandingProfile, BrandingRepository, LogoMime } from './branding.service';
+import type { DomainRecord, DomainRepository } from './domain.service';
 import type { RegistrationInput, RegistrationRepository } from './registration.service';
 
 const tenantSelect = {
@@ -27,7 +28,7 @@ const str = (settings: Prisma.JsonValue, key: string): string | null => {
  * context exists). Writes that should be audited run inside the tenant's RLS transaction so
  * the audit_logs row is tenant-scoped like every other audit entry.
  */
-export class TenantRepository implements BrandingRepository, RegistrationRepository {
+export class TenantRepository implements BrandingRepository, RegistrationRepository, DomainRepository {
   constructor(private readonly db: PrismaClient) {}
 
   findById(id: string): Promise<ResolvedTenant | null> {
@@ -38,8 +39,9 @@ export class TenantRepository implements BrandingRepository, RegistrationReposit
     return this.db.tenant.findUnique({ where: { slug }, select: tenantSelect });
   }
 
+  /** Only VERIFIED custom domains resolve: an unproven domain claim must never route traffic. */
   findByCustomDomain(domain: string): Promise<ResolvedTenant | null> {
-    return this.db.tenant.findUnique({ where: { customDomain: domain }, select: tenantSelect });
+    return this.db.tenant.findFirst({ where: { customDomain: domain, customDomainVerifiedAt: { not: null } }, select: tenantSelect });
   }
 
   /** Public provider directory: active academies only, public fields only. */
@@ -117,6 +119,36 @@ export class TenantRepository implements BrandingRepository, RegistrationReposit
     const t = await this.db.tenant.findUnique({ where: { id: tenantId }, select: { logo: true, logoMimeType: true, logoUpdatedAt: true } });
     if (!t?.logo || !t.logoMimeType || !t.logoUpdatedAt) return null;
     return { bytes: Buffer.from(t.logo), mime: t.logoMimeType, updatedAt: t.logoUpdatedAt };
+  }
+
+  // ----- custom domain -----
+
+  async getDomain(tenantId: string): Promise<DomainRecord | null> {
+    const t = await this.db.tenant.findUnique({ where: { id: tenantId }, select: { customDomain: true, customDomainToken: true, customDomainVerifiedAt: true } });
+    return t ? { domain: t.customDomain, token: t.customDomainToken, verifiedAt: t.customDomainVerifiedAt } : null;
+  }
+
+  setDomain(tenantId: string, actor: Actor, domain: string | null, token: string | null): Promise<void> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      await tx.tenant.update({ where: { id: tenantId }, data: { customDomain: domain, customDomainToken: token, customDomainVerifiedAt: null } });
+      await tx.auditLog.create({
+        data: { tenantId, actorId: actor.userId, actorRole: actor.role, action: domain ? 'domain.set' : 'domain.removed', entityType: 'tenant', entityId: tenantId, metadata: { domain }, ipAddress: actor.ip },
+      });
+    });
+  }
+
+  markDomainVerified(tenantId: string, actor: Actor): Promise<void> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      await tx.tenant.update({ where: { id: tenantId }, data: { customDomainVerifiedAt: new Date() } });
+      await tx.auditLog.create({
+        data: { tenantId, actorId: actor.userId, actorRole: actor.role, action: 'domain.verified', entityType: 'tenant', entityId: tenantId, metadata: {}, ipAddress: actor.ip },
+      });
+    });
+  }
+
+  async findSlugByVerifiedDomain(domain: string): Promise<string | null> {
+    const t = await this.db.tenant.findFirst({ where: { customDomain: domain, customDomainVerifiedAt: { not: null }, status: 'ACTIVE' }, select: { slug: true } });
+    return t?.slug ?? null;
   }
 
   // ----- registration -----

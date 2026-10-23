@@ -48,6 +48,12 @@
 | `JWT_PUBLIC_KEY_BASE64` | نفس القيمة في `.env` المحلي |
 | `JWT_PRIVATE_KEY_BASE64` | محتوى `keys/jwt-private.pem` بصيغة Base64 (الأمر أدناه) |
 | `REDIS_URL` | اختياري: رابط Upstash `rediss://…` |
+| `FIELD_ENCRYPTION_KEY_BASE64` | ٣٢ بايت عشوائية بصيغة Base64 (نفس قيمة `.env` إن نقلت بيانات) |
+| `MEDIA_SIGNING_SECRET` | سلسلة عشوائية ٣٢ حرفاً على الأقل |
+| `PUBLIC_WEB_URL` | رابط الواجهة، مثل `https://t3leem-web.vercel.app` (يُطبع في رمز QR للشهادات) |
+| `ZOOM_WEBHOOK_SECRET_TOKEN` | اختياري: من إعدادات إشعارات Zoom |
+
+> ⚠️ تحويل الفيديو لا يعمل على Vercel (لا يوجد قرص دائم ولا عمليات طويلة). على Vercel تعمل كل الميزات عدا رفع الفيديو؛ رفع الفيديو يحتاج خادماً دائماً + تخزين S3.
 
 استخراج المفتاح الخاص بصيغة Base64 (PowerShell):
 ```powershell

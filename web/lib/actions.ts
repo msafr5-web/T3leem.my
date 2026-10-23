@@ -1,6 +1,7 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
 import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse } from './api';
@@ -100,6 +101,39 @@ export async function registerProviderAction(_prev: JoinState, form: FormData): 
     return { error: describe(err) };
   }
   redirect(`/${slug}/dashboard/settings?welcome=1`);
+}
+
+/** PRD §6 learner self-registration in this academy, then signed straight in. */
+export async function registerLearnerAction(slug: string, _prev: JoinState, form: FormData): Promise<JoinState> {
+  if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  try {
+    const res = await api<LoginResponse>(slug, '/auth/register', {
+      method: 'POST',
+      body: {
+        full_name: String(form.get('full_name') ?? '').trim(),
+        email: String(form.get('email') ?? '').trim(),
+        password: String(form.get('password') ?? ''),
+      },
+    });
+    await setSession(slug, { token: res.access_token, email: res.user.email, role: res.user.role }, res.expires_in);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'EMAIL_TAKEN') return { error: 'يوجد حساب بهذا البريد في هذه الأكاديمية. سجّل الدخول بدلاً من ذلك.' };
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
+      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => ({ full_name: 'الاسم الكامل', email: 'البريد الإلكتروني', password: 'كلمة المرور' })[d.field] ?? d.field))] };
+    }
+    return { error: describe(err) };
+  }
+  redirect(safeNextPath(slug, form.get('next')) === `/${slug}` ? `/${slug}/my` : safeNextPath(slug, form.get('next')));
+}
+
+/** Marks a lesson done; the API issues the certificate when it's the last one. */
+export async function completeLessonAction(slug: string, courseId: string, lessonId: string): Promise<void> {
+  if (!isValidSlug(slug)) return;
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/learn/${courseId}`)}`);
+  await api(slug, `/me/lessons/${encodeURIComponent(lessonId)}/complete`, { method: 'POST', token: session.token });
+  revalidatePath(`/${slug}/learn/${courseId}`);
+  revalidatePath(`/${slug}/my`);
 }
 
 export async function logoutAction(slug: string): Promise<void> {

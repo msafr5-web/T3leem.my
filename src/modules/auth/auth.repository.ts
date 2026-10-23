@@ -10,6 +10,8 @@ export interface LoginCandidate {
 
 export interface AuthRepository {
   findByEmail(tenantId: string, email: string): Promise<LoginCandidate | null>;
+  /** Creates a LEARNER account. Throws a P2002 unique violation if the email exists in this academy. */
+  createLearner(tenantId: string, data: { email: string; fullName: string; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }>;
 }
 
 /** Tenant-scoped through RLS: the same email in another academy is a different account. */
@@ -18,6 +20,13 @@ export class PrismaAuthRepository implements AuthRepository {
     return forTenant(tenantId).user.findUnique({
       where: { tenantId_email: { tenantId, email } },
       select: { id: true, email: true, role: true, passwordHash: true },
+    });
+  }
+
+  createLearner(tenantId: string, data: { email: string; fullName: string; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }> {
+    return forTenant(tenantId).user.create({
+      data: { tenantId, ...data, role: 'LEARNER' },
+      select: { id: true, email: true, role: true },
     });
   }
 }

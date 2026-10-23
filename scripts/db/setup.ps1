@@ -102,6 +102,16 @@ Set-EnvLine "TEST_DIRECT_DATABASE_URL" "postgresql://t3leem_owner:$ownerPassword
 Set-EnvLine "JWT_PUBLIC_KEY_BASE64" $publicKeyB64
 Set-EnvLine "JWT_PRIVATE_KEY_PATH" "keys/jwt-private.pem"
 
+# Encryption / signing secrets: generated once, never rotated by re-running setup
+# (rotating FIELD_ENCRYPTION_KEY would make already-encrypted video keys unreadable).
+function Test-EnvValue([string]$key) { return @($lines | Where-Object { $_ -match "^$key=.+" }).Count -gt 0 }
+if (-not (Test-EnvValue "FIELD_ENCRYPTION_KEY_BASE64")) {
+  $keyBytes = New-Object byte[] 32
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($keyBytes)
+  Set-EnvLine "FIELD_ENCRYPTION_KEY_BASE64" ([Convert]::ToBase64String($keyBytes))
+}
+if (-not (Test-EnvValue "MEDIA_SIGNING_SECRET")) { Set-EnvLine "MEDIA_SIGNING_SECRET" (New-Secret 48) }
+
 # UTF-8 without BOM: a BOM would corrupt the first variable name.
 [IO.File]::WriteAllLines($envPath, $lines, (New-Object System.Text.UTF8Encoding($false)))
 

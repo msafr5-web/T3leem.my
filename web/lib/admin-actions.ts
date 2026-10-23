@@ -48,6 +48,9 @@ const FIELD_LABELS: Record<string, string> = {
   legal_name: 'الاسم القانوني',
   vat_number: 'الرقم الضريبي',
   status: 'الحالة',
+  domain: 'النطاق',
+  content_type: 'نوع الدرس',
+  media_url: 'رابط الملف',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -67,6 +70,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   LOGO_TOO_LARGE: 'حجم الشعار يجب ألا يتجاوز ٥١٢ كيلوبايت.',
   PAYLOAD_TOO_LARGE: 'حجم الملف أكبر من المسموح.',
   EMPTY_FILE: 'الملف فارغ.',
+  INVALID_DOMAIN: 'أدخل نطاقاً صحيحاً مثل academy.com.sa',
+  PLATFORM_DOMAIN: 'نطاقات المنصة الفرعية تُخصص تلقائياً. أدخل نطاقك الخاص.',
+  DOMAIN_TAKEN: 'هذا النطاق مرتبط بأكاديمية أخرى.',
+  DNS_RECORD_NOT_FOUND: 'لم نجد سجل TXT بعد. قد يستغرق تحديث DNS حتى ساعة، ثم حاول مرة أخرى.',
+  NO_DOMAIN: 'أضف النطاق أولاً.',
+  MEDIA_URL_REQUIRED: 'دروس PDF تحتاج رابط الملف.',
+  MODULE_NOT_FOUND: 'الوحدة غير موجودة.',
+  LESSON_NOT_FOUND: 'الدرس غير موجود.',
   FORBIDDEN: 'ليست لديك صلاحية لهذه العملية.',
   RATE_LIMITED: 'طلبات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.',
 };
@@ -235,6 +246,48 @@ export async function deleteAction(slug: string, kind: keyof typeof DELETABLE, i
   const resource = DELETABLE[kind];
   if (!resource || !/^[0-9a-f-]{36}$/i.test(id)) return { error: 'طلب غير صالح.' };
   return save(slug, `/admin/${resource}/${id}`, 'DELETE', undefined, `/${slug}/dashboard/${resource}`);
+}
+
+// ----- course content -----
+
+export async function createModuleAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, `/admin/courses/${encodeURIComponent(courseId)}/modules`, 'POST', { title: str(form, 'title') }, `/${slug}/dashboard/courses/${courseId}/content`);
+}
+
+export async function createLessonAction(slug: string, courseId: string, moduleId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    `/admin/modules/${encodeURIComponent(moduleId)}/lessons`,
+    'POST',
+    { title: str(form, 'title'), content_type: str(form, 'content_type'), media_url: optional(form, 'media_url') },
+    `/${slug}/dashboard/courses/${courseId}/content`,
+  );
+}
+
+const ID_RE = /^[0-9a-f-]{36}$/i;
+
+export async function deleteModuleAction(slug: string, courseId: string, moduleId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  if (!ID_RE.test(moduleId)) return { error: 'طلب غير صالح.' };
+  return save(slug, `/admin/modules/${moduleId}`, 'DELETE', undefined, `/${slug}/dashboard/courses/${courseId}/content`);
+}
+
+export async function deleteLessonAction(slug: string, courseId: string, lessonId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  if (!ID_RE.test(lessonId)) return { error: 'طلب غير صالح.' };
+  return save(slug, `/admin/lessons/${lessonId}`, 'DELETE', undefined, `/${slug}/dashboard/courses/${courseId}/content`);
+}
+
+// ----- custom domain -----
+
+export async function setDomainAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, '/tenant/domain', 'PUT', { domain: str(form, 'domain') }, `/${slug}/dashboard/settings#domain`);
+}
+
+export async function verifyDomainAction(slug: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, '/tenant/domain/verify', 'POST', {}, `/${slug}/dashboard/settings?saved=1#domain`);
+}
+
+export async function removeDomainAction(slug: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, '/tenant/domain', 'DELETE', undefined, `/${slug}/dashboard/settings#domain`);
 }
 
 // ----- settings & branding -----

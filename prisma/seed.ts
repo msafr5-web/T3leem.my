@@ -378,11 +378,11 @@ async function seedTenant(t: SeedTenant, passwordHash: string): Promise<void> {
             create: { id: m.id, tenantId: t.id, courseId: c.id, title: m.title, sortOrder },
             update: { title: m.title, sortOrder },
           });
-          for (const l of m.lessons) {
+          for (const [lessonOrder, l] of m.lessons.entries()) {
             await tx.lesson.upsert({
               where: { id: l.id },
-              create: { id: l.id, tenantId: t.id, moduleId: m.id, title: l.title, contentType: l.contentType },
-              update: { title: l.title, contentType: l.contentType },
+              create: { id: l.id, tenantId: t.id, moduleId: m.id, title: l.title, contentType: l.contentType, sortOrder: lessonOrder },
+              update: { title: l.title, contentType: l.contentType, sortOrder: lessonOrder },
             });
           }
         }

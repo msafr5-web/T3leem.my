@@ -17,6 +17,7 @@ import type {
   TraineeRow,
   TrainerInput,
   TrainerRow,
+  AttendanceRow,
 } from './provider.types';
 
 export interface ProviderRepository {
@@ -49,6 +50,7 @@ export interface ProviderRepository {
   getClassroom(tenantId: string, id: string): Promise<ClassroomRow | null>;
   updateClassroom(tenantId: string, actor: Actor, id: string, input: ClassroomUpdate & { externalMeetingId?: string | null }): Promise<boolean>;
   deleteClassroom(tenantId: string, actor: Actor, id: string): Promise<boolean>;
+  listAttendance(tenantId: string, classroomId: string): Promise<AttendanceRow[]>;
 }
 
 const audit = (
@@ -135,6 +137,15 @@ function courseData(input: Partial<CourseInput>): Prisma.CourseUncheckedUpdateIn
 }
 
 export class PrismaProviderRepository implements ProviderRepository {
+  async listAttendance(tenantId: string, classroomId: string): Promise<AttendanceRow[]> {
+    const rows = await forTenant(tenantId).classroomAttendance.findMany({
+      where: { tenantId, classroomId },
+      orderBy: { joinedAt: 'asc' },
+      select: { participantName: true, participantEmail: true, joinedAt: true, userId: true },
+    });
+    return rows.map((r) => ({ name: r.participantName, email: r.participantEmail, joinedAt: r.joinedAt, isTrainee: r.userId !== null }));
+  }
+
   async listPlans(tenantId: string, { activeOnly }: { activeOnly: boolean }): Promise<PlanRow[]> {
     const plans = await forTenant(tenantId).trainingPlan.findMany({
       where: { tenantId, ...(activeOnly ? { status: 'ACTIVE' } : {}) },
@@ -338,6 +349,8 @@ export class PrismaProviderRepository implements ProviderRepository {
   createClassroom(tenantId: string, actor: Actor, input: ClassroomRecord): Promise<string> {
     return withTenantTransaction(tenantId, async (tx) => {
       const { id } = await tx.virtualClassroom.create({ data: { ...input, tenantId }, select: { id: true } });
+      // Zoom webhooks only carry the meeting id: register meeting -> academy/classroom.
+      if (input.externalMeetingId) await tx.meetingRegistry.create({ data: { externalMeetingId: input.externalMeetingId, tenantId, classroomId: id } });
       await audit(tx, tenantId, actor, 'classroom.created', 'virtual_classroom', id, { title: input.title, startsAt: input.startsAt.toISOString() });
       return id;
     });
@@ -433,6 +446,7 @@ export class PrismaProviderRepository implements ProviderRepository {
     return withTenantTransaction(tenantId, async (tx) => {
       const { count } = await tx.virtualClassroom.updateMany({ where: { tenantId, id }, data: input });
       if (count === 0) return false;
+      if (input.externalMeetingId === null) await tx.meetingRegistry.deleteMany({ where: { classroomId: id, tenantId } });
       await audit(tx, tenantId, actor, 'classroom.updated', 'virtual_classroom', id, { fields: Object.keys(input) });
       return true;
     });
@@ -442,6 +456,7 @@ export class PrismaProviderRepository implements ProviderRepository {
     return withTenantTransaction(tenantId, async (tx) => {
       const room = await tx.virtualClassroom.findFirst({ where: { tenantId, id }, select: { title: true } });
       if (!room) return false;
+      await tx.meetingRegistry.deleteMany({ where: { classroomId: id, tenantId } });
       await tx.virtualClassroom.delete({ where: { id } });
       await audit(tx, tenantId, actor, 'classroom.deleted', 'virtual_classroom', id, { title: room.title });
       return true;

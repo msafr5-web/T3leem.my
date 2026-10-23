@@ -314,6 +314,11 @@ export class ProviderController {
     res.json(ok({ id: req.params.id }));
   };
 
+  attendance = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const rows = await this.provider.listAttendance(tenantOf(req), req.params.id);
+    res.json(ok(rows.map((r) => ({ name: r.name, email: r.email, joined_at: r.joinedAt.toISOString(), is_trainee: r.isTrainee }))));
+  };
+
   deleteClassroom = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     await this.provider.deleteClassroom(tenantOf(req), actorOf(req), req.params.id);
     res.status(204).end();

@@ -88,6 +88,13 @@ enum ClassroomStatus {
   CANCELLED
 }
 
+enum HlsStatus {
+  NONE
+  PROCESSING
+  READY
+  FAILED
+}
+
 // Tenant registry. Intentionally NOT under RLS: it is read before a tenant context exists
 // (subdomain / custom-domain resolution).
 model Tenant {
@@ -95,6 +102,9 @@ model Tenant {
   name          String
   slug          String       @unique
   customDomain  String?      @unique @map("custom_domain")
+  // DNS TXT challenge for the custom domain; the domain only routes once verified.
+  customDomainToken      String?   @map("custom_domain_token")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
   brandSettings Json         @default("{}") @map("brand_settings")
   status        TenantStatus @default(PROVISIONING)
   // ZATCA seller identity (TLV tags 1 and 2).
@@ -246,11 +256,66 @@ model VirtualClassroom {
   status          ClassroomStatus @default(SCHEDULED)
   createdAt       DateTime        @default(now()) @map("created_at")
 
-  course  Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  trainer Trainer? @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  course     Course?               @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  trainer    Trainer?              @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  attendance ClassroomAttendance[]
 
   @@index([tenantId, startsAt])
   @@map("virtual_classrooms")
+}
+
+model LessonProgress {
+  tenantId     String   @map("tenant_id") @db.Uuid
+  enrollmentId String   @map("enrollment_id") @db.Uuid
+  lessonId     String   @map("lesson_id") @db.Uuid
+  completedAt  DateTime @default(now()) @map("completed_at")
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lesson     Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@id([enrollmentId, lessonId])
+  @@map("lesson_progress")
+}
+
+// Attendance recorded from Zoom's meeting.participant_joined webhook.
+model ClassroomAttendance {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  classroomId      String   @map("classroom_id") @db.Uuid
+  userId           String?  @map("user_id") @db.Uuid
+  // Email when Zoom provides it, otherwise Zoom's participant id — one row per person per classroom.
+  participantKey   String   @map("participant_key")
+  participantName  String   @map("participant_name")
+  participantEmail String?  @map("participant_email")
+  joinedAt         DateTime @map("joined_at")
+
+  classroom VirtualClassroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@unique([classroomId, participantKey])
+  @@map("classroom_attendance")
+}
+
+// Global lookups that must work BEFORE a tenant context exists, so NOT under RLS.
+// They hold only non-sensitive pointers; the actual records stay tenant-isolated.
+
+/** Public certificate verification: code -> which academy to look in. */
+model CertificateRegistry {
+  code          String   @id
+  tenantId      String   @map("tenant_id") @db.Uuid
+  certificateId String   @unique @map("certificate_id") @db.Uuid
+  issuedAt      DateTime @default(now()) @map("issued_at")
+
+  @@map("certificate_registry")
+}
+
+/** Zoom webhooks carry only the meeting id: meeting -> academy + classroom. */
+model MeetingRegistry {
+  externalMeetingId String   @id @map("external_meeting_id")
+  tenantId          String   @map("tenant_id") @db.Uuid
+  classroomId       String   @unique @map("classroom_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("meeting_registry")
 }
 
 model Module {
@@ -268,15 +333,23 @@ model Module {
 }
 
 model Lesson {
-  id          String      @id @default(uuid()) @db.Uuid
-  tenantId    String      @map("tenant_id") @db.Uuid
-  moduleId    String      @map("module_id") @db.Uuid
-  title       String
-  contentType ContentType @map("content_type")
-  mediaUrl    String?     @map("media_url")
-  meetingData Json?       @map("meeting_data")
+  id              String      @id @default(uuid()) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  moduleId        String      @map("module_id") @db.Uuid
+  title           String
+  contentType     ContentType @map("content_type")
+  sortOrder       Int         @default(0) @map("sort_order")
+  mediaUrl        String?     @map("media_url")
+  meetingData     Json?       @map("meeting_data")
+  // HLS (AES-128) pipeline state for VIDEO lessons.
+  hlsStatus       HlsStatus   @default(NONE) @map("hls_status")
+  // The 16-byte content key, sealed with FIELD_ENCRYPTION_KEY (AES-256-GCM). Never stored in clear.
+  hlsKeyEncrypted String?     @map("hls_key_encrypted")
+  hlsError        String?     @map("hls_error")
+  durationSeconds Int?        @map("duration_seconds")
 
-  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  module   Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress LessonProgress[]
 
   @@index([moduleId])
   @@map("lessons")
@@ -293,10 +366,11 @@ model Enrollment {
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
 
-  user         User          @relation(fields: [userId], references: [id])
-  course       Course        @relation(fields: [courseId], references: [id])
+  user         User             @relation(fields: [userId], references: [id])
+  course       Course           @relation(fields: [courseId], references: [id])
   certificates Certificate[]
   invoices     Invoice[]
+  progress     LessonProgress[]
 
   @@unique([tenantId, userId, courseId])
   @@map("enrollments")
@@ -305,7 +379,7 @@ model Enrollment {
 model Certificate {
   id              String   @id @default(uuid()) @db.Uuid
   tenantId        String   @map("tenant_id") @db.Uuid
-  enrollmentId    String   @map("enrollment_id") @db.Uuid
+  enrollmentId    String   @unique @map("enrollment_id") @db.Uuid
   certificateCode String   @unique @map("certificate_code")
   qrCodeUrl       String?  @map("qr_code_url")
   pdfUrl          String?  @map("pdf_url")

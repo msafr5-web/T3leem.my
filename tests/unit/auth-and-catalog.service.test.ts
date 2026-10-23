@@ -16,6 +16,11 @@ describe('AuthService', () => {
       findByEmail: jest.fn(async (_t: string, email: string) =>
         email === 'a@b.test' ? { id: 'u1', email, role: 'LEARNER' as const, passwordHash: 'good-hash' } : null,
       ),
+      createLearner: jest.fn(async (_t: string, data: { email: string; fullName: string; passwordHash: string }) => {
+        if (data.email === 'a@b.test') throw Object.assign(new Error('dup'), { code: 'P2002' });
+        if (data.email === 'boom@b.test') throw new Error('db down');
+        return { id: 'u2', email: data.email, role: 'LEARNER' as const };
+      }),
     };
     const service = new AuthService({ repository, signer, verifyPassword, dummyHash: Promise.resolve('dummy-hash'), ...overrides });
     return { service, repository, verifyPassword };
@@ -41,6 +46,26 @@ describe('AuthService', () => {
   it('401 for a wrong password', async () => {
     const { service } = setup();
     await expect(service.login(TENANT, 'a@b.test', 'wrong')).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('registers a LEARNER (role never from input), hashes the password and signs them in', async () => {
+    const hashPassword = jest.fn(async (p: string) => `hash(${p})`);
+    const { service, repository } = setup({ hashPassword });
+    await expect(service.register(TENANT, { fullName: ' Reem ', email: ' New@B.test ', password: 'Str0ngPass!' })).resolves.toEqual({
+      accessToken: 'signed.jwt',
+      expiresIn: 900,
+      user: { id: 'u2', email: 'new@b.test', role: 'LEARNER' },
+    });
+    expect(repository.createLearner).toHaveBeenCalledWith(TENANT, { email: 'new@b.test', fullName: 'Reem', passwordHash: 'hash(Str0ngPass!)' });
+  });
+
+  it('register: 409 for an existing email, rethrows other errors, 503 when not configured', async () => {
+    const { service } = setup({ hashPassword: async (p: string) => p });
+    await expect(service.register(TENANT, { fullName: 'A', email: 'a@b.test', password: 'Str0ngPass!' })).rejects.toMatchObject({ code: 'EMAIL_TAKEN' });
+    await expect(service.register(TENANT, { fullName: 'A', email: 'boom@b.test', password: 'Str0ngPass!' })).rejects.toThrow('db down');
+    await expect(setup().service.register(TENANT, { fullName: 'A', email: 'x@b.test', password: 'Str0ngPass!' })).rejects.toMatchObject({
+      code: 'REGISTRATION_UNAVAILABLE',
+    });
   });
 
   it('503 when no signing key is configured, without touching the database', async () => {

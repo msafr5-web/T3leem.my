@@ -276,6 +276,11 @@ export class ProviderService {
     }
   }
 
+  async listAttendance(tenantId: string, classroomId: string) {
+    await this.getClassroom(tenantId, classroomId);
+    return this.deps.repository.listAttendance(tenantId, classroomId);
+  }
+
   async deleteClassroom(tenantId: string, actor: Actor, id: string): Promise<void> {
     const current = await this.getClassroom(tenantId, id);
     await this.deps.repository.deleteClassroom(tenantId, actor, id);

@@ -33,8 +33,10 @@ export default async function TenantLayout({ children, params }: { children: Rea
           <div className="header-actions">
             {session ? (
               <>
-                {session.role === 'TENANT_ADMIN' && (
+                {session.role === 'TENANT_ADMIN' ? (
                   <Link href={`/${slug}/dashboard`} className="btn btn-primary">لوحة التحكم</Link>
+                ) : (
+                  <Link href={`/${slug}/my`} className="btn btn-primary">دوراتي</Link>
                 )}
                 <span className="small muted ltr">{session.email}</span>
                 <form action={logoutAction.bind(null, slug)}>
@@ -42,7 +44,10 @@ export default async function TenantLayout({ children, params }: { children: Rea
                 </form>
               </>
             ) : (
-              <Link href={`/${slug}/login`} className="btn btn-ghost">تسجيل الدخول</Link>
+              <>
+                <Link href={`/${slug}/login`} className="btn btn-ghost">تسجيل الدخول</Link>
+                <Link href={`/${slug}/register`} className="btn btn-primary">حساب جديد</Link>
+              </>
             )}
           </div>
         </div>

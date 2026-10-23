@@ -36,6 +36,19 @@ const envSchema = z
     JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),
     VAT_RATE_PERCENT: z.coerce.number().min(0).max(100).default(15),
     PAYMENT_GATEWAY: z.enum(['sandbox']).default('sandbox'),
+    // AES-256-GCM key for sensitive columns (HLS content keys, later National ID). 32 bytes, base64.
+    FIELD_ENCRYPTION_KEY_BASE64: z
+      .string()
+      .refine((v) => Buffer.from(v, 'base64').length === 32, 'must decode to exactly 32 bytes'),
+    // HMAC secret for short-lived signed media URLs (HLS playlist/key/segments).
+    MEDIA_SIGNING_SECRET: z.string().min(32, 'must be at least 32 characters'),
+    // Where uploaded videos and generated HLS output are stored (local adapter; S3 later).
+    STORAGE_DIR: z.string().min(1).default('storage'),
+    MAX_VIDEO_MB: z.coerce.number().int().positive().max(4096).default(1024),
+    // Public URL of the web app — used in certificate QR codes and verification links.
+    PUBLIC_WEB_URL: z.string().url().default('http://localhost:3001'),
+    // Zoom webhook "Secret Token" (Event Subscriptions). Unset = webhook endpoint answers 503.
+    ZOOM_WEBHOOK_SECRET_TOKEN: optionalString,
     // Zoom Server-to-Server OAuth app. All three set = meetings are created automatically.
     ZOOM_ACCOUNT_ID: optionalString,
     ZOOM_CLIENT_ID: optionalString,

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { safeNextPath } from '@/lib/format';
 import { getSession } from '@/lib/session';
@@ -25,6 +26,9 @@ export default async function LoginPage({
       <div className="card">
         <LoginForm slug={slug} next={target} />
       </div>
+      <p className="small">
+        ليس لديك حساب؟ <Link href={`/${slug}/register${next ? `?next=${encodeURIComponent(next)}` : ''}`}>أنشئ حساب متدرب</Link>
+      </p>
       <div className="creds" aria-label="حسابات تجريبية">
         <span className="muted">مدير المزود</span>
         <span className="ltr">admin@{slug}.test</span>

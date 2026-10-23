@@ -1,6 +1,6 @@
 import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { removeLogoAction, updateBrandingAction, uploadLogoAction } from '@/lib/admin-actions';
+import { removeDomainAction, removeLogoAction, setDomainAction, updateBrandingAction, uploadLogoAction, verifyDomainAction } from '@/lib/admin-actions';
 import { LogoMark } from '../../../logo-mark';
 import { AdminForm } from '../admin-form';
 import { DeleteButton } from '../delete-button';
@@ -14,7 +14,7 @@ export default async function DashboardSettings({
 }) {
   const [{ tenant: slug }, { saved, welcome }] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
-  const b = await admin.branding(slug, token);
+  const [b, domain] = await Promise.all([admin.branding(slug, token), admin.domain(slug, token)]);
 
   return (
     <>
@@ -49,6 +49,60 @@ export default async function DashboardSettings({
           </label>
         </AdminForm>
         {b.has_logo && <DeleteButton action={removeLogoAction.bind(null, slug)} label="إزالة الشعار" confirmText="إزالة شعار الأكاديمية؟" />}
+      </section>
+
+      <section className="card stack" aria-labelledby="domain-heading" id="domain">
+        <h2 id="domain-heading" style={{ fontSize: 18 }}>النطاق الخاص</h2>
+        <p className="small muted">
+          اربط نطاقك (مثل <span className="ltr">academy.com.sa</span>) ليفتح موقع أكاديميتك عليه مباشرة. يعمل النطاق بعد إثبات ملكيته عبر سجل DNS.
+        </p>
+        {!domain.domain ? (
+          <AdminForm action={setDomainAction.bind(null, slug)} submitLabel="إضافة النطاق">
+            <label htmlFor="domain-input">
+              النطاق
+              <input id="domain-input" name="domain" type="text" required dir="ltr" placeholder="academy.com.sa" maxLength={253} />
+            </label>
+          </AdminForm>
+        ) : (
+          <div className="stack">
+            <div className="badges">
+              <span className="badge ltr">{domain.domain}</span>
+              {domain.verified ? <span className="badge ok">مُفعّل ومُتحقق منه</span> : <span className="badge draft">بانتظار التحقق</span>}
+            </div>
+            {domain.dns && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>النوع</th>
+                      <th>الاسم</th>
+                      <th>القيمة</th>
+                      <th>الغرض</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>TXT</td>
+                      <td className="ltr small">{domain.dns.txt.name}</td>
+                      <td className="ltr small" style={{ wordBreak: 'break-all' }}>{domain.dns.txt.value}</td>
+                      <td className="small">إثبات الملكية</td>
+                    </tr>
+                    <tr>
+                      <td>CNAME</td>
+                      <td className="ltr small">{domain.dns.cname.name}</td>
+                      <td className="ltr small">{domain.dns.cname.target}</td>
+                      <td className="small">توجيه الزوار إلى المنصة</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="row-actions">
+              {!domain.verified && <DeleteButton action={verifyDomainAction.bind(null, slug)} label="تحقق الآن" variant="primary" confirmText="هل أضفت سجل TXT في إعدادات DNS لنطاقك؟" />}
+              <DeleteButton action={removeDomainAction.bind(null, slug)} label="إزالة النطاق" confirmText={`إزالة النطاق ${domain.domain}؟`} />
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="card stack" aria-labelledby="identity-heading">

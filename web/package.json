@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "hls.js": "^1.5.20",
     "next": "^15.5.7",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",

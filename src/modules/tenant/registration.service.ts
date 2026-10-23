@@ -22,7 +22,7 @@ export interface RegistrationRepository {
 const RESERVED_SLUGS = new Set([
   'admin', 'api', 'app', 'auth', 'billing', 'dashboard', 'docs', 'help', 'join', 'login', 'logout', 'mail',
   'platform', 'register', 'root', 'signup', 'static', 'status', 'support', 'system', 'www', 't3leem', 'rukn-admin',
-  '_next', 'favicon', 'robots', 'sitemap', 'health',
+  '_next', 'favicon', 'robots', 'sitemap', 'health', 'verify', 'certificates', 'webhooks',
 ]);
 
 const isUniqueViolation = (err: unknown): boolean =>

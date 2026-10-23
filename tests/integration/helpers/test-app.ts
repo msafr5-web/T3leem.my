@@ -26,6 +26,7 @@ import type { MeetingScheduler } from '../../../src/modules/live/meeting-schedul
 import { BrandingService, type BrandingRepository } from '../../../src/modules/tenant/branding.service';
 import { RegistrationService, type RegistrationRepository } from '../../../src/modules/tenant/registration.service';
 import type { TenantResolver } from '../../../src/shared/middlewares/tenant-context.middleware';
+import { buildLearningFakes } from './learning-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
@@ -116,6 +117,10 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   const authRepo: AuthRepository = {
     findByEmail: async (tenantId, email): Promise<LoginCandidate | null> =>
       tenantId === TENANT_A && email === LEARNER_EMAIL ? { id: USER, email, role: 'LEARNER', passwordHash: await learnerHash } : null,
+    createLearner: async (_t, data) => {
+      if (data.email === LEARNER_EMAIL) throw Object.assign(new Error('dup'), { code: 'P2002' });
+      return { id: 'new-learner-id', email: data.email, role: 'LEARNER' };
+    },
   };
 
   const checkout = new CheckoutService({
@@ -140,6 +145,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     }),
     verifyPassword,
     dummyHash,
+    hashPassword: async (p) => `hashed:${p}`,
   });
   const passThrough: RequestHandler = (_req, _res, next) => next();
 
@@ -231,7 +237,10 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     getClassroom: async (t, id) => (t === TENANT_A && id === classroom.id ? classroom : null),
     updateClassroom: async (t, _a, id) => t === TENANT_A && id === classroom.id,
     deleteClassroom: async (t, _a, id) => t === TENANT_A && id === classroom.id,
+    listAttendance: async (t, id) =>
+      t === TENANT_A && id === classroom.id ? [{ name: 'Abdullah', email: LEARNER_EMAIL, joinedAt: new Date('2030-01-01T15:01:00Z'), isTrainee: true }] : [],
   };
+  const fakes = buildLearningFakes({ tenantA: TENANT_A, user: USER, course: COURSE, classroom: classroom.id });
 
   // In-memory branding store for TENANT_A.
   const brandingState = { name: 'Al-Faisal', legalName: 'Al-Faisal Academy' as string | null, vatNumber: '300000000000003' as string | null, brandSettings: { primaryColor: '#0d6b62' } as Record<string, unknown>, logo: null as { bytes: Buffer; mime: string; updatedAt: Date } | null };
@@ -275,7 +284,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   };
   const catalog = new CourseCatalogService(catalogRepo, 15);
 
-  return createApp({
+  const app = createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
     rateLimiter: passThrough,
@@ -303,5 +312,13 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     brandingService: new BrandingService(brandingRepo, async () => undefined),
     registrationService: new RegistrationService(registrationRepo, async (p) => `hashed:${p}`, opts.signupEnabled ?? true),
     signupRateLimiter: passThrough,
+    domainService: fakes.domains,
+    contentService: fakes.content,
+    learningService: fakes.learning,
+    videoService: fakes.video,
+    zoomWebhooks: fakes.zoom,
   });
+  // Lets contract tests inspect side effects (attendance rows, queued jobs, issued certificates).
+  app.locals.fakes = fakes;
+  return app;
 }

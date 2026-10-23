@@ -27,6 +27,7 @@ export default async function EditCourse({ params }: { params: Promise<{ tenant:
           <p className="muted small">{course.enrollment_count} متدرب مسجّل</p>
         </div>
         <div className="cta-row">
+          <Link href={`/${slug}/dashboard/courses/${course.id}/content`} className="btn btn-primary">إدارة المحتوى والفيديو</Link>
           {course.is_published && (
             <Link href={`/${slug}/courses/${course.id}`} className="btn btn-ghost">عرض صفحة الدورة</Link>
           )}

@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/admin';
 import { deleteAction, updateClassroomAction } from '@/lib/admin-actions';
 import { AdminForm } from '../../admin-form';
 import { DeleteButton } from '../../delete-button';
+import { formatDateTime } from '@/lib/format';
 import { ClassroomFields } from '../classroom-fields';
 
 export default async function EditClassroom({ params }: { params: Promise<{ tenant: string; id: string }> }) {
@@ -18,7 +19,12 @@ export default async function EditClassroom({ params }: { params: Promise<{ tena
     if (err instanceof ApiError && (err.status === 404 || err.status === 422)) notFound();
     throw err;
   }
-  const [courses, trainers, integrations] = await Promise.all([admin.courses(slug, token), admin.trainers(slug, token), admin.integrations(slug, token)]);
+  const [courses, trainers, integrations, attendance] = await Promise.all([
+    admin.courses(slug, token),
+    admin.trainers(slug, token),
+    admin.integrations(slug, token),
+    admin.attendance(slug, token, id),
+  ]);
 
   return (
     <>
@@ -38,6 +44,36 @@ export default async function EditClassroom({ params }: { params: Promise<{ tena
           <ClassroomFields courses={courses} trainers={trainers} classroom={classroom} zoomAutomated={integrations.zoom} />
         </AdminForm>
       </div>
+      <section className="card stack" aria-labelledby="attendance-heading">
+        <h2 id="attendance-heading" style={{ fontSize: 18 }}>الحضور ({attendance.length})</h2>
+        <p className="small muted">يُسجَّل تلقائياً من Zoom عند انضمام كل مشارك (يتطلب ضبط إشعارات Zoom).</p>
+        {attendance.length === 0 ? (
+          <p className="small muted">لم يُسجَّل حضور بعد.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>المشارك</th>
+                  <th>البريد</th>
+                  <th>وقت الانضمام</th>
+                  <th>متدرب مسجّل</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendance.map((a) => (
+                  <tr key={`${a.email ?? a.name}-${a.joined_at}`}>
+                    <td>{a.name}</td>
+                    <td className="ltr">{a.email ?? '—'}</td>
+                    <td className="small">{formatDateTime(a.joined_at)}</td>
+                    <td>{a.is_trainee ? <span className="badge ok">نعم</span> : <span className="badge">ضيف</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section className="card stack danger-zone" aria-labelledby="delete-heading">
         <h2 id="delete-heading" style={{ fontSize: 18 }}>حذف الفصل</h2>
         <p className="small muted">إذا أُنشئ الاجتماع عبر Zoom تلقائياً فسيُحذف من Zoom أيضاً. لإبقاء السجل استخدم حالة «ملغى» بدلاً من الحذف.</p>

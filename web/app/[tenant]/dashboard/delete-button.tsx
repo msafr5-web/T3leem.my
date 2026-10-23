@@ -3,8 +3,18 @@
 import { useActionState } from 'react';
 import type { AdminFormState } from '@/lib/admin-actions';
 
-/** Destructive action with an explicit confirmation and the API's refusal reason shown inline. */
-export function DeleteButton({ action, label, confirmText }: { action: (prev: AdminFormState) => Promise<AdminFormState>; label: string; confirmText: string }) {
+/** Action with an explicit confirmation step and the API's refusal reason shown inline. Destructive by default. */
+export function DeleteButton({
+  action,
+  label,
+  confirmText,
+  variant = 'danger',
+}: {
+  action: (prev: AdminFormState) => Promise<AdminFormState>;
+  label: string;
+  confirmText: string;
+  variant?: 'danger' | 'primary';
+}) {
   const [state, formAction, pending] = useActionState(action, {});
 
   return (
@@ -17,8 +27,8 @@ export function DeleteButton({ action, label, confirmText }: { action: (prev: Ad
       style={{ gap: 8 }}
     >
       <div>
-        <button type="submit" className="btn btn-danger" disabled={pending}>
-          {pending ? 'جارٍ الحذف…' : label}
+        <button type="submit" className={`btn ${variant === 'danger' ? 'btn-danger' : 'btn-primary'}`} disabled={pending}>
+          {pending ? 'جارٍ التنفيذ…' : label}
         </button>
       </div>
       {state.error && (

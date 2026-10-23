@@ -142,6 +142,90 @@ export interface Trainee {
   created_at: string;
 }
 
+export interface MyEnrollment {
+  enrollment_id: string;
+  course_id: string;
+  course_title: string;
+  trainer_name: string;
+  status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
+  completion_status: 'ENROLLED' | 'COMPLETED';
+  progress: number;
+  lesson_count: number;
+  certificate_code: string | null;
+  enrolled_at: string;
+}
+
+export interface MyLesson {
+  id: string;
+  title: string;
+  content_type: 'VIDEO' | 'ZOOM' | 'PDF';
+  media_url: string | null;
+  video_ready: boolean | null;
+  duration_seconds: number | null;
+  completed: boolean;
+}
+
+export interface MyCourse {
+  enrollment_id: string;
+  course_title: string;
+  progress: number;
+  completion_status: 'ENROLLED' | 'COMPLETED';
+  certificate_code: string | null;
+  modules: { id: string; title: string; lessons: MyLesson[] }[];
+}
+
+export interface MyClassroom {
+  id: string;
+  title: string;
+  starts_at: string;
+  duration_minutes: number;
+  provider: MeetingProvider;
+  join_url: string | null;
+  course_title: string | null;
+}
+
+export interface CertificateVerification {
+  valid: true;
+  code: string;
+  issued_at: string;
+  learner_name: string;
+  course_title: string;
+  training_hours: number | null;
+  accreditation_number: string | null;
+  license_number: string | null;
+  trainer_name: string;
+  academy: { name: string; slug: string };
+}
+
+export type HlsStatus = 'NONE' | 'PROCESSING' | 'READY' | 'FAILED';
+
+export interface ContentModule {
+  id: string;
+  title: string;
+  sort_order: number;
+  lessons: { id: string; title: string; content_type: 'VIDEO' | 'ZOOM' | 'PDF'; sort_order: number; media_url: string | null; hls_status: HlsStatus; hls_error: string | null; duration_seconds: number | null }[];
+}
+
+export interface DomainStatus {
+  domain: string | null;
+  verified: boolean;
+  dns: { txt: { name: string; value: string }; cname: { name: string; target: string } } | null;
+}
+
+export interface Attendance {
+  name: string;
+  email: string | null;
+  joined_at: string;
+  is_trainee: boolean;
+}
+
+export interface IssuedCertificate {
+  code: string;
+  issued_at: string;
+  learner_name: string;
+  course_title: string;
+}
+
 export interface Overview {
   counts: { courses: number; published_courses: number; trainers: number; trainees: number; active_plans: number; enrollments: number };
   revenue_total: number;
@@ -261,7 +345,30 @@ export const admin = {
   classroom: (slug: string, token: string, id: string) => api<Classroom>(slug, `/admin/classrooms/${encodeURIComponent(id)}`, { token }),
   integrations: (slug: string, token: string) => api<{ zoom: boolean }>(slug, '/admin/integrations', { token }),
   branding: (slug: string, token: string) => api<AdminBranding>(slug, '/tenant/branding', { token }),
+  content: (slug: string, token: string, courseId: string) => api<ContentModule[]>(slug, `/admin/courses/${encodeURIComponent(courseId)}/content`, { token }),
+  attendance: (slug: string, token: string, classroomId: string) => api<Attendance[]>(slug, `/admin/classrooms/${encodeURIComponent(classroomId)}/attendance`, { token }),
+  certificates: (slug: string, token: string) => api<IssuedCertificate[]>(slug, '/admin/certificates', { token }),
+  domain: (slug: string, token: string) => api<DomainStatus>(slug, '/tenant/domain', { token }),
 };
+
+/** Learner portal reads (the learner's own token; never cached). */
+export const me = {
+  enrollments: (slug: string, token: string) => api<MyEnrollment[]>(slug, '/me/enrollments', { token }),
+  course: (slug: string, token: string, courseId: string) => api<MyCourse>(slug, `/me/courses/${encodeURIComponent(courseId)}`, { token }),
+  classrooms: (slug: string, token: string) => api<MyClassroom[]>(slug, '/me/classrooms', { token }),
+  playback: (slug: string, token: string, lessonId: string) =>
+    api<{ playlist_path: string; expires_in: number }>(slug, `/me/lessons/${encodeURIComponent(lessonId)}/playback`, { token }),
+};
+
+/** Public certificate verification (no tenant: certificate codes are global). */
+export async function verifyCertificate(code: string): Promise<CertificateVerification | null> {
+  try {
+    return await request<CertificateVerification>(`/certificates/verify/${encodeURIComponent(code)}`, {}, { revalidate: 300 });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
 
 /** Tenant-not-found and bad-slug both mean "no such academy" for page routing. */
 export const isMissingTenant = (err: unknown) =>
