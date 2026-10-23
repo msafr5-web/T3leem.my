@@ -5,17 +5,17 @@ import { COURSE, LEARNER_EMAIL, LEARNER_PASSWORD, TENANT_A, TENANT_B, USER, buil
 
 describe('tenant resolution by slug (web frontend)', () => {
   it('resolves x-tenant-slug and echoes the tenant id', async () => {
-    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'rukn');
     expect(res.status).toBe(200);
     expect(res.headers['x-tenant-id']).toBe(TENANT_A);
     expect(res.body).toEqual({
       success: true,
-      data: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', brand_settings: { primaryColor: '#0d6b62' }, logo_version: String(new Date('2026-10-01T00:00:00Z').getTime()) },
+      data: { id: TENANT_A, slug: 'rukn', name: 'Rukn', brand_settings: { primaryColor: '#0d6b62' }, logo_version: String(new Date('2026-10-01T00:00:00Z').getTime()) },
     });
   });
 
   it('does not leak billing identifiers in public branding', async () => {
-    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'rukn');
     expect(JSON.stringify(res.body)).not.toContain('300000000000003');
   });
 
@@ -34,7 +34,7 @@ describe('tenant resolution by slug (web frontend)', () => {
 
 describe('GET /api/v1/courses', () => {
   it('lists published courses with a VAT-inclusive price breakdown and accreditation data, without auth', async () => {
-    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'rukn');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([
       {
@@ -53,7 +53,7 @@ describe('GET /api/v1/courses', () => {
   });
 
   it('course detail includes license, trainer profile and description', async () => {
-    const res = await request(buildApp()).get(`/api/v1/courses/${COURSE}`).set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get(`/api/v1/courses/${COURSE}`).set('x-tenant-slug', 'rukn');
     expect(res.body.data).toMatchObject({
       description: 'Exam prep',
       license: { number: 'DEMO-LIC-1', authority: 'TVTC', expires_on: '2027-06-30' },
@@ -62,12 +62,12 @@ describe('GET /api/v1/courses', () => {
   });
 
   it("another academy's catalog does not include tenant A's courses", async () => {
-    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'rukn');
+    const res = await request(buildApp()).get('/api/v1/courses').set('x-tenant-slug', 'masar');
     expect(res.body.data).toEqual([]);
   });
 
   it('returns the course outline without media URLs', async () => {
-    const res = await request(buildApp()).get(`/api/v1/courses/${COURSE}`).set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get(`/api/v1/courses/${COURSE}`).set('x-tenant-slug', 'rukn');
     expect(res.status).toBe(200);
     expect(res.body.data.modules[0].lessons).toEqual([
       { id: 'e1000000-0000-4000-8000-000000000001', title: 'Intro', content_type: 'VIDEO' },
@@ -85,7 +85,7 @@ describe('GET /api/v1/courses', () => {
 });
 
 describe('POST /api/v1/auth/login', () => {
-  const login = (body: object, slug = 'alfaisal', app = buildApp()) =>
+  const login = (body: object, slug = 'rukn', app = buildApp()) =>
     request(app).post('/api/v1/auth/login').set('x-tenant-slug', slug).send(body);
 
   it('issues an RS256 token the API itself accepts', async () => {
@@ -103,20 +103,20 @@ describe('POST /api/v1/auth/login', () => {
   });
 
   it('accepts the email case-insensitively', async () => {
-    const res = await login({ email: '  LEARNER@alfaisal.test ', password: LEARNER_PASSWORD });
+    const res = await login({ email: '  LEARNER@rukn.test ', password: LEARNER_PASSWORD });
     expect(res.status).toBe(200);
   });
 
   it('gives the same 401 for a wrong password and an unknown email (no enumeration)', async () => {
     const wrong = await login({ email: LEARNER_EMAIL, password: 'nope' });
-    const unknown = await login({ email: 'ghost@alfaisal.test', password: 'nope' });
+    const unknown = await login({ email: 'ghost@rukn.test', password: 'nope' });
     expect(wrong.status).toBe(401);
     expect(unknown.status).toBe(401);
     expect(wrong.body).toEqual(unknown.body);
   });
 
   it('the same credentials do not work in another academy', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn');
+    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'masar');
     expect(res.status).toBe(401);
   });
 
@@ -126,17 +126,17 @@ describe('POST /api/v1/auth/login', () => {
   });
 
   it('503 when this deployment has no signing key', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'alfaisal', buildApp({ signingKey: null }));
+    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn', buildApp({ signingKey: null }));
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe('LOGIN_UNAVAILABLE');
   });
 
   it('a token from login can complete a checkout end-to-end', async () => {
     const app = buildApp();
-    const token = (await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'alfaisal', app)).body.data.access_token;
+    const token = (await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn', app)).body.data.access_token;
     const res = await request(app)
       .post('/api/v1/enrollments/checkout')
-      .set('x-tenant-slug', 'alfaisal')
+      .set('x-tenant-slug', 'rukn')
       .set('Authorization', `Bearer ${token}`)
       .send({ course_id: COURSE, payment_method: 'MADA', payment_token: 'tok_sandbox' });
     expect(res.status).toBe(200);

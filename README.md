@@ -4,7 +4,7 @@
 
 > المستودع يحتوي تطبيقين:
 > - **الجذر:** الخادم الخلفي (Express API).
-> - **`web/`:** واجهة الأكاديميات بـ Next.js. لكل معهد موقع بهويته على `/<slug>`، مثل `/alfaisal`.
+> - **`web/`:** واجهة الأكاديميات بـ Next.js. لكل معهد موقع بهويته على `/<slug>`، مثل `/rukn`.
 >
 > دليل النشر على Vercel: [docs/DEPLOY_VERCEL.md](docs/DEPLOY_VERCEL.md)
 
@@ -75,7 +75,7 @@ sequenceDiagram
     participant Auth as JWT Guard
     participant DB as PostgreSQL (RLS)
 
-    U->>MW: طلب + x-tenant-id (أو alfaisal.t3leem.my)
+    U->>MW: طلب + x-tenant-id (أو rukn.t3leem.my)
     MW->>MW: التحقق أن المعرّف UUID والمعهد نشط
     MW->>Auth: req.tenantId
     Auth->>Auth: tenant في التوكن == tenant في الطلب؟
@@ -192,14 +192,14 @@ npm install
 npm run db:setup          # يطلب كلمة مرور postgres مرة واحدة، وينشئ القاعدتين والمستخدمين و .env
 npm run db:migrate        # الجداول وسياسات العزل
 npm run db:migrate:test   # نفس الشيء لقاعدة الاختبارات
-npm run db:seed           # بيانات تجريبية: أكاديمية الفيصل وركن تدريب
+npm run db:seed           # بيانات تجريبية: أكاديمية ركن والمسار للتدريب المالي
 npm run dev               # الخادم على http://localhost:3000
 
 # الواجهة (في طرفية ثانية)
 cd web
 npm install
 copy .env.example .env.local
-npm run dev               # http://localhost:3001/alfaisal
+npm run dev               # http://localhost:3001/rukn
 ```
 
 > ⚠️ يجب أن يتصل التطبيق بقاعدة البيانات بمستخدم **ليس Superuser وليس لديه BYPASSRLS**، وإلا تُتجاهل سياسات العزل بصمت. سكربت `db:setup` يضمن ذلك.
@@ -210,13 +210,13 @@ npm run dev               # http://localhost:3001/alfaisal
 
 | المعهد | المعرّف | المستخدمون | الدورات |
 |---|---|---|---|
-| أكاديمية الفيصل | `7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11` | `admin@` · `trainer@` · `learner@alfaisal.test` | PMP (١٠٠٠ ر.س) · الأمن السيبراني (١٥٠٠) · Power BI (غير منشورة) |
-| ركن تدريب | `0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10` | `admin@` · `trainer@` · `learner@rukn.test` | المحاسبة المالية IFRS (٨٠٠) |
+| أكاديمية ركن | `7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11` | `admin@` · `trainer@` · `learner@rukn.test` | PMP (١٠٠٠ ر.س) · الأمن السيبراني (١٥٠٠) · Power BI (غير منشورة) |
+| المسار للتدريب المالي | `0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10` | `admin@` · `trainer@` · `learner@masar.test` | المحاسبة المالية IFRS (٨٠٠) |
 
 ### تجربة الشراء
 
 ```powershell
-npm run token:dev -- learner@alfaisal.test   # رمز دخول مؤقت للتطوير (إلى أن تُبنى وحدة تسجيل الدخول)
+npm run token:dev -- learner@rukn.test   # رمز دخول مؤقت للتطوير (إلى أن تُبنى وحدة تسجيل الدخول)
 ```
 
 ثم أرسل `POST /api/v1/enrollments/checkout` بالترويسة `x-tenant-id` والرمز، كما في المثال أدناه. Redis اختياري محلياً؛ بدونه تكتمل العملية وتبقى الفاتورة بحالة `PENDING_ZATCA`.

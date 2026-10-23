@@ -41,7 +41,7 @@ describe('simplified invoice', () => {
 
   it('builds the SWET sample amounts (1000 net -> 150 VAT -> 1150 total) and a matching QR', () => {
     const result = buildSimplifiedInvoice({
-      sellerName: 'Al-Faisal Academy',
+      sellerName: 'Rukn Academy',
       vatNumber: '300000000000003',
       netHalalas: 100000,
       vatRatePercent: 15,

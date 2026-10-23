@@ -1,6 +1,6 @@
 /**
  * Development only: mints an RS256 access token for a seeded user, until the auth module exists.
- *   npm run token:dev -- learner@alfaisal.test
+ *   npm run token:dev -- learner@rukn.test
  */
 import { readFileSync } from 'node:fs';
 import { PrismaClient } from '@prisma/client';
@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') throw new Error('Refusing to mint dev tokens in production');
-  const email = process.argv[2] ?? 'learner@alfaisal.test';
+  const email = process.argv[2] ?? 'learner@rukn.test';
   const keyPath = process.env.JWT_PRIVATE_KEY_PATH ?? 'keys/jwt-private.pem';
 
   const prisma = new PrismaClient();

@@ -16,7 +16,7 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
  * Resolves the tenant for every /api request and binds an RLS-scoped DB client to it.
  *
  * Resolution order: `x-tenant-id` header -> `x-tenant-slug` header (used by the web frontend's
- * path-based routes, e.g. /alfaisal) -> custom domain / `<slug>.BASE_DOMAIN` subdomain.
+ * path-based routes, e.g. /rukn) -> custom domain / `<slug>.BASE_DOMAIN` subdomain.
  *
  * Note on the PRD reference: running `SET LOCAL` here, in middleware, cannot work — SET LOCAL
  * only lives until the end of the current transaction, and the middleware's statement is its

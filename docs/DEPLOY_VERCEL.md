@@ -78,5 +78,5 @@
 ## بعد النشر
 
 - `https://t3leem-web.vercel.app` الصفحة الرئيسية
-- `https://t3leem-web.vercel.app/alfaisal` أكاديمية الفيصل
-- حساب تجريبي: `learner@alfaisal.test` / `Demo@2026`
+- `https://t3leem-web.vercel.app/rukn` أكاديمية ركن
+- حساب تجريبي: `learner@rukn.test` / `Demo@2026`

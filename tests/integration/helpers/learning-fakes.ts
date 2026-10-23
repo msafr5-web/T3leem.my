@@ -111,8 +111,8 @@ export function buildLearningFakes(ids: { tenantA: string; user: string; course:
           accreditationNumber: 'DEMO-ACC-1',
           licenseNumber: 'DEMO-LIC-1',
           trainerName: 'Khalid',
-          academyName: 'Al-Faisal',
-          academySlug: 'alfaisal',
+          academyName: 'Rukn',
+          academySlug: 'rukn',
         });
       }
       return { kind: 'ok', progress: (completed.size / 2) * 100, completed: done, certificateCode: done ? code : null };
@@ -163,7 +163,7 @@ export function buildLearningFakes(ids: { tenantA: string; user: string; course:
     markDomainVerified: async () => {
       domainState.verifiedAt = new Date();
     },
-    findSlugByVerifiedDomain: async (host) => (domainState.verifiedAt && host === domainState.domain ? 'alfaisal' : null),
+    findSlugByVerifiedDomain: async (host) => (domainState.verifiedAt && host === domainState.domain ? 'rukn' : null),
   };
   const domains = new DomainService(
     domainRepo,

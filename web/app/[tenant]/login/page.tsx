@@ -33,7 +33,7 @@ export default async function LoginPage({
         <span className="muted">مدير المزود</span>
         <span className="ltr">admin@{slug}.test</span>
         <span className="muted">متدرب</span>
-        <span className="ltr">{slug === 'alfaisal' ? 'student' : 'learner'}@{slug}.test</span>
+        <span className="ltr">{slug === 'rukn' ? 'student' : 'learner'}@{slug}.test</span>
         <span className="muted">كلمة المرور</span>
         <span className="ltr">Demo@2026</span>
       </div>

@@ -34,14 +34,14 @@ describe('POST /api/v1/enrollments/checkout', () => {
       },
     });
     const tlv = ZatcaTlvEncoder.decode(res.body.data.invoice.zatca_qr_base64);
-    expect(tlv.get(1)?.toString()).toBe('Al-Faisal Academy');
+    expect(tlv.get(1)?.toString()).toBe('Rukn Academy');
     expect(tlv.get(4)?.toString()).toBe('1150.00');
   });
 
   it('resolves the tenant from the subdomain when no header is sent', async () => {
     const res = await request(buildApp())
       .post('/api/v1/enrollments/checkout')
-      .set('Host', 'alfaisal.t3leem.my')
+      .set('Host', 'rukn.t3leem.my')
       .set('Authorization', `Bearer ${learnerToken}`)
       .send(validBody);
     expect(res.status).toBe(200);

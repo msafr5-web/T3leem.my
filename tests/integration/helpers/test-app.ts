@@ -35,7 +35,7 @@ export const TENANT_B = '0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10';
 export const SUSPENDED = '5e4d3c2b-1a09-4f8e-9d7c-6b5a49382716';
 export const USER = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a01';
 export const COURSE = 'c0a80121-872f-41ed-a1eb-0242ac120002';
-export const LEARNER_EMAIL = 'learner@alfaisal.test';
+export const LEARNER_EMAIL = 'learner@rukn.test';
 export const LEARNER_PASSWORD = 'Demo@2026';
 
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -50,8 +50,8 @@ export const learnerToken = sign({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
 
 const brand = { primaryColor: '#0d6b62' };
 const tenants: Record<string, ResolvedTenant> = {
-  [TENANT_A]: { id: TENANT_A, slug: 'alfaisal', name: 'Al-Faisal', status: 'ACTIVE', legalName: 'Al-Faisal Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z') },
-  [TENANT_B]: { id: TENANT_B, slug: 'rukn', name: 'Rukn Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null },
+  [TENANT_A]: { id: TENANT_A, slug: 'rukn', name: 'Rukn', status: 'ACTIVE', legalName: 'Rukn Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z') },
+  [TENANT_B]: { id: TENANT_B, slug: 'masar', name: 'Masar Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null },
   [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {}, logoUpdatedAt: null },
 };
 
@@ -243,7 +243,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   const fakes = buildLearningFakes({ tenantA: TENANT_A, user: USER, course: COURSE, classroom: classroom.id });
 
   // In-memory branding store for TENANT_A.
-  const brandingState = { name: 'Al-Faisal', legalName: 'Al-Faisal Academy' as string | null, vatNumber: '300000000000003' as string | null, brandSettings: { primaryColor: '#0d6b62' } as Record<string, unknown>, logo: null as { bytes: Buffer; mime: string; updatedAt: Date } | null };
+  const brandingState = { name: 'Rukn', legalName: 'Rukn Academy' as string | null, vatNumber: '300000000000003' as string | null, brandSettings: { primaryColor: '#0d6b62' } as Record<string, unknown>, logo: null as { bytes: Buffer; mime: string; updatedAt: Date } | null };
   const brandingRepo: BrandingRepository = {
     getBranding: async (t) =>
       t !== TENANT_A
@@ -252,7 +252,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
             brandSettings: brandingState.brandSettings as never,
             profile: {
               name: brandingState.name,
-              slug: 'alfaisal',
+              slug: 'rukn',
               tagline: (brandingState.brandSettings.tagline as string) ?? null,
               about: null,
               city: (brandingState.brandSettings.city as string) ?? null,
@@ -274,7 +274,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     },
     getLogo: async (t) => (t === TENANT_A ? brandingState.logo : null),
   };
-  const takenSlugs = new Set(['alfaisal', 'rukn']);
+  const takenSlugs = new Set(['rukn', 'masar']);
   const registrationRepo: RegistrationRepository = {
     slugTaken: async (slug) => takenSlugs.has(slug),
     register: async (input) => {
@@ -305,8 +305,8 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     ),
     providerDirectory: {
       listActive: async () => [
-        { slug: 'alfaisal', name: 'Al-Faisal', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' } },
-        { slug: 'rukn', name: 'Rukn Training', brandSettings: {} },
+        { slug: 'rukn', name: 'Rukn', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' } },
+        { slug: 'masar', name: 'Masar Training', brandSettings: {} },
       ],
     },
     brandingService: new BrandingService(brandingRepo, async () => undefined),

@@ -102,7 +102,7 @@ describe('DomainService', () => {
       markDomainVerified: async () => {
         state.verifiedAt = new Date();
       },
-      findSlugByVerifiedDomain: async (h) => (state.verifiedAt && h === state.domain ? 'alfaisal' : null),
+      findSlugByVerifiedDomain: async (h) => (state.verifiedAt && h === state.domain ? 'rukn' : null),
     };
     const onChange = jest.fn(async () => undefined);
     const resolveTxt = jest.fn(async () => txt);
@@ -120,7 +120,7 @@ describe('DomainService', () => {
   it('rejects invalid, platform and taken domains', async () => {
     const { service } = setup();
     await expect(service.set('t', actor, 'not a domain')).rejects.toMatchObject({ code: 'INVALID_DOMAIN' });
-    await expect(service.set('t', actor, 'alfaisal.t3leem.my')).rejects.toMatchObject({ code: 'PLATFORM_DOMAIN' });
+    await expect(service.set('t', actor, 'rukn.t3leem.my')).rejects.toMatchObject({ code: 'PLATFORM_DOMAIN' });
     await expect(service.set('t', actor, 't3leem.my')).rejects.toMatchObject({ code: 'PLATFORM_DOMAIN' });
     await expect(service.set('t', actor, 'taken.example.com')).rejects.toMatchObject({ code: 'DOMAIN_TAKEN' });
     await expect(service.set('t', actor, 'boom.example.com')).rejects.toThrow('db down');
@@ -132,7 +132,7 @@ describe('DomainService', () => {
     await expect(ctx.service.verify('t', actor)).rejects.toMatchObject({ code: 'DNS_RECORD_NOT_FOUND' });
     ctx.resolveTxt.mockResolvedValueOnce([['t3leem-verify=', ctx.state.token!.slice(0, 10), ctx.state.token!.slice(10)]]);
     await expect(ctx.service.verify('t', actor)).resolves.toMatchObject({ verified: true });
-    await expect(ctx.service.slugForHost('ACADEMY.example.com')).resolves.toBe('alfaisal');
+    await expect(ctx.service.slugForHost('ACADEMY.example.com')).resolves.toBe('rukn');
   });
 
   it('DNS errors count as "not found"; verify without a domain is refused; remove clears it', async () => {

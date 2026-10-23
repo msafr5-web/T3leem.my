@@ -57,7 +57,7 @@ interface SeedTenant {
   classrooms: SeedClassroom[];
 }
 
-// ----- Al-Faisal ------------------------------------------------------------
+// ----- Rukn Academy (formerly Al-Faisal Academy; same tenant id and data) ------
 const AF = {
   admin: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00',
   learner: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a01',
@@ -73,7 +73,7 @@ const AF = {
   leadership: 'c0a80121-872f-41ed-a1eb-0242ac120005',
 };
 
-// ----- Rukn Training (formerly Gulf Institute; same tenant id) --------------
+// ----- Masar Financial Training (formerly Gulf Institute, then Rukn Training; same tenant id) ----
 const GI = {
   admin: 'b5c9a3c1-2222-4d3b-9b44-0a3d2e1f8b00',
   learner: 'b5c9a3c1-2222-4d3b-9b44-0a3d2e1f8b01',
@@ -86,9 +86,9 @@ const GI = {
 const tenants: SeedTenant[] = [
   {
     id: '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11',
-    slug: 'alfaisal',
-    name: 'أكاديمية الفيصل',
-    legalName: 'Al-Faisal Academy',
+    slug: 'rukn',
+    name: 'أكاديمية ركن',
+    legalName: 'Rukn Academy',
     vatNumber: '300000000000003',
     brandSettings: {
       primaryColor: '#0d6b62',
@@ -99,10 +99,10 @@ const tenants: SeedTenant[] = [
       city: 'الرياض',
     },
     users: [
-      { id: AF.admin, email: 'admin@alfaisal.test', fullName: 'نورة القحطاني', role: 'TENANT_ADMIN' },
-      { id: AF.trainerUser, email: 'trainer@alfaisal.test', fullName: 'م. خالد العتيبي', role: 'INSTRUCTOR' },
-      { id: AF.learner, email: 'learner@alfaisal.test', fullName: 'عبدالله الشهري', role: 'LEARNER' },
-      { id: AF.student, email: 'student@alfaisal.test', fullName: 'ريم الدوسري', role: 'LEARNER' },
+      { id: AF.admin, email: 'admin@rukn.test', fullName: 'نورة القحطاني', role: 'TENANT_ADMIN' },
+      { id: AF.trainerUser, email: 'trainer@rukn.test', fullName: 'م. خالد العتيبي', role: 'INSTRUCTOR' },
+      { id: AF.learner, email: 'learner@rukn.test', fullName: 'عبدالله الشهري', role: 'LEARNER' },
+      { id: AF.student, email: 'student@rukn.test', fullName: 'ريم الدوسري', role: 'LEARNER' },
     ],
     trainers: [
       {
@@ -111,7 +111,7 @@ const tenants: SeedTenant[] = [
         fullName: 'م. خالد العتيبي',
         specialization: 'إدارة المشاريع والقيادة',
         bio: 'مستشار إدارة مشاريع بخبرة ١٥ عاماً في القطاعين الحكومي والخاص، حاصل على PMP وPgMP.',
-        email: 'trainer@alfaisal.test',
+        email: 'trainer@rukn.test',
       },
       {
         id: AF.sara,
@@ -246,9 +246,9 @@ const tenants: SeedTenant[] = [
   },
   {
     id: '0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10',
-    slug: 'rukn',
-    name: 'ركن تدريب',
-    legalName: 'Rukn Training',
+    slug: 'masar',
+    name: 'المسار للتدريب المالي',
+    legalName: 'Masar Financial Training',
     vatNumber: '311111111111113',
     brandSettings: {
       primaryColor: '#1d4e89',
@@ -259,9 +259,9 @@ const tenants: SeedTenant[] = [
       city: 'جدة',
     },
     users: [
-      { id: GI.admin, email: 'admin@rukn.test', fullName: 'ماجد الزهراني', role: 'TENANT_ADMIN' },
-      { id: GI.trainerUser, email: 'trainer@rukn.test', fullName: 'أ. منى الحربي', role: 'INSTRUCTOR' },
-      { id: GI.learner, email: 'learner@rukn.test', fullName: 'سلطان العنزي', role: 'LEARNER' },
+      { id: GI.admin, email: 'admin@masar.test', fullName: 'ماجد الزهراني', role: 'TENANT_ADMIN' },
+      { id: GI.trainerUser, email: 'trainer@masar.test', fullName: 'أ. منى الحربي', role: 'INSTRUCTOR' },
+      { id: GI.learner, email: 'learner@masar.test', fullName: 'سلطان العنزي', role: 'LEARNER' },
     ],
     trainers: [
       {
@@ -270,7 +270,7 @@ const tenants: SeedTenant[] = [
         fullName: 'أ. منى الحربي',
         specialization: 'المحاسبة المالية والمعايير الدولية',
         bio: 'محاسبة قانونية بخبرة ١٢ عاماً في المراجعة وتطبيق معايير IFRS.',
-        email: 'trainer@rukn.test',
+        email: 'trainer@masar.test',
       },
     ],
     courses: [
@@ -430,6 +430,17 @@ async function main(): Promise<void> {
     update: {},
   });
 
+  // Slugs can move between demo academies across renames (e.g. "rukn" passed from one academy to
+  // another). Park any slug a seed target needs that's held by a DIFFERENT demo academy, so the
+  // upserts below never collide on the unique slug. Academies created by users are never touched.
+  const seedIds = tenants.map((t) => t.id);
+  for (const t of tenants) {
+    await prisma.tenant.updateMany({
+      where: { slug: t.slug, id: { in: seedIds, not: t.id } },
+      data: { slug: `parked-${t.id.slice(0, 8)}` },
+    });
+  }
+
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   for (const t of tenants) {
     await seedTenant(t, passwordHash);
@@ -437,7 +448,7 @@ async function main(): Promise<void> {
       `✔ ${t.slug.padEnd(9)} users=${t.users.length} trainers=${t.trainers.length} courses=${t.courses.length} plans=${t.plans.length} classrooms=${t.classrooms.length}`,
     );
   }
-  console.log(`\nDemo logins (password ${DEMO_PASSWORD}): admin@alfaisal.test (dashboard), student@alfaisal.test (learner)`);
+  console.log(`\nDemo logins (password ${DEMO_PASSWORD}): admin@rukn.test (dashboard), student@rukn.test (learner)`);
 }
 
 main()

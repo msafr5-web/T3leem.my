@@ -31,7 +31,7 @@ function setup() {
 
 const command = (overrides: Partial<CheckoutCommand> = {}): CheckoutCommand => ({
   tenantId: TENANT,
-  seller: { name: 'Al-Faisal', legalName: 'Al-Faisal Academy LLC', vatNumber: '300000000000003' },
+  seller: { name: 'Rukn', legalName: 'Rukn Academy LLC', vatNumber: '300000000000003' },
   userId: USER,
   courseId: COURSE,
   paymentMethod: 'MADA',
@@ -78,7 +78,7 @@ describe('CheckoutService', () => {
 
   it('falls back to the display name and a generated idempotency key', async () => {
     const { service, paymentGateway } = setup();
-    await service.checkout(command({ seller: { name: 'Al-Faisal', legalName: null, vatNumber: '300000000000003' }, idempotencyKey: undefined }));
+    await service.checkout(command({ seller: { name: 'Rukn', legalName: null, vatNumber: '300000000000003' }, idempotencyKey: undefined }));
     expect(paymentGateway.charge.mock.calls[0]?.[0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
   });
 

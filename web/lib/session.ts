@@ -2,7 +2,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 
 /**
- * One session per academy: the cookie is scoped to the academy's path (/alfaisal), so a
+ * One session per academy: the cookie is scoped to the academy's path (/rukn), so a
  * login at one academy is never sent to another. httpOnly keeps the token out of reach of
  * page scripts (XSS can't steal it); SameSite=Lax blocks cross-site form posts.
  */

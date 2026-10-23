@@ -15,7 +15,7 @@ const as = (token: string, app = buildApp()) => ({
 });
 
 describe('POST /api/v1/auth/register (PRD §6)', () => {
-  const reg = (body: object) => request(buildApp()).post('/api/v1/auth/register').set('x-tenant-slug', 'alfaisal').send(body);
+  const reg = (body: object) => request(buildApp()).post('/api/v1/auth/register').set('x-tenant-slug', 'rukn').send(body);
 
   it('creates a LEARNER in this academy and signs them in (201)', async () => {
     const res = await reg({ full_name: 'Reem Aldosari', email: 'reem@new.test', password: 'Str0ngPass!' });
@@ -29,7 +29,7 @@ describe('POST /api/v1/auth/register (PRD §6)', () => {
   });
 
   it('409 for an existing email, 422 for weak passwords', async () => {
-    expect((await reg({ full_name: 'Dup User', email: 'learner@alfaisal.test', password: 'Str0ngPass!' })).body.error.code).toBe('EMAIL_TAKEN');
+    expect((await reg({ full_name: 'Dup User', email: 'learner@rukn.test', password: 'Str0ngPass!' })).body.error.code).toBe('EMAIL_TAKEN');
     expect((await reg({ full_name: 'Weak User', email: 'w@new.test', password: '123' })).status).toBe(422);
   });
 });
@@ -64,7 +64,7 @@ describe('learner portal /api/v1/me', () => {
     // Public verification: no tenant header, no auth.
     const verify = await request(me.app).get(`/api/v1/certificates/verify/${code.toLowerCase()}`);
     expect(verify.status).toBe(200);
-    expect(verify.body.data).toMatchObject({ valid: true, code, learner_name: 'Abdullah', course_title: 'PMP', training_hours: 35, academy: { name: 'Al-Faisal', slug: 'alfaisal' } });
+    expect(verify.body.data).toMatchObject({ valid: true, code, learner_name: 'Abdullah', course_title: 'PMP', training_hours: 35, academy: { name: 'Rukn', slug: 'rukn' } });
 
     // It shows in the academy's dashboard list.
     expect((await as(adminToken, me.app).get('/admin/certificates')).body.data[0]).toMatchObject({ code, course_title: 'PMP' });
@@ -164,7 +164,7 @@ describe('course content admin + video upload', () => {
 
   it('classroom attendance is visible to the admin', async () => {
     const res = await as(adminToken).get('/admin/classrooms/a3000000-0000-4000-8000-000000000001/attendance');
-    expect(res.body.data).toEqual([{ name: 'Abdullah', email: 'learner@alfaisal.test', joined_at: '2030-01-01T15:01:00.000Z', is_trainee: true }]);
+    expect(res.body.data).toEqual([{ name: 'Abdullah', email: 'learner@rukn.test', joined_at: '2030-01-01T15:01:00.000Z', is_trainee: true }]);
   });
 });
 
@@ -210,7 +210,7 @@ describe('custom domain (PRD §6 "النطاق")', () => {
     expect((await request(admin.app).get('/api/v1/platform/domains/academy.example.com')).status).toBe(404);
     const verified = await admin.post('/tenant/domain/verify');
     expect(verified.body.data.verified).toBe(true);
-    expect((await request(admin.app).get('/api/v1/platform/domains/academy.example.com')).body.data).toEqual({ slug: 'alfaisal' });
+    expect((await request(admin.app).get('/api/v1/platform/domains/academy.example.com')).body.data).toEqual({ slug: 'rukn' });
     expect((await admin.del('/tenant/domain')).status).toBe(204);
   });
 

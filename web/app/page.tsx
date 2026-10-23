@@ -8,8 +8,8 @@ export const revalidate = 60;
 
 /** Shown if the API is unreachable, so the home page never breaks. */
 const FALLBACK_PROVIDERS: Provider[] = [
-  { slug: 'alfaisal', name: 'أكاديمية الفيصل', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62', logo_version: null },
-  { slug: 'rukn', name: 'ركن تدريب', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89', logo_version: null },
+  { slug: 'rukn', name: 'أكاديمية ركن', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62', logo_version: null },
+  { slug: 'masar', name: 'المسار للتدريب المالي', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89', logo_version: null },
 ];
 
 const STEPS = [
@@ -160,13 +160,13 @@ export default async function PlatformHome() {
               <h3>جرّب المنصة بحسابات تجريبية</h3>
               <div className="creds" style={{ display: 'grid' }}>
                 <span className="muted">لوحة تحكم المزود</span>
-                <span className="ltr">admin@alfaisal.test</span>
+                <span className="ltr">admin@rukn.test</span>
                 <span className="muted">متدرب</span>
-                <span className="ltr">student@alfaisal.test</span>
+                <span className="ltr">student@rukn.test</span>
                 <span className="muted">كلمة المرور</span>
                 <span className="ltr">Demo@2026</span>
               </div>
-              <Link href="/alfaisal/login" className="btn btn-primary">الدخول إلى أكاديمية الفيصل</Link>
+              <Link href="/rukn/login" className="btn btn-primary">الدخول إلى أكاديمية ركن</Link>
             </div>
           </div>
         </section>

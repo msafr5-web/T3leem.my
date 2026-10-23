@@ -32,7 +32,7 @@ export class TenantResolverService implements TenantResolver {
 
     if (host.endsWith(suffix)) {
       const slug = host.slice(0, -suffix.length);
-      // Only a single label is a tenant slug (alfaisal.t3leem.my, not a.b.t3leem.my).
+      // Only a single label is a tenant slug (rukn.t3leem.my, not a.b.t3leem.my).
       if (!slug || slug.includes('.')) return Promise.resolve(null);
       return this.findBySlug(slug);
     }

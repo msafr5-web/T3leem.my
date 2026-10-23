@@ -11,7 +11,7 @@ const admin = as(adminToken);
 
 describe('academy branding', () => {
   it('public GET /tenant includes a logo version for cache-busting', async () => {
-    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/tenant').set('x-tenant-slug', 'rukn');
     expect(res.body.data.logo_version).toBe(String(new Date('2026-10-01T00:00:00Z').getTime()));
   });
 
@@ -23,10 +23,10 @@ describe('academy branding', () => {
 
   it('updates identity and billing profile, then reads it back', async () => {
     const app = buildApp();
-    const res = await admin('put', '/tenant/branding', app).send({ name: 'Al-Faisal Academy', tagline: 'New tagline', city: 'Riyadh', primary_color: '#112233', vat_number: '300000000000003' });
+    const res = await admin('put', '/tenant/branding', app).send({ name: 'Rukn Academy', tagline: 'New tagline', city: 'Riyadh', primary_color: '#112233', vat_number: '300000000000003' });
     expect(res.status).toBe(200);
     const read = await admin('get', '/tenant/branding', app);
-    expect(read.body.data).toMatchObject({ name: 'Al-Faisal Academy', tagline: 'New tagline', city: 'Riyadh', primary_color: '#112233', vat_number: '300000000000003', has_logo: false });
+    expect(read.body.data).toMatchObject({ name: 'Rukn Academy', tagline: 'New tagline', city: 'Riyadh', primary_color: '#112233', vat_number: '300000000000003', has_logo: false });
   });
 
   it('validates colors and VAT numbers', async () => {
@@ -39,13 +39,13 @@ describe('academy branding', () => {
     const app = buildApp();
     const up = await admin('put', '/tenant/branding/logo', app).set('Content-Type', 'image/png').send(PNG);
     expect(up.status).toBe(200);
-    const logo = await request(app).get('/api/v1/tenant/logo').set('x-tenant-slug', 'alfaisal');
+    const logo = await request(app).get('/api/v1/tenant/logo').set('x-tenant-slug', 'rukn');
     expect(logo.status).toBe(200);
     expect(logo.headers['content-type']).toBe('image/png');
     expect(logo.headers['x-content-type-options']).toBe('nosniff');
     expect(Buffer.from(logo.body)).toEqual(PNG);
     expect((await admin('delete', '/tenant/branding/logo', app)).status).toBe(204);
-    expect((await request(app).get('/api/v1/tenant/logo').set('x-tenant-slug', 'alfaisal')).status).toBe(404);
+    expect((await request(app).get('/api/v1/tenant/logo').set('x-tenant-slug', 'rukn')).status).toBe(404);
   });
 
   it('rejects an SVG disguised as PNG, and files over 512 KB', async () => {
@@ -68,7 +68,7 @@ describe('POST /api/v1/platform/providers (self-service sign-up)', () => {
   });
 
   it('409 for a taken slug, 422 for reserved or malformed slugs', async () => {
-    expect((await signup({ ...valid, slug: 'alfaisal' })).body.error.code).toBe('SLUG_TAKEN');
+    expect((await signup({ ...valid, slug: 'rukn' })).body.error.code).toBe('SLUG_TAKEN');
     expect((await signup({ ...valid, slug: 'dashboard' })).body.error.code).toBe('SLUG_RESERVED');
     expect((await signup({ ...valid, slug: '-bad slug-' })).status).toBe(422);
   });

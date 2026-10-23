@@ -10,31 +10,31 @@ describe('GET /api/v1/platform/providers (no tenant needed)', () => {
     const res = await request(buildApp()).get('/api/v1/platform/providers');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([
-      { slug: 'alfaisal', name: 'Al-Faisal', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62', logo_version: null },
-      { slug: 'rukn', name: 'Rukn Training', tagline: null, city: null, primary_color: null, logo_version: null },
+      { slug: 'rukn', name: 'Rukn', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62', logo_version: null },
+      { slug: 'masar', name: 'Masar Training', tagline: null, city: null, primary_color: null, logo_version: null },
     ]);
   });
 });
 
 describe('public provider data', () => {
   it('plans include total training hours', async () => {
-    const res = await request(buildApp()).get('/api/v1/plans').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/plans').set('x-tenant-slug', 'rukn');
     expect(res.body.data[0]).toMatchObject({ title: 'Leadership', type: 'DEVELOPMENT', total_hours: 35 });
   });
 
   it('public trainers never expose email or account status', async () => {
-    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'rukn');
     expect(res.body.data).toEqual([{ id: TRAINER, full_name: 'Khalid', specialization: 'PM', bio: 'Consultant', course_count: 1 }]);
   });
 
   it('upcoming classrooms never expose the join link publicly', async () => {
-    const res = await request(buildApp()).get('/api/v1/classrooms/upcoming').set('x-tenant-slug', 'alfaisal');
+    const res = await request(buildApp()).get('/api/v1/classrooms/upcoming').set('x-tenant-slug', 'rukn');
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0]).not.toHaveProperty('join_url');
   });
 
   it("another provider sees none of tenant A's data", async () => {
-    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'rukn');
+    const res = await request(buildApp()).get('/api/v1/trainers').set('x-tenant-slug', 'masar');
     expect(res.body.data).toEqual([]);
   });
 });
@@ -124,7 +124,7 @@ describe('provider dashboard', () => {
 
   it('adds a trainee; 409 when the email already exists', async () => {
     expect((await admin('post', '/trainees').send({ email: 'new@a.test', full_name: 'New Trainee', password: 'Str0ngPass!' })).status).toBe(201);
-    const dup = await admin('post', '/trainees').send({ email: 'learner@alfaisal.test', full_name: 'Dup', password: 'Str0ngPass!' });
+    const dup = await admin('post', '/trainees').send({ email: 'learner@rukn.test', full_name: 'Dup', password: 'Str0ngPass!' });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('EMAIL_TAKEN');
   });
@@ -151,7 +151,7 @@ describe('provider dashboard', () => {
   });
 
   it('lists trainees, trainers (with emails), plans and classrooms', async () => {
-    expect((await admin('get', '/trainees')).body.data[0]).toMatchObject({ email: 'learner@alfaisal.test', enrollment_count: 1 });
+    expect((await admin('get', '/trainees')).body.data[0]).toMatchObject({ email: 'learner@rukn.test', enrollment_count: 1 });
     expect((await admin('get', '/trainers')).body.data[0]).toMatchObject({ email: 'k@a.test', has_account: true });
     expect((await admin('get', '/plans')).body.data).toHaveLength(1);
     expect((await admin('get', '/classrooms')).body.data[0].join_url).toBe('https://example.com/join/demo');
