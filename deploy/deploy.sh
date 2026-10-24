@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Deploy the committed code to a server (run from the repo root, Git Bash/Linux/macOS):
-#   bash deploy/deploy.sh root@187.126.12.45            # public host = the IP
-#   bash deploy/deploy.sh root@187.126.12.45 t3leem.my   # once a domain points here
+#   bash deploy/deploy.sh root@187.126.12.45 t3leem.my   # domain: automatic Let's Encrypt HTTPS
+#   bash deploy/deploy.sh root@187.126.12.45            # bare IP over HTTP (no domain yet)
 #
 # Ships `git archive HEAD` — only committed files. .env, keys/, node_modules, storage/ can
 # never be uploaded by accident. The (private) GitHub repo is never needed on the server.

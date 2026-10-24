@@ -81,12 +81,110 @@ if [ ! -f "$SHARED/keys/jwt-private.pem" ]; then
   openssl pkey -in "$SHARED/keys/jwt-private.pem" -pubout -out "$SHARED/keys/jwt-public.pem"
 fi
 
-# HTTPS only exists once a domain + certificate are set up; until then cookies must not be Secure.
-case "$PUBLIC_HOST" in
-  *[!0-9.]*) SCHEME=https; COOKIE_SECURE=true ;;
-  *)         SCHEME=http;  COOKIE_SECURE=false ;;
-esac
-[ -f /etc/letsencrypt/live/"$PUBLIC_HOST"/fullchain.pem ] || { SCHEME=http; COOKIE_SECURE=false; }
+# ----------------------------------------------------------------------------- nginx + TLS
+SERVER_IP=$(curl -fsS --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')
+IS_DOMAIN=false
+case "$PUBLIC_HOST" in *[!0-9.]*) IS_DOMAIN=true ;; esac
+CERT_DIR=/etc/letsencrypt/live/$PUBLIC_HOST
+
+# Writes the site config. https mode: :80 only serves ACME challenges and redirects everything
+# (including visits by bare IP and www) to https://$PUBLIC_HOST; :443 proxies the apps.
+write_nginx() {
+  local mode="$1" names="_"
+  $IS_DOMAIN && names="$PUBLIC_HOST www.$PUBLIC_HOST"
+  local proxy='
+    client_max_body_size 1100m;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+
+    # Public REST API (webhooks, certificate verification, integrations).
+    location /api/ { proxy_pass http://127.0.0.1:3000; proxy_read_timeout 120s; }
+
+    # Video uploads: stream straight through (no buffering a 1 GB file to disk first).
+    location ~ ^/[a-z0-9-]+/admin-upload/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location / { proxy_pass http://127.0.0.1:3001; proxy_read_timeout 120s; }'
+  {
+    echo "server {"
+    echo "    listen 80 default_server;"
+    echo "    listen [::]:80 default_server;"
+    echo "    server_name $names;"
+    echo "    server_tokens off;"
+    echo "    location /.well-known/acme-challenge/ { root /var/www/certbot; }"
+    if [ "$mode" = https ]; then
+      echo "    location / { return 301 https://$PUBLIC_HOST\$request_uri; }"
+      echo "}"
+      echo "server {"
+      # "http2 on;" exists from nginx 1.25.1; older (e.g. Ubuntu 24.04's 1.24) needs "listen ... http2".
+      if [ "$(printf '%s
+' 1.25.1 "$(nginx -v 2>&1 | sed 's#.*/##')" | sort -V | head -1)" = 1.25.1 ]; then
+        echo "    listen 443 ssl default_server;"
+        echo "    listen [::]:443 ssl default_server;"
+        echo "    http2 on;"
+      else
+        echo "    listen 443 ssl http2 default_server;"
+        echo "    listen [::]:443 ssl http2 default_server;"
+      fi
+      echo "    server_name $names;"
+      echo "    server_tokens off;"
+      echo "    ssl_certificate     $CERT_DIR/fullchain.pem;"
+      echo "    ssl_certificate_key $CERT_DIR/privkey.pem;"
+      echo "    ssl_protocols TLSv1.2 TLSv1.3;"
+      echo "    ssl_session_cache shared:SSL:10m;"
+      echo "    add_header Strict-Transport-Security \"max-age=31536000\" always;"
+      # One canonical address: www and the bare IP over TLS go to the apex domain.
+      echo "    if (\$host != $PUBLIC_HOST) { return 301 https://$PUBLIC_HOST\$request_uri; }"
+    fi
+    echo "$proxy"
+    echo "}"
+  } > /etc/nginx/sites-available/t3leem
+  ln -sfn /etc/nginx/sites-available/t3leem /etc/nginx/sites-enabled/t3leem
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t
+  systemctl reload nginx
+}
+
+log "Nginx + TLS"
+mkdir -p /var/www/certbot
+if [ -f "$CERT_DIR/fullchain.pem" ]; then
+  write_nginx https
+else
+  write_nginx http
+fi
+
+# Firewall before the certificate request (Let's Encrypt must reach :80).
+if ! ufw status | grep -q "Status: active"; then
+  log "Firewall (SSH + HTTP/HTTPS only; PostgreSQL/Redis/Node stay private)"
+  ufw allow OpenSSH >/dev/null
+  ufw allow 'Nginx Full' >/dev/null
+  ufw --force enable
+fi
+
+if $IS_DOMAIN && [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+  log "Let's Encrypt certificate for $PUBLIC_HOST + www.$PUBLIC_HOST"
+  command -v certbot >/dev/null || apt-get install -y certbot
+  # Only request names whose DNS already points here, or the whole request fails.
+  DOMAINS=(-d "$PUBLIC_HOST")
+  if getent ahostsv4 "www.$PUBLIC_HOST" | awk '{print $1}' | grep -qx "$SERVER_IP"; then DOMAINS+=(-d "www.$PUBLIC_HOST"); fi
+  if certbot certonly --webroot -w /var/www/certbot "${DOMAINS[@]}" --cert-name "$PUBLIC_HOST" \
+       --agree-tos --register-unsafely-without-email --non-interactive \
+       --deploy-hook "systemctl reload nginx"; then
+    write_nginx https
+  else
+    echo "!! Certificate request failed (DNS not pointing here yet?). Serving HTTP for now; re-run deploy later." >&2
+  fi
+fi
+
+# Cookies may only be Secure when the site is actually served over HTTPS.
+if [ -f "$CERT_DIR/fullchain.pem" ]; then SCHEME=https; COOKIE_SECURE=true; else SCHEME=http; COOKIE_SECURE=false; fi
 
 if [ ! -f "$SHARED/api.env" ]; then
   log "Writing API environment (first run — secrets generated here, never leave the server)"
@@ -125,7 +223,7 @@ PORT=3001
 HOSTNAME=127.0.0.1
 API_URL=http://127.0.0.1:3000
 PUBLIC_WEB_URL=${SCHEME}://${PUBLIC_HOST}
-PLATFORM_HOSTS=${PUBLIC_HOST},localhost,127.0.0.1
+PLATFORM_HOSTS=${PUBLIC_HOST},www.${PUBLIC_HOST},${SERVER_IP},localhost,127.0.0.1
 COOKIE_SECURE=${COOKIE_SECURE}
 MAX_VIDEO_MB=1024
 NEXT_TELEMETRY_DISABLED=1
@@ -188,56 +286,6 @@ unit t3leem-worker "t3leem video worker" "$APP_DIR/current"     "$SHARED/api.env
 unit t3leem-web    "t3leem web"          "$APP_DIR/current/web" "$SHARED/web.env" "/usr/bin/node node_modules/next/dist/bin/next start -p 3001 -H 127.0.0.1"
 systemctl daemon-reload
 
-# ----------------------------------------------------------------------------- nginx
-log "Nginx"
-cat > /etc/nginx/sites-available/t3leem <<'EOF'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    client_max_body_size 1100m;
-    server_tokens off;
-
-    proxy_set_header Host              $host;
-    proxy_set_header X-Real-IP         $remote_addr;
-    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_http_version 1.1;
-
-    # Public REST API (webhooks, certificate verification, integrations).
-    location /api/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_read_timeout 120s;
-    }
-
-    # Video uploads: stream straight through (no buffering a 1 GB file on disk first).
-    location ~ ^/[a-z0-9-]+/admin-upload/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_request_buffering off;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_read_timeout 120s;
-    }
-}
-EOF
-ln -sfn /etc/nginx/sites-available/t3leem /etc/nginx/sites-enabled/t3leem
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl reload nginx
-
-# ----------------------------------------------------------------------------- firewall
-if ! ufw status | grep -q "Status: active"; then
-  log "Firewall (SSH + HTTP/HTTPS only; PostgreSQL/Redis/Node stay private)"
-  ufw allow OpenSSH >/dev/null
-  ufw allow 'Nginx Full' >/dev/null
-  ufw --force enable
-fi
-
 # ----------------------------------------------------------------------------- switch + health
 PREVIOUS=$(readlink -f "$APP_DIR/current" 2>/dev/null || true)
 log "Switching to release $RELEASE_ID"
@@ -265,4 +313,5 @@ fi
 ls -1dt "$APP_DIR"/releases/* | tail -n +4 | xargs -r rm -rf
 
 log "Deployed release $RELEASE_ID → ${SCHEME}://${PUBLIC_HOST}"
-curl -s -o /dev/null -w "public check: HTTP %{http_code}\n" "http://127.0.0.1/"
+curl -s -o /dev/null -w "public check (${SCHEME}://${PUBLIC_HOST}): HTTP %{http_code}\n" \
+  --resolve "${PUBLIC_HOST}:443:127.0.0.1" --resolve "${PUBLIC_HOST}:80:127.0.0.1" "${SCHEME}://${PUBLIC_HOST}/"
