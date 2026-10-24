@@ -14,6 +14,13 @@ export interface Session {
 
 const cookieName = (slug: string) => `t3_session_${slug}`;
 
+/**
+ * Secure cookies are only sent over HTTPS. Default: on in production. A server reached by a
+ * bare IP over plain HTTP (before a domain + TLS certificate exist) must set COOKIE_SECURE=false,
+ * otherwise the browser silently drops the session cookie and login appears to do nothing.
+ */
+const secureCookies = process.env.COOKIE_SECURE !== undefined ? process.env.COOKIE_SECURE === 'true' : process.env.NODE_ENV === 'production';
+
 export async function getSession(slug: string): Promise<Session | null> {
   const raw = (await cookies()).get(cookieName(slug))?.value;
   if (!raw) return null;
@@ -29,7 +36,7 @@ export async function getSession(slug: string): Promise<Session | null> {
 export async function setSession(slug: string, session: Session, maxAgeSeconds: number): Promise<void> {
   (await cookies()).set(cookieName(slug), JSON.stringify(session), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies,
     sameSite: 'lax',
     path: `/${slug}`,
     maxAge: maxAgeSeconds,
