@@ -18,6 +18,11 @@ SHARED="$APP_DIR/shared"
 RELEASE="$APP_DIR/releases/$RELEASE_ID"
 ARCHIVE="/tmp/t3leem-$RELEASE_ID.tar.gz"
 
+# Predictable permissions regardless of server defaults. Secret files get an explicit
+# chmod 600 instead of a global "umask 077", which once leaked into later steps and made
+# the ACME webroot unreadable to nginx (Let's Encrypt saw 403).
+umask 022
+
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 export DEBIAN_FRONTEND=noninteractive
 
@@ -54,8 +59,8 @@ rm -f "$ARCHIVE"
 # ----------------------------------------------------------------------------- database
 if [ ! -f "$SHARED/db.env" ]; then
   log "Generating database role passwords (first run)"
-  umask 077
   printf 'OWNER_PW=%s\nAPP_PW=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" > "$SHARED/db.env"
+  chmod 600 "$SHARED/db.env"
 fi
 # shellcheck disable=SC1091
 source "$SHARED/db.env"
@@ -153,7 +158,7 @@ write_nginx() {
 }
 
 log "Nginx + TLS"
-mkdir -p /var/www/certbot
+mkdir -p /var/www/certbot && chmod 755 /var/www /var/www/certbot
 if [ -f "$CERT_DIR/fullchain.pem" ]; then
   write_nginx https
 else
@@ -188,7 +193,6 @@ if [ -f "$CERT_DIR/fullchain.pem" ]; then SCHEME=https; COOKIE_SECURE=true; else
 
 if [ ! -f "$SHARED/api.env" ]; then
   log "Writing API environment (first run — secrets generated here, never leave the server)"
-  umask 077
   cat > "$SHARED/api.env" <<EOF
 NODE_ENV=production
 # staging: sandbox payment gateway (a real gateway needs merchant credentials).
@@ -212,11 +216,11 @@ PUBLIC_WEB_URL=${SCHEME}://${PUBLIC_HOST}
 VAT_RATE_PERCENT=15
 PAYMENT_GATEWAY=sandbox
 EOF
+  chmod 600 "$SHARED/api.env"
 fi
 # The public URL can change (IP -> domain, http -> https) without regenerating secrets.
 sed -i "s#^PUBLIC_WEB_URL=.*#PUBLIC_WEB_URL=${SCHEME}://${PUBLIC_HOST}#" "$SHARED/api.env"
 
-umask 077
 cat > "$SHARED/web.env" <<EOF
 NODE_ENV=production
 PORT=3001
@@ -228,7 +232,7 @@ COOKIE_SECURE=${COOKIE_SECURE}
 MAX_VIDEO_MB=1024
 NEXT_TELEMETRY_DISABLED=1
 EOF
-umask 022
+chmod 600 "$SHARED/web.env"
 
 # ----------------------------------------------------------------------------- build
 log "Installing dependencies and building (API)"
