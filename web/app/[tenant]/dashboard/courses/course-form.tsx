@@ -7,6 +7,7 @@ import type { AdminFormState } from '@/lib/admin-actions';
 import { formatDateTime } from '@/lib/format';
 import { AdminForm } from '../admin-form';
 import { SourceFields } from '../recorded/source-fields';
+import { YoutubeUrlField } from '../recorded/youtube-url-field';
 
 /**
  * The YouTube part of a recorded course: on a new (or still empty) course, a video link + how
@@ -48,10 +49,7 @@ function RecordedSection({ slug, course }: { slug: string; course?: AdminCourse 
         الصق رابط الفيديو لتحسب المنصة مدته وتقسّمه تلقائياً إلى أيام وأجزاء بينها استراحات. اتركه فارغاً إن كنت سترفع الفيديوهات بنفسك.
       </p>
       <div className="form-grid">
-        <label htmlFor="youtube_url" className="full">
-          رابط فيديو الدورة على YouTube
-          <input id="youtube_url" name="youtube_url" type="url" dir="ltr" maxLength={500} placeholder="https://www.youtube.com/watch?v=…" />
-        </label>
+        <YoutubeUrlField />
         <label htmlFor="split_mode">
           طريقة التقسيم
           <select id="split_mode" name="split_mode" defaultValue="fixed">

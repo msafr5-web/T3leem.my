@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/admin';
 import { createRecordedCourseAction } from '@/lib/admin-actions';
 import { formatMinutes, formatNumber } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
+import { AutoDuration } from '../auto-duration';
 import { ScheduleTimeline } from '../schedule-timeline';
 import { SourceFields } from '../source-fields';
 
@@ -16,6 +17,8 @@ type Search = {
   pause?: string;
   talk?: string;
   manual?: string;
+  /** Video length in seconds, read from YouTube's player in the supervisor's browser. */
+  ms?: string;
 };
 
 const PREVIEW_ERRORS: Record<string, string> = {
@@ -47,8 +50,12 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
     manual: num(q.manual),
   };
 
+  // Seconds read in the browser win over the typed minutes (more precise).
+  const manualSeconds = num(q.ms) ?? (settings.manual ? settings.manual * 60 : undefined);
+
   let preview: SchedulePreview | null = null;
   let error: string | null = null;
+  let needsBrowserDuration = false;
   if (q.url) {
     const body: Record<string, string | number> = {
       youtube_url: q.url,
@@ -59,11 +66,12 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
       discussion_minutes: settings.talk,
     };
     if (settings.days) body.days = settings.days;
-    if (settings.manual) body.manual_duration_seconds = settings.manual * 60;
+    if (manualSeconds) body.manual_duration_seconds = manualSeconds;
     try {
       preview = await admin.recordedPreview(slug, token, body);
     } catch (err) {
-      if (err instanceof ApiError) error = PREVIEW_ERRORS[err.code] ?? 'تعذّر تحليل الفيديو. حاول مرة أخرى.';
+      if (err instanceof ApiError && err.code === 'YOUTUBE_DURATION_UNKNOWN' && !manualSeconds) needsBrowserDuration = true;
+      else if (err instanceof ApiError) error = PREVIEW_ERRORS[err.code] ?? 'تعذّر تحليل الفيديو. حاول مرة أخرى.';
       else if (err instanceof ApiUnavailableError) error = 'تعذّر الاتصال بالخادم. حاول بعد قليل.';
       else throw err;
     }
@@ -129,6 +137,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
             </button>
           </div>
         </form>
+        {needsBrowserDuration && q.url && <AutoDuration videoUrl={q.url} />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -150,7 +159,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
                 <span className="small muted">
                   {preview.video.channel && <>القناة: {preview.video.channel} · </>}
                   المدة: {formatMinutes(preview.video.duration_seconds)}
-                  {preview.video.duration_source === 'manual' && ' (أُدخلت يدوياً)'}
+                  {preview.video.duration_source === 'manual' && (q.ms ? ' (قُرئت من مشغل YouTube في متصفحك)' : ' (أُدخلت يدوياً)')}
                 </span>
               </div>
             </div>

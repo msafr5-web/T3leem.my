@@ -4,60 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { formatTimestamp } from '@/lib/format';
-
-// Minimal typings for the parts of the YouTube IFrame API we use.
-interface YTPlayer {
-  getCurrentTime(): number;
-  getPlayerState(): number;
-  seekTo(seconds: number, allowSeekAhead: boolean): void;
-  playVideo(): void;
-  pauseVideo(): void;
-  destroy(): void;
-}
-interface YTNamespace {
-  Player: new (
-    el: HTMLElement,
-    opts: {
-      host?: string;
-      videoId: string;
-      width?: string;
-      height?: string;
-      playerVars?: Record<string, string | number>;
-      events?: { onReady?: () => void; onStateChange?: (e: { data: number }) => void; onError?: (e: { data: number }) => void };
-    },
-  ) => YTPlayer;
-  PlayerState: { ENDED: number; PLAYING: number; PAUSED: number };
-}
-declare global {
-  interface Window {
-    YT?: YTNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-let apiPromise: Promise<YTNamespace> | null = null;
-/** Loads the IFrame API once per page, however many players mount. */
-function loadYouTubeApi(): Promise<YTNamespace> {
-  if (window.YT?.Player) return Promise.resolve(window.YT);
-  if (!apiPromise) {
-    apiPromise = new Promise((resolve, reject) => {
-      const previous = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        previous?.();
-        if (window.YT) resolve(window.YT);
-      };
-      const script = document.createElement('script');
-      script.src = 'https://www.youtube.com/iframe_api';
-      script.async = true;
-      script.onerror = () => {
-        apiPromise = null;
-        reject(new Error('YouTube API failed to load'));
-      };
-      document.head.appendChild(script);
-    });
-  }
-  return apiPromise;
-}
+import { loadYouTubeApi, type YTPlayer } from '../../../youtube-api';
 
 const storageKey = (lessonId: string) => `t3leem:yt:${lessonId}`;
 const readResume = (lessonId: string): number => {
