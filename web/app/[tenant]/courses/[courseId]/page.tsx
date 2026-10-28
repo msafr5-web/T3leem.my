@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, getCourse, type CourseDetail } from '@/lib/api';
-import { courseTypeLabel, formatDate, formatNumber, formatSar, lessonTypeLabel } from '@/lib/format';
+import { courseTypeLabel, formatDate, formatDateTime, formatNumber, formatSar, formatTime, lessonTypeLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
 import { FreeEnrollButton } from './free-enroll';
 
@@ -41,6 +41,9 @@ export default async function CoursePage({ params }: { params: Params }) {
     { label: 'جهة الترخيص', value: course.license.authority },
     { label: 'صلاحية الترخيص حتى', value: course.license.expires_on ? formatDate(course.license.expires_on) : null },
     { label: 'رقم الاعتماد', value: course.accreditation_number },
+    { label: 'تاريخ البداية', value: course.recorded?.starts_at ? formatDateTime(course.recorded.starts_at) : null },
+    { label: 'وقت المحاضرة اليومية', value: course.recorded?.starts_at ? `${formatTime(course.recorded.starts_at)} بتوقيت السعودية` : null },
+    { label: 'مصدر المحتوى', value: course.recorded?.channel_name ? `قناة ${course.recorded.channel_name} على YouTube` : null },
   ];
 
   return (

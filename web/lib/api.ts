@@ -52,6 +52,7 @@ export interface CourseDetail extends CourseSummary {
   license: License;
   trainer: { id: string; full_name: string; specialization: string | null; bio: string | null };
   modules: { id: string; title: string; lessons: { id: string; title: string; content_type: LessonContentType }[] }[];
+  recorded: RecordedSource | null;
 }
 
 export interface Provider {
@@ -132,6 +133,17 @@ export interface AdminCourse {
   duration_days: number | null;
   is_published: boolean;
   enrollment_count: number;
+  /** Recorded course built from a YouTube video. */
+  recorded: { video_id: string; channel_url: string | null; channel_name: string | null; starts_at: string | null; day_count: number } | null;
+  /** Has days/lessons already (a YouTube schedule can only be added to an empty course). */
+  has_content: boolean;
+}
+
+/** Where a recorded course's video comes from and when day 1 opens (ISO). */
+export interface RecordedSource {
+  channel_url: string | null;
+  channel_name: string | null;
+  starts_at: string | null;
 }
 
 export interface Trainee {
@@ -178,6 +190,7 @@ export interface MyCourse {
   certificate_code: string | null;
   youtube_video_id: string | null;
   schedule: { break_minutes: number; discussion_minutes: number } | null;
+  source: RecordedSource | null;
   modules: { id: string; title: string; lessons: MyLesson[] }[];
 }
 
@@ -191,7 +204,7 @@ export interface ScheduleSettings {
 }
 
 export interface SchedulePreview {
-  video: { id: string; title: string; channel: string; duration_seconds: number; duration_source: 'youtube' | 'manual' };
+  video: { id: string; title: string; channel: string; channel_url: string | null; duration_seconds: number; duration_source: 'youtube' | 'manual' };
   config: ScheduleSettings;
   plan: {
     video_seconds: number;
@@ -213,7 +226,7 @@ export interface RecordedCourseSummary {
   post_count: number;
 }
 
-export interface RecordedCourseDetail {
+export interface RecordedCourseDetail extends RecordedSource {
   id: string;
   title: string;
   is_published: boolean;

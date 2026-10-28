@@ -116,6 +116,9 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
       durationSeconds: 1265,
       config: { splitMode: 'balanced' as const, maxLectureMinutes: 15, minLectureMinutes: 10, breakMinutes: 5, discussionMinutes: 15, dailyVideoMinutes: 60 },
       trainingHours: 0.6,
+      channelUrl: 'https://www.youtube.com/@mostfa-syntax',
+      channelName: 'Syntax',
+      startsAt: new Date('2026-11-01T16:00:00Z'),
       days: [{ title: 'اليوم 1', lessons: [{ title: 'الجزء 1', startSecond: 0, endSecond: 632 }, { title: 'الجزء 2', startSecond: 632, endSecond: 1265 }] }],
     };
     // Tenant B's trainer id satisfies the FK but must be rejected (FK checks bypass RLS).

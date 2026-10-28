@@ -5,6 +5,7 @@ import { createRecordedCourseAction } from '@/lib/admin-actions';
 import { formatMinutes, formatNumber } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
 import { ScheduleTimeline } from '../schedule-timeline';
+import { SourceFields } from '../source-fields';
 
 type Search = {
   url?: string;
@@ -222,6 +223,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
                     الوصف
                     <textarea id="description" name="description" rows={3} maxLength={5000} />
                   </label>
+                  <SourceFields channelUrl={preview.video.channel_url} channelName={preview.video.channel} />
                   <label className="full checkbox">
                     <input type="checkbox" name="is_published" />
                     نشر الدورة فوراً (تظهر في صفحة الأكاديمية ويمكن الالتحاق بها)

@@ -200,6 +200,11 @@ model Course {
   sourceVideoId         String?    @map("source_video_id")
   sourceDurationSeconds Int?       @map("source_duration_seconds")
   scheduleConfig        Json?      @map("schedule_config")
+  // The channel the video comes from (shown to learners as the source) and when day 1 opens;
+  // day N opens N-1 days later at the same time (the lecture time).
+  sourceChannelUrl      String?    @map("source_channel_url")
+  sourceChannelName     String?    @map("source_channel_name")
+  scheduleStartsAt      DateTime?  @map("schedule_starts_at") @db.Timestamptz(3)
   isPublished           Boolean    @default(false) @map("is_published")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")

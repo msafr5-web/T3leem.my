@@ -98,6 +98,16 @@ export class ProviderController {
     duration_days: c.durationDays,
     is_published: c.isPublished,
     enrollment_count: c.enrollmentCount,
+    recorded: c.recorded
+      ? {
+          video_id: c.recorded.videoId,
+          channel_url: c.recorded.channelUrl,
+          channel_name: c.recorded.channelName,
+          starts_at: c.recorded.startsAt?.toISOString() ?? null,
+          day_count: c.recorded.dayCount,
+        }
+      : null,
+    has_content: c.hasContent ?? false,
   });
 
   // ----- public -----

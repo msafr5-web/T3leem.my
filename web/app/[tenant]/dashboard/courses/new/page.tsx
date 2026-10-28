@@ -21,7 +21,7 @@ export default async function NewCourse({ params }: { params: Promise<{ tenant: 
         </div>
       ) : (
         <div className="card">
-          <CourseForm action={createCourseAction.bind(null, slug)} trainers={trainers} />
+          <CourseForm slug={slug} action={createCourseAction.bind(null, slug)} trainers={trainers} />
         </div>
       )}
     </>

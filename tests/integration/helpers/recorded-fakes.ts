@@ -14,16 +14,20 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
   const courses = new Map<string, NewRecordedCourse & { tenantId: string; moduleIds: string[] }>();
   const modules = new Map<string, { tenantId: string; courseId: string; title: string }>();
   const enrollments = new Set<string>(); // `${userId}:${courseId}`
+  /** Regular courses from the course form (not yet recorded): id → tenant + whether they have content. */
+  const plainCourses = new Map<string, { tenantId: string; hasContent: boolean }>();
   const posts: { id: string; tenantId: string; moduleId: string; userId: string; parentId: string | null; body: string; createdAt: Date }[] = [];
   let seq = 0;
   const nextId = (_kind: string) => `00000000-${String(++seq).padStart(4, '0')}-4000-8000-000000000000`;
 
   const youtube: YoutubeMetadataSource = {
     lookup: async (videoId): Promise<YoutubeLookup> => {
-      if (videoId === YT_OK) return { kind: 'ok', info: { videoId, title: 'تعلم GitHub في أقل من 30 دقيقة', channel: 'Syntax', durationSeconds: 1265 } };
+      if (videoId === YT_OK) {
+        return { kind: 'ok', info: { videoId, title: 'تعلم GitHub في أقل من 30 دقيقة', channel: 'Syntax', channelUrl: 'https://www.youtube.com/@mostfa-syntax', durationSeconds: 1265 } };
+      }
       if (videoId === YT_PRIVATE) return { kind: 'not_found' };
       if (videoId === YT_NO_EMBED) return { kind: 'not_embeddable' };
-      if (videoId === YT_NO_DURATION) return { kind: 'ok', info: { videoId, title: 'Long talk', channel: 'X', durationSeconds: null } };
+      if (videoId === YT_NO_DURATION) return { kind: 'ok', info: { videoId, title: 'Long talk', channel: 'X', channelUrl: null, durationSeconds: null } };
       return { kind: 'not_found' };
     },
   };
@@ -48,6 +52,26 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
       });
       courses.set(id, { ...input, tenantId, moduleIds });
       return id;
+    },
+    attachRecordedSchedule: async (tenantId, _actor, courseId, schedule) => {
+      const plain = plainCourses.get(courseId);
+      if (courses.has(courseId)) return courses.get(courseId)!.tenantId === tenantId ? 'has_content' : 'not_found';
+      if (!plain || plain.tenantId !== tenantId) return 'not_found';
+      if (plain.hasContent) return 'has_content';
+      const moduleIds = schedule.days.map((d) => {
+        const mid = nextId('module');
+        modules.set(mid, { tenantId, courseId, title: d.title });
+        return mid;
+      });
+      courses.set(courseId, { ...schedule, title: 'Plain course', description: null, trainerId: ids.trainer, price: '0.00', isPublished: false, tenantId, moduleIds });
+      plainCourses.delete(courseId);
+      return 'ok';
+    },
+    updateRecordedSource: async (tenantId, _actor, courseId, meta) => {
+      const c = courses.get(courseId);
+      if (!c || c.tenantId !== tenantId) return false;
+      Object.assign(c, meta);
+      return true;
     },
     listRecordedCourses: async (tenantId) =>
       [...courses.entries()]
@@ -75,6 +99,9 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
         enrollmentCount: 0,
         config: c.config,
         trainingHours: c.trainingHours,
+        channelUrl: c.channelUrl,
+        channelName: c.channelName,
+        startsAt: c.startsAt,
         days: c.days.map((d, i) => ({
           id: c.moduleIds[i] ?? '',
           title: d.title,
@@ -106,5 +133,6 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
     courses,
     posts,
     enroll: (userId: string, courseId: string) => enrollments.add(`${userId}:${courseId}`),
+    addPlainCourse: (tenantId: string, courseId: string, hasContent = false) => plainCourses.set(courseId, { tenantId, hasContent }),
   };
 }

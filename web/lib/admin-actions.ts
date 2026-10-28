@@ -59,6 +59,9 @@ const FIELD_LABELS: Record<string, string> = {
   discussion_minutes: 'وقت النقاش',
   manual_duration_seconds: 'مدة الفيديو',
   body: 'النص',
+  channel_url: 'رابط القناة',
+  channel_name: 'اسم القناة',
+  lecture_time: 'وقت المحاضرة',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -89,6 +92,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   FORBIDDEN: 'ليست لديك صلاحية لهذه العملية.',
   RATE_LIMITED: 'طلبات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.',
   INVALID_YOUTUBE_URL: 'أدخل رابط فيديو YouTube صحيحاً.',
+  INVALID_CHANNEL_URL: 'رابط القناة غير صحيح. مثال: https://www.youtube.com/@With_fouad',
+  COURSE_HAS_CONTENT: 'لهذه الدورة محتوى مُضاف، فلا يمكن ربطها بفيديو YouTube.',
   YOUTUBE_VIDEO_NOT_FOUND: 'الفيديو غير موجود أو خاص. تأكد أنه عام أو غير مدرج.',
   YOUTUBE_NOT_EMBEDDABLE: 'صاحب الفيديو منع تشغيله خارج YouTube، فلا يمكن استخدامه.',
   YOUTUBE_DURATION_UNKNOWN: 'تعذّر قراءة مدة الفيديو من YouTube. أدخل المدة يدوياً.',
@@ -166,12 +171,74 @@ function courseBody(form: FormData) {
   };
 }
 
-export async function createCourseAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  return save(slug, '/admin/courses', 'POST', courseBody(form), `/${slug}/dashboard/courses`);
+/** The YouTube schedule + source fields of the course form, as API body fields. */
+function youtubeBody(form: FormData): Record<string, string | number> {
+  const body: Record<string, string | number> = {};
+  for (const key of [...SCHEDULE_FIELDS, ...SOURCE_FIELDS]) {
+    const v = str(form, key);
+    if (v !== '') body[key] = NUMERIC_FIELDS.has(key) ? Number(v) : v;
+  }
+  return body;
 }
 
+function failure(err: unknown): AdminFormState {
+  const state = describeError(err);
+  if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
+    state.fields = [...new Set((err.details ?? []).map((d) => FIELD_LABELS[d.field.replace(/\[\d+\]$/, '')] ?? d.field))];
+  }
+  return state;
+}
+
+/**
+ * New course. A recorded course with a YouTube link is checked against YouTube first (so a bad
+ * link never leaves a half-made course behind), then created, then split into days and lectures.
+ */
+export async function createCourseAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const youtube = str(form, 'type') === 'RECORDED' && str(form, 'youtube_url') ? youtubeBody(form) : null;
+  if (!youtube) return save(slug, '/admin/courses', 'POST', courseBody(form), `/${slug}/dashboard/courses`);
+
+  const token = await adminToken(slug);
+  let id: string;
+  try {
+    await api(slug, '/admin/recorded-courses/preview', { method: 'POST', token, body: youtube });
+    ({ id } = await api<{ id: string }>(slug, '/admin/courses', { method: 'POST', token, body: courseBody(form) }));
+  } catch (err) {
+    return failure(err);
+  }
+  try {
+    await api(slug, `/admin/courses/${id}/youtube`, { method: 'POST', token, body: youtube });
+  } catch {
+    // The course exists; send the provider to it rather than inviting a duplicate on resubmit.
+    revalidatePath(`/${slug}`, 'layout');
+    redirect(`/${slug}/dashboard/courses/${id}?youtube=failed`);
+  }
+  revalidatePath(`/${slug}`, 'layout');
+  redirect(`/${slug}/dashboard/recorded/${id}?created=1`);
+}
+
+/** Edit course. Recorded YouTube courses also save channel + start date; an empty recorded course can get a YouTube link. */
 export async function updateCourseAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  return save(slug, `/admin/courses/${encodeURIComponent(courseId)}`, 'PUT', courseBody(form), `/${slug}/dashboard/courses`);
+  if (!ID_RE.test(courseId)) return { error: 'طلب غير صالح.' };
+  const isRecorded = form.get('recorded_course') === '1';
+  const youtube = !isRecorded && str(form, 'type') === 'RECORDED' && str(form, 'youtube_url') ? youtubeBody(form) : null;
+  if (!isRecorded && !youtube) return save(slug, `/admin/courses/${courseId}`, 'PUT', courseBody(form), `/${slug}/dashboard/courses`);
+
+  const token = await adminToken(slug);
+  try {
+    if (youtube) await api(slug, '/admin/recorded-courses/preview', { method: 'POST', token, body: youtube });
+    await api(slug, `/admin/courses/${courseId}`, { method: 'PUT', token, body: courseBody(form) });
+    if (isRecorded) {
+      const source: Record<string, string> = {};
+      for (const key of SOURCE_FIELDS) source[key] = str(form, key);
+      await api(slug, `/admin/recorded-courses/${courseId}/source`, { method: 'PUT', token, body: source });
+    } else if (youtube) {
+      await api(slug, `/admin/courses/${courseId}/youtube`, { method: 'POST', token, body: youtube });
+    }
+  } catch (err) {
+    return failure(err);
+  }
+  revalidatePath(`/${slug}`, 'layout');
+  redirect(youtube ? `/${slug}/dashboard/recorded/${courseId}?created=1` : `/${slug}/dashboard/courses`);
 }
 
 export async function createTrainerAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
@@ -297,6 +364,8 @@ export async function deleteLessonAction(slug: string, courseId: string, lessonI
 // ----- recorded (YouTube) courses -----
 
 const SCHEDULE_FIELDS = ['youtube_url', 'split_mode', 'days', 'max_lecture_minutes', 'min_lecture_minutes', 'break_minutes', 'discussion_minutes', 'manual_duration_seconds'] as const;
+const SOURCE_FIELDS = ['channel_url', 'channel_name', 'starts_on', 'lecture_time'] as const;
+const NUMERIC_FIELDS = new Set<string>(['days', 'max_lecture_minutes', 'min_lecture_minutes', 'break_minutes', 'discussion_minutes', 'manual_duration_seconds']);
 
 /** Creates the course + its days and lectures in one call, then opens its schedule page. */
 export async function createRecordedCourseAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
@@ -308,9 +377,9 @@ export async function createRecordedCourseAction(slug: string, _prev: AdminFormS
     price: Number(str(form, 'price') || 0),
     is_published: form.get('is_published') === 'on',
   };
-  for (const key of SCHEDULE_FIELDS) {
+  for (const key of [...SCHEDULE_FIELDS, ...SOURCE_FIELDS]) {
     const v = str(form, key);
-    if (v !== '') body[key] = key === 'youtube_url' || key === 'split_mode' ? v : Number(v);
+    if (v !== '') body[key] = NUMERIC_FIELDS.has(key) ? Number(v) : v;
   }
   let id: string;
   try {
@@ -324,6 +393,14 @@ export async function createRecordedCourseAction(slug: string, _prev: AdminFormS
   }
   revalidatePath(`/${slug}`, 'layout');
   redirect(`/${slug}/dashboard/recorded/${id}?created=1`);
+}
+
+/** Channel + start date/time of an existing recorded course. */
+export async function updateRecordedSourceAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  if (!ID_RE.test(courseId)) return { error: 'طلب غير صالح.' };
+  const body: Record<string, string> = {};
+  for (const key of SOURCE_FIELDS) body[key] = str(form, key);
+  return save(slug, `/admin/recorded-courses/${courseId}/source`, 'PUT', body, `/${slug}/dashboard/recorded/${courseId}?saved=1`);
 }
 
 /** Trainer/admin answer (or new note) on a day's discussion board. */

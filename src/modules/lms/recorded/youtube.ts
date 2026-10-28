@@ -31,6 +31,26 @@ export function parseYoutubeVideoId(input: string): string | null {
 
 export const youtubeWatchUrl = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}`;
 
+const CHANNEL_PATH_RE = /^\/(@[A-Za-z0-9._-]{3,100}|channel\/UC[A-Za-z0-9_-]{22}|c\/[A-Za-z0-9._-]{1,100}|user\/[A-Za-z0-9._-]{1,100})\/?$/;
+
+/**
+ * A YouTube channel page ("https://www.youtube.com/@With_fouad", /channel/UC…, /c/…, /user/…)
+ * in canonical form, or null. Query strings and sub-pages (/videos, /featured) are dropped.
+ */
+export function normalizeChannelUrl(input: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname.toLowerCase())) return null;
+  const path = url.pathname.replace(/\/(videos|featured|streams|playlists|about|shorts)\/?$/, '');
+  const m = CHANNEL_PATH_RE.exec(path);
+  return m ? `https://www.youtube.com/${m[1]}` : null;
+}
+
 /** ISO-8601 duration from the Data API ("PT1H2M5S") → seconds. */
 export function parseIsoDuration(iso: string): number | null {
   const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso);
@@ -44,6 +64,8 @@ export interface YoutubeVideoInfo {
   videoId: string;
   title: string;
   channel: string;
+  /** Canonical channel page, when YouTube tells us. */
+  channelUrl: string | null;
   /** null when it couldn't be determined; the admin then enters it manually. */
   durationSeconds: number | null;
 }
@@ -90,7 +112,7 @@ export class YoutubeMetadataClient implements YoutubeMetadataSource {
     const res = await this.get(url);
     if (!res.ok) return { kind: 'unavailable' };
     const body = (await res.json()) as {
-      items?: { snippet?: { title?: string; channelTitle?: string }; contentDetails?: { duration?: string }; status?: { embeddable?: boolean; privacyStatus?: string } }[];
+      items?: { snippet?: { title?: string; channelTitle?: string; channelId?: string }; contentDetails?: { duration?: string }; status?: { embeddable?: boolean; privacyStatus?: string } }[];
     };
     const item = body.items?.[0];
     if (!item || item.status?.privacyStatus === 'private') return { kind: 'not_found' };
@@ -101,6 +123,7 @@ export class YoutubeMetadataClient implements YoutubeMetadataSource {
         videoId,
         title: item.snippet?.title ?? '',
         channel: item.snippet?.channelTitle ?? '',
+        channelUrl: item.snippet?.channelId ? normalizeChannelUrl(`https://www.youtube.com/channel/${item.snippet.channelId}`) : null,
         durationSeconds: item.contentDetails?.duration ? parseIsoDuration(item.contentDetails.duration) : null,
       },
     };
@@ -112,8 +135,17 @@ export class YoutubeMetadataClient implements YoutubeMetadataSource {
     if (res.status === 401 || res.status === 403) return { kind: 'not_embeddable' };
     if (res.status === 400 || res.status === 404) return { kind: 'not_found' };
     if (!res.ok) return { kind: 'unavailable' };
-    const meta = (await res.json()) as { title?: string; author_name?: string };
-    return { kind: 'ok', info: { videoId, title: meta.title ?? '', channel: meta.author_name ?? '', durationSeconds: await this.scrapeDuration(videoId) } };
+    const meta = (await res.json()) as { title?: string; author_name?: string; author_url?: string };
+    return {
+      kind: 'ok',
+      info: {
+        videoId,
+        title: meta.title ?? '',
+        channel: meta.author_name ?? '',
+        channelUrl: meta.author_url ? normalizeChannelUrl(meta.author_url) : null,
+        durationSeconds: await this.scrapeDuration(videoId),
+      },
+    };
   }
 
   private async scrapeDuration(videoId: string): Promise<number | null> {

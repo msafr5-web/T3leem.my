@@ -5,7 +5,8 @@ import { authenticate, requireAuthContext, requireRoles, type JwtVerifyOptions }
 import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import type { DiscussionPostRow } from './recorded.repository';
-import type { RecordedCourseService, ScheduleRequest, SchedulePreview } from './recorded.service';
+import type { RecordedSourceMeta } from './recorded.repository';
+import type { RecordedCourseService, ScheduleRequest, SchedulePreview, SourceInput } from './recorded.service';
 import { SCHEDULE_LIMITS, type ScheduleConfig } from './schedule-planner';
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
@@ -22,6 +23,32 @@ const scheduleRules = [
   body('daily_video_minutes').optional({ values: 'falsy' }).isInt(L.dailyVideoMinutes),
   body('manual_duration_seconds').optional({ values: 'falsy' }).isInt({ min: 60, max: L.maxVideoSeconds }),
 ];
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Channel + first-day date/time. Optional everywhere: empty means "use YouTube's channel" / "no fixed dates". */
+const sourceRules = [
+  body('channel_url').optional({ values: 'falsy' }).isString().isLength({ max: 300 }),
+  body('channel_name').optional({ values: 'falsy' }).isString().trim().isLength({ max: 120 }),
+  body('starts_on').optional({ values: 'falsy' }).isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('starts_on must be YYYY-MM-DD'),
+  body('lecture_time').optional({ values: 'falsy' }).matches(TIME_RE).withMessage('lecture_time must be HH:MM'),
+];
+
+/**
+ * Academy dates and times are Saudi time (Asia/Riyadh, UTC+3, no daylight saving), so
+ * "2026-11-01" + "19:00" is stored as 2026-11-01T16:00Z regardless of the server's zone.
+ */
+export function riyadhDateTime(date: string, time: string | null): Date {
+  return new Date(`${date}T${time ?? '00:00'}:00+03:00`);
+}
+
+function sourceInput(b: Record<string, unknown>): SourceInput {
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const date = str(b.starts_on);
+  return { channelUrl: str(b.channel_url), channelName: str(b.channel_name), startsAt: date ? riyadhDateTime(date, str(b.lecture_time)) : null };
+}
+
+const sourceJson = (m: RecordedSourceMeta) => ({ channel_url: m.channelUrl, channel_name: m.channelName, starts_at: m.startsAt?.toISOString() ?? null });
 
 const int = (v: unknown): number | undefined => (v === undefined || v === null || v === '' ? undefined : Number(v));
 
@@ -50,7 +77,14 @@ const configJson = (c: ScheduleConfig) => ({
 });
 
 const previewJson = (p: SchedulePreview) => ({
-  video: { id: p.video.videoId, title: p.video.title, channel: p.video.channel, duration_seconds: p.video.durationSeconds, duration_source: p.video.durationSource },
+  video: {
+    id: p.video.videoId,
+    title: p.video.title,
+    channel: p.video.channel,
+    channel_url: p.video.channelUrl,
+    duration_seconds: p.video.durationSeconds,
+    duration_source: p.video.durationSource,
+  },
   config: configJson(p.config),
   plan: {
     video_seconds: p.plan.videoSeconds,
@@ -113,6 +147,7 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
     '/recorded-courses',
     ...admin,
     ...scheduleRules,
+    ...sourceRules,
     body('title').optional({ values: 'falsy' }).isString().trim().isLength({ min: 3, max: 200 }),
     body('description').optional({ values: 'falsy' }).isString().isLength({ max: 5000 }),
     body('trainer_id').isUUID().withMessage('trainer_id must be a UUID'),
@@ -124,6 +159,7 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
       const b = req.body as Record<string, unknown>;
       const { id, preview } = await service.create(tenantId, { userId: user.id, role: user.role, ip: req.ip ?? null }, {
         ...scheduleRequest(b),
+        ...sourceInput(b),
         title: typeof b.title === 'string' ? b.title : null,
         description: typeof b.description === 'string' && b.description.trim() ? b.description.trim() : null,
         trainerId: String(b.trainer_id),
@@ -164,6 +200,7 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
         duration_seconds: c.durationSeconds,
         enrollment_count: c.enrollmentCount,
         training_hours: c.trainingHours,
+        ...sourceJson(c),
         config: c.config ? configJson(c.config) : null,
         days: c.days.map((d) => ({
           id: d.id,
@@ -173,6 +210,20 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
         })),
       }),
     );
+  });
+
+  // Regular course form → "recorded course" with a YouTube link: build its days on an empty course.
+  router.post('/courses/:id/youtube', ...admin, uuid('id'), ...scheduleRules, ...sourceRules, validate, async (req: Request<{ id: string }>, res: Response) => {
+    const { tenantId, user } = requireAuthContext(req);
+    const b = req.body as Record<string, unknown>;
+    const preview = await service.attach(tenantId, { userId: user.id, role: user.role, ip: req.ip ?? null }, req.params.id, { ...scheduleRequest(b), ...sourceInput(b) });
+    res.status(201).json(ok({ id: req.params.id, ...previewJson(preview) }));
+  });
+
+  router.put('/recorded-courses/:id/source', ...admin, uuid('id'), ...sourceRules, validate, async (req: Request<{ id: string }>, res: Response) => {
+    const { tenantId, user } = requireAuthContext(req);
+    await service.updateSource(tenantId, { userId: user.id, role: user.role, ip: req.ip ?? null }, req.params.id, sourceInput(req.body as Record<string, unknown>));
+    res.json(ok({ id: req.params.id }));
   });
 
   router.get('/modules/:id/discussion', ...admin, uuid('id'), validate, discussion.list);

@@ -48,6 +48,9 @@ export function buildLearnerRouter(learning: LearningService, video: VideoServic
         certificate_code: c.certificateCode,
         youtube_video_id: c.youtubeVideoId,
         schedule: c.schedule ? { break_minutes: c.schedule.breakMinutes, discussion_minutes: c.schedule.discussionMinutes } : null,
+        source: c.source
+          ? { channel_url: c.source.channelUrl, channel_name: c.source.channelName, starts_at: c.source.startsAt?.toISOString() ?? null }
+          : null,
         modules: c.modules.map((m) => ({
           id: m.id,
           title: m.title,

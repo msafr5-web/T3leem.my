@@ -23,6 +23,8 @@ export interface MyCourse {
   /** Recorded (YouTube) courses: the source video and the break/discussion minutes between segments. */
   youtubeVideoId: string | null;
   schedule: { breakMinutes: number; discussionMinutes: number } | null;
+  /** Recorded courses: source channel and when day 1 opens (day N opens N-1 days later). */
+  source: { channelUrl: string | null; channelName: string | null; startsAt: Date | null } | null;
   modules: {
     id: string;
     title: string;
@@ -133,6 +135,9 @@ export class PrismaLearningRepository implements LearningRepository {
             title: true,
             sourceVideoId: true,
             scheduleConfig: true,
+            sourceChannelUrl: true,
+            sourceChannelName: true,
+            scheduleStartsAt: true,
             modules: {
               orderBy: { sortOrder: 'asc' },
               select: {
@@ -159,6 +164,9 @@ export class PrismaLearningRepository implements LearningRepository {
       certificateCode: e.certificates[0]?.certificateCode ?? null,
       youtubeVideoId: e.course.sourceVideoId,
       schedule: e.course.sourceVideoId ? scheduleOf(e.course.scheduleConfig) : null,
+      source: e.course.sourceVideoId
+        ? { channelUrl: e.course.sourceChannelUrl, channelName: e.course.sourceChannelName, startsAt: e.course.scheduleStartsAt }
+        : null,
       modules: e.course.modules.map((m) => ({
         id: m.id,
         title: m.title,

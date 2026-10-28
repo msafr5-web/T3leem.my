@@ -3,18 +3,31 @@ import { forTenant, withTenantTransaction } from '../../../config/database';
 import type { Actor } from '../../provider/provider.types';
 import type { ScheduleConfig } from './schedule-planner';
 
-export interface NewRecordedCourse {
-  title: string;
-  description: string | null;
-  trainerId: string;
-  price: string;
-  isPublished: boolean;
+/** Where the video comes from and when day 1 opens (day N opens N-1 days later, same time). */
+export interface RecordedSourceMeta {
+  channelUrl: string | null;
+  channelName: string | null;
+  startsAt: Date | null;
+}
+
+/** The generated schedule for one YouTube video: days (modules) of lectures (YOUTUBE lessons). */
+export interface RecordedSchedule extends RecordedSourceMeta {
   videoId: string;
   durationSeconds: number;
   config: ScheduleConfig;
   trainingHours: number;
   days: { title: string; lessons: { title: string; startSecond: number; endSecond: number }[] }[];
 }
+
+export interface NewRecordedCourse extends RecordedSchedule {
+  title: string;
+  description: string | null;
+  trainerId: string;
+  price: string;
+  isPublished: boolean;
+}
+
+export type AttachResult = 'ok' | 'not_found' | 'has_content';
 
 export interface RecordedCourseSummary {
   id: string;
@@ -28,7 +41,7 @@ export interface RecordedCourseSummary {
   postCount: number;
 }
 
-export interface RecordedCourseDetail extends Omit<RecordedCourseSummary, 'dayCount' | 'lectureCount' | 'postCount'> {
+export interface RecordedCourseDetail extends Omit<RecordedCourseSummary, 'dayCount' | 'lectureCount' | 'postCount'>, RecordedSourceMeta {
   config: ScheduleConfig | null;
   trainingHours: number | null;
   days: { id: string; title: string; postCount: number; lessons: { id: string; title: string; startSecond: number; endSecond: number }[] }[];
@@ -49,6 +62,10 @@ export type CreatePostResult = { kind: 'ok'; id: string } | { kind: 'module_not_
 export interface RecordedCourseRepository {
   /** null = the trainer isn't in this academy. */
   createRecordedCourse(tenantId: string, actor: Actor, input: NewRecordedCourse): Promise<string | null>;
+  /** Adds a YouTube schedule to an existing course that has no content yet. */
+  attachRecordedSchedule(tenantId: string, actor: Actor, courseId: string, schedule: RecordedSchedule): Promise<AttachResult>;
+  /** Changes channel / start date of a recorded course. false = no such recorded course. */
+  updateRecordedSource(tenantId: string, actor: Actor, courseId: string, meta: RecordedSourceMeta): Promise<boolean>;
   listRecordedCourses(tenantId: string): Promise<RecordedCourseSummary[]>;
   getRecordedCourse(tenantId: string, courseId: string): Promise<RecordedCourseDetail | null>;
   /** True when the user holds an ACTIVE enrollment in the course this module belongs to. */
@@ -77,6 +94,41 @@ const parseConfig = (raw: Prisma.JsonValue | null): ScheduleConfig | null => {
 
 export { parseConfig as parseScheduleConfig };
 
+/** Course columns that describe the recorded source (shared by create and attach). */
+const sourceColumns = (s: RecordedSchedule) => ({
+  sourceVideoId: s.videoId,
+  sourceDurationSeconds: s.durationSeconds,
+  scheduleConfig: { ...s.config },
+  sourceChannelUrl: s.channelUrl,
+  sourceChannelName: s.channelName,
+  scheduleStartsAt: s.startsAt,
+  durationDays: s.days.length,
+});
+
+/** Writes the days (modules) and lectures (YOUTUBE lessons) of a schedule inside the caller's transaction. */
+async function writeDays(tx: Prisma.TransactionClient, tenantId: string, courseId: string, s: RecordedSchedule): Promise<void> {
+  const mediaUrl = `https://www.youtube.com/watch?v=${s.videoId}`;
+  for (const [d, day] of s.days.entries()) {
+    const mod = await tx.module.create({ data: { tenantId, courseId, title: day.title, sortOrder: d }, select: { id: true } });
+    await tx.lesson.createMany({
+      data: day.lessons.map((l, i) => ({
+        tenantId,
+        moduleId: mod.id,
+        title: l.title,
+        contentType: 'YOUTUBE' as const,
+        sortOrder: i,
+        mediaUrl,
+        startSecond: l.startSecond,
+        endSecond: l.endSecond,
+        durationSeconds: l.endSecond - l.startSecond,
+      })),
+    });
+  }
+}
+
+const auditSchedule = (tx: Prisma.TransactionClient, tenantId: string, actor: Actor, action: string, courseId: string, metadata: Prisma.InputJsonValue) =>
+  tx.auditLog.create({ data: { tenantId, actorId: actor.userId, actorRole: actor.role, action, entityType: 'course', entityId: courseId, metadata, ipAddress: actor.ip } });
+
 export class PrismaRecordedCourseRepository implements RecordedCourseRepository {
   createRecordedCourse(tenantId: string, actor: Actor, input: NewRecordedCourse): Promise<string | null> {
     return withTenantTransaction(tenantId, async (tx) => {
@@ -94,46 +146,54 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
           type: 'RECORDED',
           price: new Prisma.Decimal(input.price),
           trainingHours: new Prisma.Decimal(input.trainingHours),
-          durationDays: input.days.length,
           isPublished: input.isPublished,
-          sourceVideoId: input.videoId,
-          sourceDurationSeconds: input.durationSeconds,
-          scheduleConfig: { ...input.config },
+          ...sourceColumns(input),
         },
         select: { id: true },
       });
-
-      const mediaUrl = `https://www.youtube.com/watch?v=${input.videoId}`;
-      for (const [d, day] of input.days.entries()) {
-        const mod = await tx.module.create({ data: { tenantId, courseId: course.id, title: day.title, sortOrder: d }, select: { id: true } });
-        await tx.lesson.createMany({
-          data: day.lessons.map((l, i) => ({
-            tenantId,
-            moduleId: mod.id,
-            title: l.title,
-            contentType: 'YOUTUBE' as const,
-            sortOrder: i,
-            mediaUrl,
-            startSecond: l.startSecond,
-            endSecond: l.endSecond,
-            durationSeconds: l.endSecond - l.startSecond,
-          })),
-        });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actor.userId,
-          actorRole: actor.role,
-          action: 'course.created_from_youtube',
-          entityType: 'course',
-          entityId: course.id,
-          metadata: { title: input.title, videoId: input.videoId, days: input.days.length, lectures: input.days.reduce((s, d) => s + d.lessons.length, 0) },
-          ipAddress: actor.ip,
-        },
+      await writeDays(tx, tenantId, course.id, input);
+      await auditSchedule(tx, tenantId, actor, 'course.created_from_youtube', course.id, {
+        title: input.title,
+        videoId: input.videoId,
+        days: input.days.length,
+        lectures: input.days.reduce((s, d) => s + d.lessons.length, 0),
       });
       return course.id;
+    });
+  }
+
+  attachRecordedSchedule(tenantId: string, actor: Actor, courseId: string, schedule: RecordedSchedule): Promise<AttachResult> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const course = await tx.course.findFirst({
+        where: { tenantId, id: courseId },
+        select: { trainingHours: true, sourceVideoId: true, _count: { select: { modules: true } } },
+      });
+      if (!course) return 'not_found';
+      // Never mix generated days with hand-built content (or re-split a course learners follow).
+      if (course.sourceVideoId || course._count.modules > 0) return 'has_content';
+      await tx.course.update({
+        where: { id: courseId },
+        data: {
+          type: 'RECORDED',
+          ...sourceColumns(schedule),
+          // Keep training hours the provider entered (e.g. from the accreditation); fill them in otherwise.
+          ...(course.trainingHours ? {} : { trainingHours: new Prisma.Decimal(schedule.trainingHours) }),
+        },
+      });
+      await writeDays(tx, tenantId, courseId, schedule);
+      await auditSchedule(tx, tenantId, actor, 'course.youtube_attached', courseId, { videoId: schedule.videoId, days: schedule.days.length });
+      return 'ok';
+    });
+  }
+
+  updateRecordedSource(tenantId: string, actor: Actor, courseId: string, meta: RecordedSourceMeta): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.course.updateMany({
+        where: { tenantId, id: courseId, sourceVideoId: { not: null } },
+        data: { sourceChannelUrl: meta.channelUrl, sourceChannelName: meta.channelName, scheduleStartsAt: meta.startsAt },
+      });
+      if (count) await auditSchedule(tx, tenantId, actor, 'course.youtube_source_updated', courseId, { startsAt: meta.startsAt?.toISOString() ?? null });
+      return count > 0;
     });
   }
 
@@ -175,6 +235,9 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
         sourceDurationSeconds: true,
         scheduleConfig: true,
         trainingHours: true,
+        sourceChannelUrl: true,
+        sourceChannelName: true,
+        scheduleStartsAt: true,
         _count: { select: { enrollments: true } },
         modules: {
           orderBy: { sortOrder: 'asc' },
@@ -196,6 +259,9 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
       durationSeconds: c.sourceDurationSeconds ?? 0,
       enrollmentCount: c._count.enrollments,
       config: parseConfig(c.scheduleConfig),
+      channelUrl: c.sourceChannelUrl,
+      channelName: c.sourceChannelName,
+      startsAt: c.scheduleStartsAt,
       trainingHours: c.trainingHours ? c.trainingHours.toNumber() : null,
       days: c.modules.map((m) => ({
         id: m.id,

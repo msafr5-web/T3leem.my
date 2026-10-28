@@ -6,8 +6,14 @@ import { deleteAction, updateCourseAction } from '@/lib/admin-actions';
 import { DeleteButton } from '../../delete-button';
 import { CourseForm } from '../course-form';
 
-export default async function EditCourse({ params }: { params: Promise<{ tenant: string; id: string }> }) {
-  const { tenant: slug, id } = await params;
+export default async function EditCourse({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ tenant: string; id: string }>;
+  searchParams: Promise<{ youtube?: string }>;
+}) {
+  const [{ tenant: slug, id }, { youtube }] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
 
   let course: AdminCourse;
@@ -34,8 +40,13 @@ export default async function EditCourse({ params }: { params: Promise<{ tenant:
           <Link href={`/${slug}/dashboard/courses`} className="btn btn-ghost">رجوع</Link>
         </div>
       </div>
+      {youtube === 'failed' && (
+        <p className="notice error" role="alert">
+          أُنشئت الدورة لكن تعذّر تقسيم فيديو YouTube. أعد إدخال الرابط في قسم «مصدر الدورة المسجلة» ثم احفظ.
+        </p>
+      )}
       <div className="card">
-        <CourseForm action={updateCourseAction.bind(null, slug, course.id)} trainers={trainers} course={course} />
+        <CourseForm slug={slug} action={updateCourseAction.bind(null, slug, course.id)} trainers={trainers} course={course} />
       </div>
       <section className="card stack danger-zone" aria-labelledby="delete-heading">
         <h2 id="delete-heading" style={{ fontSize: 18 }}>حذف الدورة</h2>

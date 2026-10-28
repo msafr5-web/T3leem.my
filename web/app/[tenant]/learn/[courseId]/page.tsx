@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ApiError, me, type DiscussionThread, type MyCourse, type MyLesson } from '@/lib/api';
 import { completeLessonAction, postDiscussionAction } from '@/lib/actions';
-import { formatNumber, lessonTypeLabel } from '@/lib/format';
+import { dayOpensAt, formatDateTime, formatNumber, lessonTypeLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
 import { DiscussionBoard } from '../../../discussion-board';
 import { HlsPlayer } from './hls-player';
@@ -14,13 +14,20 @@ export const metadata: Metadata = { title: 'التعلم' };
 const minutes = (s: number | null) => (s ? `${Math.max(1, Math.round(s / 60))} د` : '');
 
 /**
- * Recorded (YouTube) courses release one day at a time: a day opens once every lecture of the
- * previous day is complete. Returns the ids of the days that are still locked.
+ * Recorded (YouTube) courses release one day at a time. With a start date, day N opens on its
+ * date at the lecture time (learners who fall behind can still catch up on opened days);
+ * without one, a day opens once every lecture of the previous day is complete.
+ * Returns the ids of the days that are still locked.
  */
-function lockedDays(course: MyCourse): Set<string> {
+function lockedDays(course: MyCourse, now: number): Set<string> {
   const locked = new Set<string>();
   if (!course.youtube_video_id) return locked;
+  const startsAt = course.source?.starts_at;
   course.modules.forEach((m, i) => {
+    if (startsAt) {
+      if (dayOpensAt(startsAt, i).getTime() > now) locked.add(m.id);
+      return;
+    }
     const prev = course.modules[i - 1];
     if (prev && (locked.has(prev.id) || prev.lessons.some((l) => !l.completed))) locked.add(m.id);
   });
@@ -47,7 +54,13 @@ export default async function LearnCourse({
     throw err;
   }
 
-  const locked = lockedDays(course);
+  const now = Date.now();
+  const locked = lockedDays(course, now);
+  const startsAt = course.source?.starts_at ?? null;
+  const dayDate = (moduleId: string) => {
+    const i = course.modules.findIndex((m) => m.id === moduleId);
+    return startsAt && i >= 0 ? formatDateTime(dayOpensAt(startsAt, i).toISOString()) : null;
+  };
   const moduleOf = new Map(course.modules.flatMap((m) => m.lessons.map((l) => [l.id, m] as const)));
   const lessons = course.modules.flatMap((m) => m.lessons);
   const open = lessons.filter((l) => !locked.has(moduleOf.get(l.id)?.id ?? ''));
@@ -81,6 +94,25 @@ export default async function LearnCourse({
             → دوراتي
           </Link>
           <h1 style={{ fontSize: 28 }}>{course.course_title}</h1>
+          {course.source && (course.source.channel_name || startsAt) && (
+            <p className="small muted">
+              {course.source.channel_name && (
+                <>
+                  المصدر: قناة{' '}
+                  {course.source.channel_url ? (
+                    <a href={course.source.channel_url} target="_blank" rel="noopener noreferrer">
+                      {course.source.channel_name}
+                    </a>
+                  ) : (
+                    course.source.channel_name
+                  )}{' '}
+                  على YouTube
+                </>
+              )}
+              {course.source.channel_name && startsAt && ' · '}
+              {startsAt && <>المحاضرة اليومية تبدأ {formatDateTime(startsAt)}</>}
+            </p>
+          )}
         </div>
         <div style={{ minWidth: 220 }} className="stack">
           <div className="progress" role="progressbar" aria-valuenow={Math.round(course.progress)} aria-valuemin={0} aria-valuemax={100} aria-label="نسبة الإنجاز">
@@ -111,7 +143,7 @@ export default async function LearnCourse({
 
               {currentLocked && (
                 <div className="card empty">
-                  هذا اليوم يُفتح بعد إكمال أجزاء اليوم السابق.{' '}
+                  {currentModule && dayDate(currentModule.id) ? `يُفتح هذا اليوم ${dayDate(currentModule.id)}.` : 'هذا اليوم يُفتح بعد إكمال أجزاء اليوم السابق.'}{' '}
                   {resumeLesson && <Link href={lessonHref(resumeLesson.id)}>تابع من حيث توقفت</Link>}
                 </div>
               )}
@@ -187,6 +219,7 @@ export default async function LearnCourse({
             <div key={m.id} className="stack" style={{ gap: 6 }}>
               <h3 style={{ fontSize: 15 }}>
                 {m.title}
+                {dayDate(m.id) && <span className="small muted"> · {dayDate(m.id)}</span>}
                 {locked.has(m.id) && <span className="small muted"> · مقفل</span>}
               </h3>
               <ol className="lesson-list">

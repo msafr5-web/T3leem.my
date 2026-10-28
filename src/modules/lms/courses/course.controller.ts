@@ -55,6 +55,9 @@ export class CourseController {
           title: m.title,
           lessons: m.lessons.map((l) => ({ id: l.id, title: l.title, content_type: l.contentType })),
         })),
+        recorded: course.recorded
+          ? { channel_url: course.recorded.channelUrl, channel_name: course.recorded.channelName, starts_at: course.recorded.startsAt?.toISOString() ?? null }
+          : null,
       }),
     );
   };

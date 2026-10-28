@@ -1,5 +1,5 @@
 import { DEFAULT_SCHEDULE, ScheduleError, formatTimestamp, planSchedule, splitDay } from '../../src/modules/lms/recorded/schedule-planner';
-import { YoutubeMetadataClient, parseIsoDuration, parseYoutubeVideoId } from '../../src/modules/lms/recorded/youtube';
+import { YoutubeMetadataClient, normalizeChannelUrl, parseIsoDuration, parseYoutubeVideoId } from '../../src/modules/lms/recorded/youtube';
 
 const minutes = (lectures: { startSecond: number; endSecond: number }[]) => lectures.map((l) => Math.round((l.endSecond - l.startSecond) / 60));
 
@@ -91,7 +91,7 @@ describe('YoutubeMetadataClient (no API key)', () => {
       String(url).includes('/oembed') ? respond(200, JSON.stringify({ title: 'Learn GitHub', author_name: 'Syntax' })) : respond(200, '..."lengthSeconds":"1265",...'),
     ) as unknown as typeof fetch;
     const result = await new YoutubeMetadataClient(undefined, fetchImpl).lookup('ZJQ-c4HyeX8');
-    expect(result).toEqual({ kind: 'ok', info: { videoId: 'ZJQ-c4HyeX8', title: 'Learn GitHub', channel: 'Syntax', durationSeconds: 1265 } });
+    expect(result).toEqual({ kind: 'ok', info: { videoId: 'ZJQ-c4HyeX8', title: 'Learn GitHub', channel: 'Syntax', channelUrl: null, durationSeconds: 1265 } });
   });
 
   it('maps oEmbed 401 to not_embeddable and 404 to not_found; duration falls back to null', async () => {
@@ -136,3 +136,17 @@ describe('fixed split — "a break every N minutes" chosen by the supervisor', (
     expect(() => planSchedule(50 * 60, every(25), 3)).toThrow('More days than lectures');
   });
 });
+
+describe('normalizeChannelUrl', () => {
+  it.each([
+    ['https://www.youtube.com/@With_fouad', 'https://www.youtube.com/@With_fouad'],
+    ['https://youtube.com/@With_fouad/videos', 'https://www.youtube.com/@With_fouad'],
+    ['https://m.youtube.com/@With_fouad?si=x', 'https://www.youtube.com/@With_fouad'],
+    ['https://www.youtube.com/channel/UC1234567890123456789012', 'https://www.youtube.com/channel/UC1234567890123456789012'],
+  ])('%s → %s', (input, out) => expect(normalizeChannelUrl(input)).toBe(out));
+
+  it.each(['https://evil.com/@With_fouad', 'https://www.youtube.com/watch?v=dD06xpUmn1A', 'javascript:alert(1)', '@With_fouad'])('rejects %s', (input) =>
+    expect(normalizeChannelUrl(input)).toBeNull(),
+  );
+});
+

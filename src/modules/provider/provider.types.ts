@@ -52,6 +52,10 @@ export interface AdminCourseRow {
   durationDays: number | null;
   isPublished: boolean;
   enrollmentCount: number;
+  /** Set for recorded courses built from a YouTube video. */
+  recorded?: { videoId: string; channelUrl: string | null; channelName: string | null; startsAt: Date | null; dayCount: number } | null;
+  /** The course already has days/lessons (a YouTube schedule can only be added to an empty course). */
+  hasContent?: boolean;
 }
 
 export interface TraineeRow {

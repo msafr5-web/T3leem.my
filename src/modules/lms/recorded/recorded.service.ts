@@ -1,8 +1,16 @@
 import { HttpError } from '../../../shared/utils/http-error';
 import type { Actor } from '../../provider/provider.types';
-import type { CreatePostResult, DiscussionPostRow, RecordedCourseDetail, RecordedCourseRepository, RecordedCourseSummary } from './recorded.repository';
+import type {
+  CreatePostResult,
+  DiscussionPostRow,
+  RecordedCourseDetail,
+  RecordedCourseRepository,
+  RecordedCourseSummary,
+  RecordedSchedule,
+  RecordedSourceMeta,
+} from './recorded.repository';
 import { DEFAULT_SCHEDULE, ScheduleError, formatTimestamp, planSchedule, type ScheduleConfig, type SchedulePlan } from './schedule-planner';
-import { parseYoutubeVideoId, type YoutubeMetadataSource, type YoutubeVideoInfo } from './youtube';
+import { normalizeChannelUrl, parseYoutubeVideoId, type YoutubeMetadataSource, type YoutubeVideoInfo } from './youtube';
 
 export interface ScheduleRequest {
   youtubeUrl: string;
@@ -13,13 +21,20 @@ export interface ScheduleRequest {
   manualDurationSeconds: number | null;
 }
 
+/** Supervisor-entered source details; empty values fall back to what YouTube reports. */
+export interface SourceInput {
+  channelUrl: string | null;
+  channelName: string | null;
+  startsAt: Date | null;
+}
+
 export interface SchedulePreview {
   video: YoutubeVideoInfo & { durationSeconds: number; durationSource: 'youtube' | 'manual' };
   config: ScheduleConfig;
   plan: SchedulePlan;
 }
 
-export interface CreateRecordedCourseInput extends ScheduleRequest {
+export interface CreateRecordedCourseInput extends ScheduleRequest, SourceInput {
   title: string | null;
   description: string | null;
   trainerId: string;
@@ -53,7 +68,7 @@ export class RecordedCourseService {
     if (found.kind === 'not_found') throw HttpError.unprocessable('YOUTUBE_VIDEO_NOT_FOUND', 'This YouTube video does not exist or is private');
     if (found.kind === 'not_embeddable') throw HttpError.unprocessable('YOUTUBE_NOT_EMBEDDABLE', 'The owner of this video does not allow playing it on other sites');
 
-    const info: YoutubeVideoInfo = found.kind === 'ok' ? found.info : { videoId, title: '', channel: '', durationSeconds: null };
+    const info: YoutubeVideoInfo = found.kind === 'ok' ? found.info : { videoId, title: '', channel: '', channelUrl: null, durationSeconds: null };
     const durationSeconds = info.durationSeconds ?? req.manualDurationSeconds;
     if (!durationSeconds) {
       throw HttpError.unprocessable('YOUTUBE_DURATION_UNKNOWN', 'Could not read the video duration from YouTube; enter it manually');
@@ -71,18 +86,21 @@ export class RecordedCourseService {
     return { video: { ...info, durationSeconds, durationSource: info.durationSeconds ? 'youtube' : 'manual' }, config, plan };
   }
 
-  async create(tenantId: string, actor: Actor, input: CreateRecordedCourseInput): Promise<{ id: string; preview: SchedulePreview }> {
-    const preview = await this.preview(input);
-    const title = (input.title ?? '').trim() || preview.video.title.trim();
-    if (title.length < 3) throw HttpError.unprocessable('TITLE_REQUIRED', 'Enter a course title');
+  /** Supervisor input wins; otherwise the channel YouTube reports for the video. */
+  private resolveSource(input: SourceInput, video?: YoutubeVideoInfo): RecordedSourceMeta {
+    let channelUrl = video?.channelUrl ?? null;
+    if (input.channelUrl) {
+      channelUrl = normalizeChannelUrl(input.channelUrl);
+      if (!channelUrl) throw HttpError.unprocessable('INVALID_CHANNEL_URL', 'Enter a YouTube channel link such as https://www.youtube.com/@name');
+    }
+    const channelName = (input.channelName ?? '').trim() || video?.channel.trim() || null;
+    return { channelUrl, channelName: channelName ? channelName.slice(0, 120) : null, startsAt: input.startsAt };
+  }
 
+  private schedule(preview: SchedulePreview, source: RecordedSourceMeta): RecordedSchedule {
     const multiDay = preview.plan.days.length > 1;
-    const id = await this.deps.repository.createRecordedCourse(tenantId, actor, {
-      title: title.slice(0, 200),
-      description: input.description,
-      trainerId: input.trainerId,
-      price: input.price,
-      isPublished: input.isPublished,
+    return {
+      ...source,
       videoId: preview.video.videoId,
       durationSeconds: preview.video.durationSeconds,
       config: preview.config,
@@ -95,9 +113,40 @@ export class RecordedCourseService {
           endSecond: l.endSecond,
         })),
       })),
+    };
+  }
+
+  async create(tenantId: string, actor: Actor, input: CreateRecordedCourseInput): Promise<{ id: string; preview: SchedulePreview }> {
+    const preview = await this.preview(input);
+    const title = (input.title ?? '').trim() || preview.video.title.trim();
+    if (title.length < 3) throw HttpError.unprocessable('TITLE_REQUIRED', 'Enter a course title');
+    const schedule = this.schedule(preview, this.resolveSource(input, preview.video));
+
+    const id = await this.deps.repository.createRecordedCourse(tenantId, actor, {
+      ...schedule,
+      title: title.slice(0, 200),
+      description: input.description,
+      trainerId: input.trainerId,
+      price: input.price,
+      isPublished: input.isPublished,
     });
     if (!id) throw HttpError.unprocessable('UNKNOWN_TRAINER', 'Trainer not found in this academy');
     return { id, preview };
+  }
+
+  /** Turns an existing course (from the regular course form) into a recorded YouTube course. */
+  async attach(tenantId: string, actor: Actor, courseId: string, input: ScheduleRequest & SourceInput): Promise<SchedulePreview> {
+    const preview = await this.preview(input);
+    const result = await this.deps.repository.attachRecordedSchedule(tenantId, actor, courseId, this.schedule(preview, this.resolveSource(input, preview.video)));
+    if (result === 'not_found') throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    if (result === 'has_content') throw HttpError.conflict('COURSE_HAS_CONTENT', 'This course already has content; a YouTube schedule can only be added to an empty course');
+    return preview;
+  }
+
+  async updateSource(tenantId: string, actor: Actor, courseId: string, input: SourceInput): Promise<void> {
+    if (!(await this.deps.repository.updateRecordedSource(tenantId, actor, courseId, this.resolveSource(input)))) {
+      throw HttpError.notFound('COURSE_NOT_FOUND', 'Recorded course not found');
+    }
   }
 
   list(tenantId: string): Promise<RecordedCourseSummary[]> {

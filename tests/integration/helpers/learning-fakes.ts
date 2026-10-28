@@ -84,6 +84,7 @@ export function buildLearningFakes(ids: { tenantA: string; user: string; course:
             certificateCode: [...certificates.keys()][0] ?? null,
             youtubeVideoId: null,
             schedule: null,
+            source: null,
             modules: [
               {
                 id: 'm1',

@@ -121,3 +121,63 @@ describe('day discussion boards', () => {
     expect(orphan.body.error.code).toBe('POST_NOT_FOUND');
   });
 });
+
+describe('channel, start date and lecture time', () => {
+  it('defaults the channel to the one YouTube reports; supervisor values win; dates are Saudi time', async () => {
+    const app = buildApp();
+    const auto = await call(app, adminToken).post('/admin/recorded-courses', createBody);
+    expect(recordedOf(app).courses.get(auto.body.data.id)).toMatchObject({ channelUrl: 'https://www.youtube.com/@mostfa-syntax', channelName: 'Syntax', startsAt: null });
+
+    const custom = await call(app, adminToken).post('/admin/recorded-courses', {
+      ...createBody,
+      channel_url: 'https://youtube.com/@With_fouad/videos?view=0',
+      channel_name: 'مع فؤاد',
+      starts_on: '2026-11-01',
+      lecture_time: '19:00',
+    });
+    const saved = recordedOf(app).courses.get(custom.body.data.id)!;
+    expect(saved).toMatchObject({ channelUrl: 'https://www.youtube.com/@With_fouad', channelName: 'مع فؤاد' });
+    expect(saved.startsAt!.toISOString()).toBe('2026-11-01T16:00:00.000Z'); // 19:00 Riyadh = 16:00 UTC
+    const detail = await call(app, adminToken).get(`/admin/recorded-courses/${custom.body.data.id}`);
+    expect(detail.body.data).toMatchObject({ channel_url: 'https://www.youtube.com/@With_fouad', starts_at: '2026-11-01T16:00:00.000Z' });
+  });
+
+  it('rejects non-YouTube channel links and malformed times', async () => {
+    const admin = call(buildApp(), adminToken);
+    expect((await admin.post('/admin/recorded-courses', { ...createBody, channel_url: 'https://evil.com/@x' })).body.error.code).toBe('INVALID_CHANNEL_URL');
+    expect((await admin.post('/admin/recorded-courses', { ...createBody, starts_on: '2026-11-01', lecture_time: '25:00' })).status).toBe(422);
+  });
+
+  it('attaches a YouTube schedule to an empty course from the regular course form, and updates its source later', async () => {
+    const app = buildApp();
+    const plainId = 'c0a80121-872f-41ed-a1eb-0242ac1200aa';
+    recordedOf(app).addPlainCourse(TENANT_A, plainId);
+    const admin = call(app, adminToken);
+    const attached = await admin.post(`/admin/courses/${plainId}/youtube`, {
+      youtube_url: `https://youtu.be/${YT_OK}`,
+      split_mode: 'fixed',
+      max_lecture_minutes: 10,
+      starts_on: '2026-11-02',
+      lecture_time: '18:30',
+    });
+    expect(attached.status).toBe(201);
+    const saved = recordedOf(app).courses.get(plainId)!;
+    // 21:05 every 10 minutes → 10, 10, and a 1-minute tail merged into the last lecture.
+    expect(saved.days.flatMap((d) => d.lessons.map((l) => [l.startSecond, l.endSecond]))).toEqual([
+      [0, 600],
+      [600, 1265],
+    ]);
+    expect(saved.startsAt!.toISOString()).toBe('2026-11-02T15:30:00.000Z');
+    // A second attach (or a course with hand-built content) is refused.
+    expect((await admin.post(`/admin/courses/${plainId}/youtube`, { youtube_url: `https://youtu.be/${YT_OK}` })).body.error.code).toBe('COURSE_HAS_CONTENT');
+
+    const updated = await request(app)
+      .put(`/api/v1/admin/recorded-courses/${plainId}/source`)
+      .set('x-tenant-id', TENANT_A)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ channel_name: 'With Fouad', starts_on: '2026-11-05', lecture_time: '20:00' });
+    expect(updated.status).toBe(200);
+    expect(recordedOf(app).courses.get(plainId)).toMatchObject({ channelName: 'With Fouad', startsAt: new Date('2026-11-05T17:00:00Z') });
+  });
+});
+

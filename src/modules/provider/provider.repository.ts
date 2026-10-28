@@ -81,7 +81,11 @@ const adminCourseSelect = {
   trainingHours: true,
   durationDays: true,
   isPublished: true,
-  _count: { select: { enrollments: true } },
+  sourceVideoId: true,
+  sourceChannelUrl: true,
+  sourceChannelName: true,
+  scheduleStartsAt: true,
+  _count: { select: { enrollments: true, modules: true } },
 } as const;
 
 type AdminCourseRecord = Prisma.CourseGetPayload<{ select: typeof adminCourseSelect }>;
@@ -102,6 +106,10 @@ const toAdminCourse = (c: AdminCourseRecord): AdminCourseRow => ({
   durationDays: c.durationDays,
   isPublished: c.isPublished,
   enrollmentCount: c._count.enrollments,
+  recorded: c.sourceVideoId
+    ? { videoId: c.sourceVideoId, channelUrl: c.sourceChannelUrl, channelName: c.sourceChannelName, startsAt: c.scheduleStartsAt, dayCount: c._count.modules }
+    : null,
+  hasContent: c._count.modules > 0,
 });
 
 const classroomSelect = {

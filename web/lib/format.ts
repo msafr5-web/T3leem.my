@@ -48,6 +48,23 @@ export const formatTimestamp = (total: number): string => {
   return `${h > 0 ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(s).padStart(2, '0')}`;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RIYADH_OFFSET_MS = 3 * 60 * 60 * 1000; // Asia/Riyadh is UTC+3 all year (no DST)
+
+/** Day N (0-based) of a recorded course opens N days after day 1, at the same lecture time. */
+export const dayOpensAt = (startsAt: string, dayIndex: number): Date => new Date(new Date(startsAt).getTime() + dayIndex * DAY_MS);
+
+/** ISO -> { date: "2026-11-01", time: "19:00" } in Riyadh time, for date/time inputs. */
+export const riyadhInputs = (iso: string | null): { date: string; time: string } => {
+  if (!iso) return { date: '', time: '' };
+  const local = new Date(new Date(iso).getTime() + RIYADH_OFFSET_MS).toISOString();
+  return { date: local.slice(0, 10), time: local.slice(11, 16) };
+};
+
+const timeFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Riyadh' });
+/** ISO -> "٧:٠٠ م" (Riyadh time) */
+export const formatTime = (iso: string): string => timeFmt.format(new Date(iso));
+
 /** 1265 -> "٢١ دقيقة" */
 export const formatMinutes = (seconds: number): string => `${new Intl.NumberFormat('ar-SA').format(Math.max(1, Math.round(seconds / 60)))} دقيقة`;
 

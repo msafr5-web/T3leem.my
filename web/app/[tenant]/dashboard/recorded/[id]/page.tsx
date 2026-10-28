@@ -2,19 +2,21 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, admin, type DiscussionThread, type RecordedCourseDetail } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { adminPostDiscussionAction } from '@/lib/admin-actions';
-import { formatMinutes, formatNumber } from '@/lib/format';
+import { adminPostDiscussionAction, updateRecordedSourceAction } from '@/lib/admin-actions';
+import { dayOpensAt, formatDateTime, formatMinutes, formatNumber } from '@/lib/format';
+import { AdminForm } from '../../admin-form';
 import { DiscussionBoard } from '../../../../discussion-board';
 import { ScheduleTimeline } from '../schedule-timeline';
+import { SourceFields } from '../source-fields';
 
 export default async function RecordedCourseSchedule({
   params,
   searchParams,
 }: {
   params: Promise<{ tenant: string; id: string }>;
-  searchParams: Promise<{ created?: string }>;
+  searchParams: Promise<{ created?: string; saved?: string }>;
 }) {
-  const [{ tenant: slug, id }, { created }] = await Promise.all([params, searchParams]);
+  const [{ tenant: slug, id }, { created, saved }] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
 
   let course: RecordedCourseDetail;
@@ -67,16 +69,54 @@ export default async function RecordedCourseSchedule({
           الجدولة
         </h2>
         <ScheduleTimeline
-          days={course.days.map((d) => ({ key: d.id, title: d.title, lectures: d.lessons }))}
+          days={course.days.map((d, i) => ({
+            key: d.id,
+            title: course.starts_at ? `${d.title} · ${formatDateTime(dayOpensAt(course.starts_at, i).toISOString())}` : d.title,
+            lectures: d.lessons,
+          }))}
           breakMinutes={breakMinutes}
           discussionMinutes={discussionMinutes}
         />
         <p className="small muted">
-          المصدر:{' '}
+          الفيديو:{' '}
           <a href={`https://www.youtube.com/watch?v=${course.video_id}`} target="_blank" rel="noopener noreferrer" className="ltr">
             youtube.com/watch?v={course.video_id}
           </a>
+          {course.channel_name && (
+            <>
+              {' '}
+              · القناة:{' '}
+              {course.channel_url ? (
+                <a href={course.channel_url} target="_blank" rel="noopener noreferrer">
+                  {course.channel_name}
+                </a>
+              ) : (
+                course.channel_name
+              )}
+            </>
+          )}
         </p>
+      </section>
+
+      <section className="card stack" aria-labelledby="source">
+        <h2 id="source" style={{ fontSize: 18 }}>
+          القناة وموعد الدورة
+        </h2>
+        {saved && (
+          <p className="notice ok small" role="status">
+            حُفظت التعديلات.
+          </p>
+        )}
+        <p className="small muted">
+          {course.starts_at
+            ? `تبدأ ${formatDateTime(course.starts_at)}، ويُفتح يوم جديد كل يوم في الوقت نفسه.`
+            : 'بلا موعد محدد: يُفتح كل يوم للمتدرب بعد إكمال اليوم السابق. حدّد تاريخاً ووقتاً لتُفتح الأيام حسب الجدول.'}
+        </p>
+        <AdminForm action={updateRecordedSourceAction.bind(null, slug, course.id)} submitLabel="حفظ القناة والموعد">
+          <div className="form-grid">
+            <SourceFields channelUrl={course.channel_url} channelName={course.channel_name} startsAt={course.starts_at} />
+          </div>
+        </AdminForm>
       </section>
 
       {course.days.map((d, i) => (

@@ -29,6 +29,8 @@ export interface CourseDetailRow extends CourseSummaryRow {
   licenseExpiresOn: string | null;
   trainer: CourseTrainerRow;
   modules: { id: string; title: string; lessons: { id: string; title: string; contentType: ContentType }[] }[];
+  /** Recorded (YouTube) courses: the source channel and when day 1 opens. */
+  recorded?: { channelUrl: string | null; channelName: string | null; startsAt: Date | null } | null;
 }
 
 export interface CourseCatalogRepository {
@@ -84,6 +86,10 @@ export class PrismaCourseCatalogRepository implements CourseCatalogRepository {
         licenseNumber: true,
         licenseAuthority: true,
         licenseExpiresOn: true,
+        sourceVideoId: true,
+        sourceChannelUrl: true,
+        sourceChannelName: true,
+        scheduleStartsAt: true,
         trainer: { select: { id: true, fullName: true, specialization: true, bio: true } },
         modules: {
           orderBy: { sortOrder: 'asc' },
@@ -109,6 +115,7 @@ export class PrismaCourseCatalogRepository implements CourseCatalogRepository {
       licenseExpiresOn: toDateOnly(c.licenseExpiresOn),
       trainer: c.trainer,
       modules: c.modules,
+      recorded: c.sourceVideoId ? { channelUrl: c.sourceChannelUrl, channelName: c.sourceChannelName, startsAt: c.scheduleStartsAt } : null,
     };
   }
 }
