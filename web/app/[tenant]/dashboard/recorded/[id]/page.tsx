@@ -57,6 +57,12 @@ export default async function RecordedCourseSchedule({
               صفحة الدورة
             </Link>
           )}
+          <a href="#quiz" className="btn btn-ghost">
+            استيراد الأسئلة
+          </a>
+          <a href={`/${slug}/dashboard/recorded/${course.id}/quiz/export${quiz && quiz.questions.length > 0 ? '' : '?template=1'}`} className="btn btn-ghost" download>
+            {quiz && quiz.questions.length > 0 ? 'تصدير الأسئلة' : 'قالب الأسئلة'}
+          </a>
           <Link href={`/${slug}/dashboard/recorded`} className="btn btn-ghost">
             رجوع
           </Link>
