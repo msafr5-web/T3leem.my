@@ -38,6 +38,8 @@ enum ContentType {
   VIDEO
   ZOOM
   PDF
+  // A time range (start_second..end_second) of the course's source YouTube video.
+  YOUTUBE
 }
 
 enum EnrollmentStatus {
@@ -98,25 +100,25 @@ enum HlsStatus {
 // Tenant registry. Intentionally NOT under RLS: it is read before a tenant context exists
 // (subdomain / custom-domain resolution).
 model Tenant {
-  id            String       @id @default(uuid()) @db.Uuid
-  name          String
-  slug          String       @unique
-  customDomain  String?      @unique @map("custom_domain")
+  id                     String       @id @default(uuid()) @db.Uuid
+  name                   String
+  slug                   String       @unique
+  customDomain           String?      @unique @map("custom_domain")
   // DNS TXT challenge for the custom domain; the domain only routes once verified.
-  customDomainToken      String?   @map("custom_domain_token")
-  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
-  brandSettings Json         @default("{}") @map("brand_settings")
-  status        TenantStatus @default(PROVISIONING)
+  customDomainToken      String?      @map("custom_domain_token")
+  customDomainVerifiedAt DateTime?    @map("custom_domain_verified_at")
+  brandSettings          Json         @default("{}") @map("brand_settings")
+  status                 TenantStatus @default(PROVISIONING)
   // ZATCA seller identity (TLV tags 1 and 2).
-  legalName     String?      @map("legal_name")
-  vatNumber     String?      @map("vat_number") @db.VarChar(15)
+  legalName              String?      @map("legal_name")
+  vatNumber              String?      @map("vat_number") @db.VarChar(15)
   // Small raster logo (PNG/JPEG/WebP, <= 512 KB) stored in-row until object storage (S3) is wired.
-  logo          Bytes?
-  logoMimeType  String?      @map("logo_mime_type")
-  logoUpdatedAt DateTime?    @map("logo_updated_at")
-  planId        String?      @map("plan_id") @db.Uuid
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
+  logo                   Bytes?
+  logoMimeType           String?      @map("logo_mime_type")
+  logoUpdatedAt          DateTime?    @map("logo_updated_at")
+  planId                 String?      @map("plan_id") @db.Uuid
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
 
   plan SaasPlan? @relation(fields: [planId], references: [id])
 
@@ -148,8 +150,9 @@ model User {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  enrollments Enrollment[]
-  trainer     Trainer?
+  enrollments     Enrollment[]
+  trainer         Trainer?
+  discussionPosts DiscussionPost[]
 
   @@unique([tenantId, email])
   @@map("users")
@@ -177,24 +180,29 @@ model Trainer {
 }
 
 model Course {
-  id                  String     @id @default(uuid()) @db.Uuid
-  tenantId            String     @map("tenant_id") @db.Uuid
-  trainerId           String     @map("trainer_id") @db.Uuid
-  title               String
-  description         String?
-  type                CourseType
+  id                    String     @id @default(uuid()) @db.Uuid
+  tenantId              String     @map("tenant_id") @db.Uuid
+  trainerId             String     @map("trainer_id") @db.Uuid
+  title                 String
+  description           String?
+  type                  CourseType
   // VAT-exclusive price in SAR.
-  price               Decimal    @db.Decimal(12, 2)
+  price                 Decimal    @db.Decimal(12, 2)
   // Regulatory metadata (e.g. TVTC / SCFHS): license issued for the course and its accreditation.
-  licenseNumber       String?    @map("license_number")
-  licenseAuthority    String?    @map("license_authority")
-  licenseExpiresOn    DateTime?  @map("license_expires_on") @db.Date
-  accreditationNumber String?    @map("accreditation_number")
-  trainingHours       Decimal?   @map("training_hours") @db.Decimal(6, 1)
-  durationDays        Int?       @map("duration_days")
-  isPublished         Boolean    @default(false) @map("is_published")
-  createdAt           DateTime   @default(now()) @map("created_at")
-  updatedAt           DateTime   @updatedAt @map("updated_at")
+  licenseNumber         String?    @map("license_number")
+  licenseAuthority      String?    @map("license_authority")
+  licenseExpiresOn      DateTime?  @map("license_expires_on") @db.Date
+  accreditationNumber   String?    @map("accreditation_number")
+  trainingHours         Decimal?   @map("training_hours") @db.Decimal(6, 1)
+  durationDays          Int?       @map("duration_days")
+  // Recorded courses built from one YouTube video: the source and the schedule settings
+  // (lecture/break/discussion minutes) used to split it into days and segments.
+  sourceVideoId         String?    @map("source_video_id")
+  sourceDurationSeconds Int?       @map("source_duration_seconds")
+  scheduleConfig        Json?      @map("schedule_config")
+  isPublished           Boolean    @default(false) @map("is_published")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
 
   trainer     Trainer              @relation(fields: [trainerId], references: [id])
   modules     Module[]
@@ -241,20 +249,20 @@ model TrainingPlanCourse {
 // A scheduled live session. joinUrl is entered manually for now; the Zoom integration
 // (live module) will create meetings and fill it automatically.
 model VirtualClassroom {
-  id              String          @id @default(uuid()) @db.Uuid
-  tenantId        String          @map("tenant_id") @db.Uuid
-  courseId        String?         @map("course_id") @db.Uuid
-  trainerId       String?         @map("trainer_id") @db.Uuid
-  title           String
-  startsAt        DateTime        @map("starts_at")
-  durationMinutes Int             @map("duration_minutes")
-  capacity        Int?
-  provider        MeetingProvider @default(ZOOM)
-  joinUrl         String?         @map("join_url")
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @map("tenant_id") @db.Uuid
+  courseId          String?         @map("course_id") @db.Uuid
+  trainerId         String?         @map("trainer_id") @db.Uuid
+  title             String
+  startsAt          DateTime        @map("starts_at")
+  durationMinutes   Int             @map("duration_minutes")
+  capacity          Int?
+  provider          MeetingProvider @default(ZOOM)
+  joinUrl           String?         @map("join_url")
   // Meeting id at the provider (Zoom) when the meeting was created through the API.
-  externalMeetingId String?       @map("external_meeting_id")
-  status          ClassroomStatus @default(SCHEDULED)
-  createdAt       DateTime        @default(now()) @map("created_at")
+  externalMeetingId String?         @map("external_meeting_id")
+  status            ClassroomStatus @default(SCHEDULED)
+  createdAt         DateTime        @default(now()) @map("created_at")
 
   course     Course?               @relation(fields: [courseId], references: [id], onDelete: SetNull)
   trainer    Trainer?              @relation(fields: [trainerId], references: [id], onDelete: SetNull)
@@ -298,7 +306,9 @@ model ClassroomAttendance {
 // Global lookups that must work BEFORE a tenant context exists, so NOT under RLS.
 // They hold only non-sensitive pointers; the actual records stay tenant-isolated.
 
-/** Public certificate verification: code -> which academy to look in. */
+/**
+ * Public certificate verification: code -> which academy to look in.
+ */
 model CertificateRegistry {
   code          String   @id
   tenantId      String   @map("tenant_id") @db.Uuid
@@ -308,7 +318,9 @@ model CertificateRegistry {
   @@map("certificate_registry")
 }
 
-/** Zoom webhooks carry only the meeting id: meeting -> academy + classroom. */
+/**
+ * Zoom webhooks carry only the meeting id: meeting -> academy + classroom.
+ */
 model MeetingRegistry {
   externalMeetingId String   @id @map("external_meeting_id")
   tenantId          String   @map("tenant_id") @db.Uuid
@@ -325,11 +337,31 @@ model Module {
   title     String
   sortOrder Int    @map("sort_order")
 
-  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  lessons Lesson[]
+  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  discussions DiscussionPost[]
 
   @@index([courseId, sortOrder])
   @@map("modules")
+}
+
+// Per-day (module) discussion board: learners ask, trainers/admins answer (one reply level).
+model DiscussionPost {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  moduleId  String   @map("module_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  parentId  String?  @map("parent_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  module  Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  DiscussionPost?  @relation("DiscussionReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies DiscussionPost[] @relation("DiscussionReplies")
+
+  @@index([moduleId, createdAt])
+  @@map("discussion_posts")
 }
 
 model Lesson {
@@ -347,6 +379,9 @@ model Lesson {
   hlsKeyEncrypted String?     @map("hls_key_encrypted")
   hlsError        String?     @map("hls_error")
   durationSeconds Int?        @map("duration_seconds")
+  // YOUTUBE lessons: the segment of the course's source video this lesson plays.
+  startSecond     Int?        @map("start_second")
+  endSecond       Int?        @map("end_second")
 
   module   Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   progress LessonProgress[]

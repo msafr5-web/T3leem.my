@@ -27,6 +27,7 @@ import { BrandingService, type BrandingRepository } from '../../../src/modules/t
 import { RegistrationService, type RegistrationRepository } from '../../../src/modules/tenant/registration.service';
 import type { TenantResolver } from '../../../src/shared/middlewares/tenant-context.middleware';
 import { buildLearningFakes } from './learning-fakes';
+import { buildRecordedFakes } from './recorded-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
@@ -108,6 +109,10 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     createPaidEnrollment: async (input) => {
       enrolled.add(`${input.tenantId}:${input.userId}:${input.courseId}`);
       return { enrollmentId: 'e581f122-872f-41ed-a1eb-0242ac120002', enrollmentStatus: 'ACTIVE', invoiceId: 'inv-1', invoiceNumber: 'INV-2026-00892' };
+    },
+    createFreeEnrollment: async (t, u, c) => {
+      enrolled.add(`${t}:${u}:${c}`);
+      return { enrollmentId: 'f581f122-872f-41ed-a1eb-0242ac120003', enrollmentStatus: 'ACTIVE' };
     },
   };
   const catalogRepo: CourseCatalogRepository = {
@@ -283,6 +288,11 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     },
   };
   const catalog = new CourseCatalogService(catalogRepo, 15);
+  const recorded = buildRecordedFakes({
+    tenantA: TENANT_A,
+    trainer: TRAINER,
+    users: { [USER]: { name: 'Sara', role: 'LEARNER' }, [ADMIN]: { name: 'Admin', role: 'TENANT_ADMIN' } },
+  });
 
   const app = createApp({
     tenantResolver: resolver,
@@ -314,11 +324,13 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     signupRateLimiter: passThrough,
     domainService: fakes.domains,
     contentService: fakes.content,
+    recordedCourseService: recorded.service,
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,
   });
   // Lets contract tests inspect side effects (attendance rows, queued jobs, issued certificates).
   app.locals.fakes = fakes;
+  app.locals.recorded = recorded;
   return app;
 }

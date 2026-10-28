@@ -1,24 +1,40 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ApiError, me, type MyCourse, type MyLesson } from '@/lib/api';
-import { completeLessonAction } from '@/lib/actions';
+import { ApiError, me, type DiscussionThread, type MyCourse, type MyLesson } from '@/lib/api';
+import { completeLessonAction, postDiscussionAction } from '@/lib/actions';
 import { formatNumber, lessonTypeLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
+import { DiscussionBoard } from '../../../discussion-board';
 import { HlsPlayer } from './hls-player';
+import { YoutubeSegmentPlayer } from './youtube-segment-player';
 
 export const metadata: Metadata = { title: 'التعلم' };
 
 const minutes = (s: number | null) => (s ? `${Math.max(1, Math.round(s / 60))} د` : '');
+
+/**
+ * Recorded (YouTube) courses release one day at a time: a day opens once every lecture of the
+ * previous day is complete. Returns the ids of the days that are still locked.
+ */
+function lockedDays(course: MyCourse): Set<string> {
+  const locked = new Set<string>();
+  if (!course.youtube_video_id) return locked;
+  course.modules.forEach((m, i) => {
+    const prev = course.modules[i - 1];
+    if (prev && (locked.has(prev.id) || prev.lessons.some((l) => !l.completed))) locked.add(m.id);
+  });
+  return locked;
+}
 
 export default async function LearnCourse({
   params,
   searchParams,
 }: {
   params: Promise<{ tenant: string; courseId: string }>;
-  searchParams: Promise<{ lesson?: string }>;
+  searchParams: Promise<{ lesson?: string; autoplay?: string }>;
 }) {
-  const [{ tenant: slug, courseId }, { lesson: lessonParam }] = await Promise.all([params, searchParams]);
+  const [{ tenant: slug, courseId }, { lesson: lessonParam, autoplay }] = await Promise.all([params, searchParams]);
   const session = await getSession(slug);
   if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/learn/${courseId}`)}`);
 
@@ -31,10 +47,24 @@ export default async function LearnCourse({
     throw err;
   }
 
+  const locked = lockedDays(course);
+  const moduleOf = new Map(course.modules.flatMap((m) => m.lessons.map((l) => [l.id, m] as const)));
   const lessons = course.modules.flatMap((m) => m.lessons);
-  const current: MyLesson | undefined = lessons.find((l) => l.id === lessonParam) ?? lessons.find((l) => !l.completed) ?? lessons[0];
+  const open = lessons.filter((l) => !locked.has(moduleOf.get(l.id)?.id ?? ''));
+  const resumeLesson = open.find((l) => !l.completed);
+  const current: MyLesson | undefined = lessons.find((l) => l.id === lessonParam) ?? resumeLesson ?? open[0] ?? lessons[0];
   const index = current ? lessons.indexOf(current) : -1;
   const nextLesson = index >= 0 ? lessons[index + 1] : undefined;
+  const currentModule = current ? moduleOf.get(current.id) : undefined;
+  const currentLocked = currentModule ? locked.has(currentModule.id) : false;
+  const isRecorded = course.youtube_video_id !== null;
+  const lessonHref = (id: string) => `/${slug}/learn/${courseId}?lesson=${id}`;
+
+  // The day's discussion board (recorded courses): a failure here must not break the lesson.
+  let threads: DiscussionThread[] = [];
+  if (isRecorded && currentModule && !currentLocked) {
+    threads = await me.discussion(slug, session.token, currentModule.id).catch(() => []);
+  }
 
   // Fresh signed playback URL for this page view (expires in ~2h).
   let playbackSrc: string | null = null;
@@ -79,6 +109,28 @@ export default async function LearnCourse({
               </div>
               <h2>{current.title}</h2>
 
+              {currentLocked && (
+                <div className="card empty">
+                  هذا اليوم يُفتح بعد إكمال أجزاء اليوم السابق.{' '}
+                  {resumeLesson && <Link href={lessonHref(resumeLesson.id)}>تابع من حيث توقفت</Link>}
+                </div>
+              )}
+              {!currentLocked && current.content_type === 'YOUTUBE' && course.youtube_video_id && current.start_second !== null && current.end_second !== null && (
+                <YoutubeSegmentPlayer
+                  key={current.id}
+                  lessonId={current.id}
+                  videoId={course.youtube_video_id}
+                  title={current.title}
+                  start={current.start_second}
+                  end={current.end_second}
+                  completed={current.completed}
+                  autoplay={autoplay === '1'}
+                  breakMinutes={course.schedule?.break_minutes ?? 5}
+                  discussionMinutes={course.schedule?.discussion_minutes ?? 15}
+                  next={nextLesson ? { href: lessonHref(nextLesson.id), sameDay: moduleOf.get(nextLesson.id)?.id === currentModule?.id } : null}
+                  onComplete={completeLessonAction.bind(null, slug, courseId, current.id)}
+                />
+              )}
               {current.content_type === 'VIDEO' &&
                 (playbackSrc ? (
                   <HlsPlayer src={playbackSrc} title={current.title} />
@@ -103,19 +155,29 @@ export default async function LearnCourse({
               )}
 
               <div className="row-actions">
-                {!current.completed && (
+                {/* YouTube lectures complete themselves once watched; no self-reported button. */}
+                {!current.completed && current.content_type !== 'YOUTUBE' && (
                   <form action={completeLessonAction.bind(null, slug, courseId, current.id)}>
                     <button type="submit" className="btn btn-primary">
                       أكملت هذا الدرس
                     </button>
                   </form>
                 )}
-                {nextLesson && (
-                  <Link href={`/${slug}/learn/${courseId}?lesson=${nextLesson.id}`} className="btn btn-ghost">
+                {nextLesson && !(current.content_type === 'YOUTUBE' && !current.completed) && (
+                  <Link href={lessonHref(nextLesson.id)} className="btn btn-ghost">
                     الدرس التالي ←
                   </Link>
                 )}
               </div>
+              {isRecorded && currentModule && !currentLocked && (
+                <DiscussionBoard
+                  title={`نقاش ${currentModule.title}`}
+                  intro={`بعد إنهاء أجزاء اليوم خصص نحو ${course.schedule?.discussion_minutes ?? 15} دقيقة للنقاش: اسأل المدرب أو شارك زملاءك فكرة.`}
+                  threads={threads}
+                  ask={postDiscussionAction.bind(null, slug, courseId, currentModule.id, null)}
+                  replyTo={(postId) => postDiscussionAction.bind(null, slug, courseId, currentModule.id, postId)}
+                />
+              )}
             </>
           )}
         </section>
@@ -123,15 +185,25 @@ export default async function LearnCourse({
         <aside className="card stack" aria-label="محتوى الدورة">
           {course.modules.map((m) => (
             <div key={m.id} className="stack" style={{ gap: 6 }}>
-              <h3 style={{ fontSize: 15 }}>{m.title}</h3>
+              <h3 style={{ fontSize: 15 }}>
+                {m.title}
+                {locked.has(m.id) && <span className="small muted"> · مقفل</span>}
+              </h3>
               <ol className="lesson-list">
-                {m.lessons.map((l) => (
+                {m.lessons.map((l, i) => (
                   <li key={l.id} aria-current={l.id === current?.id ? 'true' : undefined}>
-                    <Link href={`/${slug}/learn/${courseId}?lesson=${l.id}`}>
-                      <span aria-hidden="true">{l.completed ? '✓' : '○'}</span>
+                    <Link href={lessonHref(l.id)}>
+                      <span aria-hidden="true">{l.completed ? '✓' : locked.has(m.id) ? '•' : '○'}</span>
                       <span>{l.title}</span>
-                      <span className="small muted">{l.content_type === 'VIDEO' ? minutes(l.duration_seconds) : lessonTypeLabel[l.content_type]}</span>
+                      <span className="small muted">
+                        {l.content_type === 'VIDEO' || l.content_type === 'YOUTUBE' ? minutes(l.duration_seconds) : lessonTypeLabel[l.content_type]}
+                      </span>
                     </Link>
+                    {isRecorded && course.schedule && (
+                      <div className="schedule-gap small muted">
+                        {i < m.lessons.length - 1 ? `استراحة ${course.schedule.break_minutes} د` : `نقاش ${course.schedule.discussion_minutes} د`}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ol>

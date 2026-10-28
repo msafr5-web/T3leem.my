@@ -16,6 +16,9 @@ import { PrismaZoomWebhookRepository } from './modules/live/zoom-webhook.reposit
 import { ZoomWebhookService } from './modules/live/zoom-webhook.service';
 import { PrismaContentRepository } from './modules/lms/content/content.repository';
 import { ContentService } from './modules/lms/content/content.service';
+import { PrismaRecordedCourseRepository } from './modules/lms/recorded/recorded.repository';
+import { RecordedCourseService } from './modules/lms/recorded/recorded.service';
+import { YoutubeMetadataClient } from './modules/lms/recorded/youtube';
 import { CourseController } from './modules/lms/courses/course.controller';
 import { PrismaCourseCatalogRepository } from './modules/lms/courses/course.repository';
 import { CourseCatalogService } from './modules/lms/courses/course.service';
@@ -146,6 +149,10 @@ export function createServerApp(): ServerApp {
     contentService: new ContentService({
       repository: new PrismaContentRepository(),
       removeLessonMedia: (tenantId, lessonId) => media.video.removeLessonMedia(tenantId, lessonId),
+    }),
+    recordedCourseService: new RecordedCourseService({
+      repository: new PrismaRecordedCourseRepository(),
+      youtube: new YoutubeMetadataClient(env.YOUTUBE_API_KEY),
     }),
     learningService,
     videoService: media.video,

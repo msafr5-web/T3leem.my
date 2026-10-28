@@ -53,6 +53,8 @@ const envSchema = z
     ZOOM_ACCOUNT_ID: optionalString,
     ZOOM_CLIENT_ID: optionalString,
     ZOOM_CLIENT_SECRET: optionalString,
+    // YouTube Data API v3 key for recorded courses (title/duration). Unset = oEmbed + page fallback.
+    YOUTUBE_API_KEY: optionalString,
     // Self-service provider sign-up (/join). Disable to onboard providers manually only.
     PROVIDER_SIGNUP_ENABLED: z
       .enum(['true', 'false'])

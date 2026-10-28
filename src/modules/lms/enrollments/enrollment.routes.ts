@@ -27,5 +27,7 @@ export function buildEnrollmentRouter(controller: EnrollmentController, jwt: Jwt
     controller.checkout,
   );
 
+  router.post('/free', authenticate(jwt), requireRoles(UserRole.LEARNER), body('course_id').isUUID().withMessage('course_id must be a UUID'), validate, controller.enrollFree);
+
   return router;
 }

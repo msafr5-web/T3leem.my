@@ -41,6 +41,8 @@ export function buildContentAdminRouter(content: ContentService, video: VideoSer
             hls_status: l.hlsStatus,
             hls_error: l.hlsError,
             duration_seconds: l.durationSeconds,
+            start_second: l.startSecond,
+            end_second: l.endSecond,
           })),
         })),
       ),

@@ -18,6 +18,7 @@ function setup() {
       invoiceId: 'inv-1',
       invoiceNumber: 'INV-2026-00892',
     }),
+    createFreeEnrollment: jest.fn().mockResolvedValue({ enrollmentId: 'f581f122-872f-41ed-a1eb-0242ac120003', enrollmentStatus: 'ACTIVE' }),
   };
   const paymentGateway: jest.Mocked<PaymentGateway> = {
     charge: jest.fn().mockResolvedValue({ reference: 'pay_123' }),
@@ -146,5 +147,27 @@ describe('CheckoutService', () => {
     const { service, zatcaQueue } = setup();
     zatcaQueue.enqueueZatcaSync.mockRejectedValue(new Error('redis down'));
     await expect(service.checkout(command())).resolves.toMatchObject({ status: 'ACTIVE' });
+  });
+});
+
+describe('CheckoutService.enrollFree', () => {
+  const cmd = { tenantId: TENANT, userId: USER, courseId: COURSE };
+
+  it('enrolls in a free published course without charging or invoicing', async () => {
+    const { service, repository, paymentGateway, zatcaQueue } = setup();
+    repository.findCourseForCheckout.mockResolvedValue({ id: COURSE, title: 'GitHub', isPublished: true, priceHalalas: 0 });
+    await expect(service.enrollFree(cmd)).resolves.toEqual({ enrollmentId: 'f581f122-872f-41ed-a1eb-0242ac120003', status: 'ACTIVE' });
+    expect(paymentGateway.charge).not.toHaveBeenCalled();
+    expect(zatcaQueue.enqueueZatcaSync).not.toHaveBeenCalled();
+  });
+
+  it('refuses paid, unpublished and already-enrolled courses', async () => {
+    const { service, repository } = setup();
+    await expect(service.enrollFree(cmd)).rejects.toMatchObject({ status: 402, code: 'COURSE_NOT_FREE' });
+    repository.findCourseForCheckout.mockResolvedValue({ id: COURSE, title: 'x', isPublished: false, priceHalalas: 0 });
+    await expect(service.enrollFree(cmd)).rejects.toMatchObject({ status: 404 });
+    repository.findCourseForCheckout.mockResolvedValue({ id: COURSE, title: 'x', isPublished: true, priceHalalas: 0 });
+    repository.hasEnrollment.mockResolvedValue(true);
+    await expect(service.enrollFree(cmd)).rejects.toMatchObject({ status: 409, code: 'ALREADY_ENROLLED' });
   });
 });

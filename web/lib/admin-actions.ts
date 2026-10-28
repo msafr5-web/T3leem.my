@@ -51,6 +51,14 @@ const FIELD_LABELS: Record<string, string> = {
   domain: 'النطاق',
   content_type: 'نوع الدرس',
   media_url: 'رابط الملف',
+  youtube_url: 'رابط YouTube',
+  days: 'عدد الأيام',
+  max_lecture_minutes: 'أقصى طول للجزء',
+  min_lecture_minutes: 'أدنى طول للجزء',
+  break_minutes: 'الاستراحة',
+  discussion_minutes: 'وقت النقاش',
+  manual_duration_seconds: 'مدة الفيديو',
+  body: 'النص',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -80,6 +88,16 @@ const ERROR_MESSAGES: Record<string, string> = {
   LESSON_NOT_FOUND: 'الدرس غير موجود.',
   FORBIDDEN: 'ليست لديك صلاحية لهذه العملية.',
   RATE_LIMITED: 'طلبات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.',
+  INVALID_YOUTUBE_URL: 'أدخل رابط فيديو YouTube صحيحاً.',
+  YOUTUBE_VIDEO_NOT_FOUND: 'الفيديو غير موجود أو خاص. تأكد أنه عام أو غير مدرج.',
+  YOUTUBE_NOT_EMBEDDABLE: 'صاحب الفيديو منع تشغيله خارج YouTube، فلا يمكن استخدامه.',
+  YOUTUBE_DURATION_UNKNOWN: 'تعذّر قراءة مدة الفيديو من YouTube. أدخل المدة يدوياً.',
+  TOO_MANY_DAYS: 'عدد الأيام كبير بالنسبة لمدة الفيديو: كل يوم يحتاج ٥ دقائق فيديو على الأقل.',
+  VIDEO_TOO_LONG: 'الفيديوهات الأطول من ١٢ ساعة غير مدعومة.',
+  TITLE_REQUIRED: 'أدخل عنوان الدورة.',
+  USE_RECORDED_COURSES: 'أجزاء YouTube تُنشأ من قسم «دورات مسجلة».',
+  POST_TOO_SHORT: 'اكتب الرد أولاً.',
+  POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
 };
 
 function describeError(err: unknown): AdminFormState {
@@ -274,6 +292,59 @@ export async function deleteModuleAction(slug: string, courseId: string, moduleI
 export async function deleteLessonAction(slug: string, courseId: string, lessonId: string, _prev: AdminFormState): Promise<AdminFormState> {
   if (!ID_RE.test(lessonId)) return { error: 'طلب غير صالح.' };
   return save(slug, `/admin/lessons/${lessonId}`, 'DELETE', undefined, `/${slug}/dashboard/courses/${courseId}/content`);
+}
+
+// ----- recorded (YouTube) courses -----
+
+const SCHEDULE_FIELDS = ['youtube_url', 'days', 'max_lecture_minutes', 'min_lecture_minutes', 'break_minutes', 'discussion_minutes', 'manual_duration_seconds'] as const;
+
+/** Creates the course + its days and lectures in one call, then opens its schedule page. */
+export async function createRecordedCourseAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  const body: Record<string, unknown> = {
+    title: optional(form, 'title'),
+    description: optional(form, 'description'),
+    trainer_id: str(form, 'trainer_id'),
+    price: Number(str(form, 'price') || 0),
+    is_published: form.get('is_published') === 'on',
+  };
+  for (const key of SCHEDULE_FIELDS) {
+    const v = str(form, key);
+    if (v !== '') body[key] = key === 'youtube_url' ? v : Number(v);
+  }
+  let id: string;
+  try {
+    ({ id } = await api<{ id: string }>(slug, '/admin/recorded-courses', { method: 'POST', token, body }));
+  } catch (err) {
+    const state = describeError(err);
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
+      state.fields = [...new Set((err.details ?? []).map((d) => FIELD_LABELS[d.field] ?? d.field))];
+    }
+    return state;
+  }
+  revalidatePath(`/${slug}`, 'layout');
+  redirect(`/${slug}/dashboard/recorded/${id}?created=1`);
+}
+
+/** Trainer/admin answer (or new note) on a day's discussion board. */
+export async function adminPostDiscussionAction(
+  slug: string,
+  courseId: string,
+  moduleId: string,
+  parentId: string | null,
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  if (!ID_RE.test(moduleId) || (parentId !== null && !ID_RE.test(parentId))) return { error: 'طلب غير صالح.' };
+  const token = await adminToken(slug);
+  try {
+    await api(slug, `/admin/modules/${moduleId}/discussion`, { method: 'POST', token, body: { body: str(form, 'body'), parent_id: parentId } });
+  } catch (err) {
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
+  revalidatePath(`/${slug}/learn/${courseId}`);
+  return {};
 }
 
 // ----- custom domain -----

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { ApiError, getCourse, type CourseDetail } from '@/lib/api';
 import { courseTypeLabel, formatDate, formatNumber, formatSar, lessonTypeLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
+import { FreeEnrollButton } from './free-enroll';
 
 type Params = Promise<{ tenant: string; courseId: string }>;
 
@@ -105,6 +106,24 @@ export default async function CoursePage({ params }: { params: Params }) {
         </section>
       </article>
 
+      {course.price.total === 0 ? (
+        <aside className="card sticky" aria-label="التسجيل في الدورة">
+          <div className="breakdown num">
+            <div className="total">
+              <span>السعر</span>
+              <span>مجانية</span>
+            </div>
+          </div>
+          {session ? (
+            <FreeEnrollButton slug={slug} courseId={course.id} />
+          ) : (
+            <Link href={`/${slug}/login?next=${encodeURIComponent(`/${slug}/courses/${course.id}`)}`} className="btn btn-primary btn-block">
+              سجّل الدخول للالتحاق بالدورة
+            </Link>
+          )}
+          <p className="small muted">دورة مجانية: التحق مباشرة وابدأ التعلم، وتحصل على شهادة عند الإكمال.</p>
+        </aside>
+      ) : (
       <aside className="card sticky" aria-label="السعر والشراء">
         <div className="breakdown num">
           <div>
@@ -125,6 +144,7 @@ export default async function CoursePage({ params }: { params: Params }) {
         </Link>
         <p className="small muted">تصدر فاتورة ضريبية إلكترونية معتمدة من ZATCA مع كل عملية شراء.</p>
       </aside>
+      )}
     </div>
   );
 }

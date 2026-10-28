@@ -11,6 +11,8 @@ export interface ContentLesson {
   hlsStatus: HlsStatus;
   hlsError: string | null;
   durationSeconds: number | null;
+  startSecond: number | null;
+  endSecond: number | null;
 }
 
 export interface ContentModule {
@@ -47,7 +49,7 @@ export class PrismaContentRepository implements ContentRepository {
             sortOrder: true,
             lessons: {
               orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
-              select: { id: true, title: true, contentType: true, sortOrder: true, mediaUrl: true, hlsStatus: true, hlsError: true, durationSeconds: true },
+              select: { id: true, title: true, contentType: true, sortOrder: true, mediaUrl: true, hlsStatus: true, hlsError: true, durationSeconds: true, startSecond: true, endSecond: true },
             },
           },
         },

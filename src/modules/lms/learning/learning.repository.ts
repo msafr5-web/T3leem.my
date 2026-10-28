@@ -1,4 +1,4 @@
-import type { ClassroomStatus, CompletionStatus, ContentType, EnrollmentStatus, HlsStatus, MeetingProvider } from '@prisma/client';
+import type { Prisma, ClassroomStatus, CompletionStatus, ContentType, EnrollmentStatus, HlsStatus, MeetingProvider } from '@prisma/client';
 import { forTenant, prisma, withTenantTransaction } from '../../../config/database';
 
 export interface MyEnrollment {
@@ -20,8 +20,31 @@ export interface MyCourse {
   progress: number;
   completionStatus: CompletionStatus;
   certificateCode: string | null;
-  modules: { id: string; title: string; lessons: { id: string; title: string; contentType: ContentType; mediaUrl: string | null; hlsStatus: HlsStatus; durationSeconds: number | null; completed: boolean }[] }[];
+  /** Recorded (YouTube) courses: the source video and the break/discussion minutes between segments. */
+  youtubeVideoId: string | null;
+  schedule: { breakMinutes: number; discussionMinutes: number } | null;
+  modules: {
+    id: string;
+    title: string;
+    lessons: {
+      id: string;
+      title: string;
+      contentType: ContentType;
+      mediaUrl: string | null;
+      hlsStatus: HlsStatus;
+      durationSeconds: number | null;
+      startSecond: number | null;
+      endSecond: number | null;
+      completed: boolean;
+    }[];
+  }[];
 }
+
+const scheduleOf = (raw: Prisma.JsonValue | null): MyCourse['schedule'] => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { breakMinutes, discussionMinutes } = raw as Record<string, unknown>;
+  return typeof breakMinutes === 'number' && typeof discussionMinutes === 'number' ? { breakMinutes, discussionMinutes } : null;
+};
 
 export type CompleteResult =
   | { kind: 'lesson_not_found' }
@@ -108,6 +131,8 @@ export class PrismaLearningRepository implements LearningRepository {
         course: {
           select: {
             title: true,
+            sourceVideoId: true,
+            scheduleConfig: true,
             modules: {
               orderBy: { sortOrder: 'asc' },
               select: {
@@ -116,7 +141,7 @@ export class PrismaLearningRepository implements LearningRepository {
                 lessons: {
                   orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
                   // mediaUrl only for non-video lessons (PDF links); video goes through signed HLS.
-                  select: { id: true, title: true, contentType: true, mediaUrl: true, hlsStatus: true, durationSeconds: true },
+                  select: { id: true, title: true, contentType: true, mediaUrl: true, hlsStatus: true, durationSeconds: true, startSecond: true, endSecond: true },
                 },
               },
             },
@@ -132,6 +157,8 @@ export class PrismaLearningRepository implements LearningRepository {
       progress: pct(e.progressPercentage),
       completionStatus: e.completionStatus,
       certificateCode: e.certificates[0]?.certificateCode ?? null,
+      youtubeVideoId: e.course.sourceVideoId,
+      schedule: e.course.sourceVideoId ? scheduleOf(e.course.scheduleConfig) : null,
       modules: e.course.modules.map((m) => ({
         id: m.id,
         title: m.title,

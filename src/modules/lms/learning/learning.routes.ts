@@ -46,6 +46,8 @@ export function buildLearnerRouter(learning: LearningService, video: VideoServic
         progress: c.progress,
         completion_status: c.completionStatus,
         certificate_code: c.certificateCode,
+        youtube_video_id: c.youtubeVideoId,
+        schedule: c.schedule ? { break_minutes: c.schedule.breakMinutes, discussion_minutes: c.schedule.discussionMinutes } : null,
         modules: c.modules.map((m) => ({
           id: m.id,
           title: m.title,
@@ -56,6 +58,8 @@ export function buildLearnerRouter(learning: LearningService, video: VideoServic
             media_url: l.mediaUrl,
             video_ready: l.contentType === 'VIDEO' ? l.hlsStatus === 'READY' : null,
             duration_seconds: l.durationSeconds,
+            start_second: l.startSecond,
+            end_second: l.endSecond,
             completed: l.completed,
           })),
         })),

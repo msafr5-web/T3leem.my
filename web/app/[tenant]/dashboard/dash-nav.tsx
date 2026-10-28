@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const ITEMS = [
   { href: '', label: 'نظرة عامة' },
   { href: '/courses', label: 'الدورات' },
+  { href: '/recorded', label: 'دورات مسجلة' },
   { href: '/plans', label: 'الخطط التدريبية والتطويرية' },
   { href: '/trainers', label: 'المدربون' },
   { href: '/trainees', label: 'المتدربون' },

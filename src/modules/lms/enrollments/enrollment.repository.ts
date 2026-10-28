@@ -35,6 +35,8 @@ export interface EnrollmentCheckoutRepository {
   findCourseForCheckout(tenantId: string, courseId: string): Promise<CheckoutCourse | null>;
   hasEnrollment(tenantId: string, userId: string, courseId: string): Promise<boolean>;
   createPaidEnrollment(input: CreatePaidEnrollmentInput): Promise<CreatedPaidEnrollment>;
+  /** Free course: an ACTIVE enrollment with no payment and no invoice (nothing to tax). */
+  createFreeEnrollment(tenantId: string, userId: string, courseId: string): Promise<{ enrollmentId: string; enrollmentStatus: EnrollmentStatus }>;
 }
 
 /**
@@ -62,6 +64,11 @@ export class PrismaEnrollmentRepository implements EnrollmentCheckoutRepository 
       select: { id: true },
     });
     return existing !== null;
+  }
+
+  async createFreeEnrollment(tenantId: string, userId: string, courseId: string): Promise<{ enrollmentId: string; enrollmentStatus: EnrollmentStatus }> {
+    const e = await forTenant(tenantId).enrollment.create({ data: { tenantId, userId, courseId }, select: { id: true, status: true } });
+    return { enrollmentId: e.id, enrollmentStatus: e.status };
   }
 
   /** Enrollment, invoice number and invoice commit atomically, or not at all. */

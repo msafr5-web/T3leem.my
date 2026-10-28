@@ -51,7 +51,7 @@ export interface CourseDetail extends CourseSummary {
   description: string | null;
   license: License;
   trainer: { id: string; full_name: string; specialization: string | null; bio: string | null };
-  modules: { id: string; title: string; lessons: { id: string; title: string; content_type: 'VIDEO' | 'ZOOM' | 'PDF' }[] }[];
+  modules: { id: string; title: string; lessons: { id: string; title: string; content_type: LessonContentType }[] }[];
 }
 
 export interface Provider {
@@ -155,13 +155,18 @@ export interface MyEnrollment {
   enrolled_at: string;
 }
 
+export type LessonContentType = 'VIDEO' | 'ZOOM' | 'PDF' | 'YOUTUBE';
+
 export interface MyLesson {
   id: string;
   title: string;
-  content_type: 'VIDEO' | 'ZOOM' | 'PDF';
+  content_type: LessonContentType;
   media_url: string | null;
   video_ready: boolean | null;
   duration_seconds: number | null;
+  /** YOUTUBE lessons: the segment of the course's source video. */
+  start_second: number | null;
+  end_second: number | null;
   completed: boolean;
 }
 
@@ -171,7 +176,65 @@ export interface MyCourse {
   progress: number;
   completion_status: 'ENROLLED' | 'COMPLETED';
   certificate_code: string | null;
+  youtube_video_id: string | null;
+  schedule: { break_minutes: number; discussion_minutes: number } | null;
   modules: { id: string; title: string; lessons: MyLesson[] }[];
+}
+
+export interface ScheduleSettings {
+  max_lecture_minutes: number;
+  min_lecture_minutes: number;
+  break_minutes: number;
+  discussion_minutes: number;
+  daily_video_minutes: number;
+}
+
+export interface SchedulePreview {
+  video: { id: string; title: string; channel: string; duration_seconds: number; duration_source: 'youtube' | 'manual' };
+  config: ScheduleSettings;
+  plan: {
+    video_seconds: number;
+    lecture_count: number;
+    training_hours: number;
+    days: { day: number; video_seconds: number; break_count: number; total_minutes: number; lectures: { start_second: number; end_second: number }[] }[];
+  };
+}
+
+export interface RecordedCourseSummary {
+  id: string;
+  title: string;
+  is_published: boolean;
+  video_id: string;
+  duration_seconds: number;
+  day_count: number;
+  lecture_count: number;
+  enrollment_count: number;
+  post_count: number;
+}
+
+export interface RecordedCourseDetail {
+  id: string;
+  title: string;
+  is_published: boolean;
+  video_id: string;
+  duration_seconds: number;
+  enrollment_count: number;
+  training_hours: number | null;
+  config: ScheduleSettings | null;
+  days: { id: string; title: string; post_count: number; lessons: { id: string; title: string; start_second: number; end_second: number }[] }[];
+}
+
+export interface DiscussionPost {
+  id: string;
+  body: string;
+  created_at: string;
+  author_name: string;
+  author_is_staff: boolean;
+  mine: boolean;
+}
+
+export interface DiscussionThread extends DiscussionPost {
+  replies: DiscussionPost[];
 }
 
 export interface MyClassroom {
@@ -203,7 +266,18 @@ export interface ContentModule {
   id: string;
   title: string;
   sort_order: number;
-  lessons: { id: string; title: string; content_type: 'VIDEO' | 'ZOOM' | 'PDF'; sort_order: number; media_url: string | null; hls_status: HlsStatus; hls_error: string | null; duration_seconds: number | null }[];
+  lessons: {
+    id: string;
+    title: string;
+    content_type: LessonContentType;
+    sort_order: number;
+    media_url: string | null;
+    hls_status: HlsStatus;
+    hls_error: string | null;
+    duration_seconds: number | null;
+    start_second: number | null;
+    end_second: number | null;
+  }[];
 }
 
 export interface DomainStatus {
@@ -355,6 +429,11 @@ export const admin = {
   attendance: (slug: string, token: string, classroomId: string) => api<Attendance[]>(slug, `/admin/classrooms/${encodeURIComponent(classroomId)}/attendance`, { token }),
   certificates: (slug: string, token: string) => api<IssuedCertificate[]>(slug, '/admin/certificates', { token }),
   domain: (slug: string, token: string) => api<DomainStatus>(slug, '/tenant/domain', { token }),
+  recordedCourses: (slug: string, token: string) => api<RecordedCourseSummary[]>(slug, '/admin/recorded-courses', { token }),
+  recordedCourse: (slug: string, token: string, id: string) => api<RecordedCourseDetail>(slug, `/admin/recorded-courses/${encodeURIComponent(id)}`, { token }),
+  recordedPreview: (slug: string, token: string, body: Record<string, string | number>) =>
+    api<SchedulePreview>(slug, '/admin/recorded-courses/preview', { method: 'POST', token, body }),
+  discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/admin/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */
@@ -362,6 +441,7 @@ export const me = {
   enrollments: (slug: string, token: string) => api<MyEnrollment[]>(slug, '/me/enrollments', { token }),
   course: (slug: string, token: string, courseId: string) => api<MyCourse>(slug, `/me/courses/${encodeURIComponent(courseId)}`, { token }),
   classrooms: (slug: string, token: string) => api<MyClassroom[]>(slug, '/me/classrooms', { token }),
+  discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
   playback: (slug: string, token: string, lessonId: string) =>
     api<{ playlist_path: string; expires_in: number }>(slug, `/me/lessons/${encodeURIComponent(lessonId)}/playback`, { token }),
 };

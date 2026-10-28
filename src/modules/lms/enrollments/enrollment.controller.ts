@@ -15,6 +15,12 @@ interface CheckoutBody {
 export class EnrollmentController {
   constructor(private readonly checkoutService: CheckoutService) {}
 
+  enrollFree = async (req: Request<Record<string, never>, unknown, { course_id: string }>, res: Response): Promise<void> => {
+    const { tenantId, user } = requireAuthContext(req);
+    const result = await this.checkoutService.enrollFree({ tenantId, userId: user.id, courseId: req.body.course_id });
+    res.status(201).json(ok({ enrollment_id: result.enrollmentId, status: result.status }));
+  };
+
   checkout = async (req: Request<Record<string, never>, unknown, CheckoutBody>, res: Response): Promise<void> => {
     const { tenantId, tenant, user } = requireAuthContext(req);
 

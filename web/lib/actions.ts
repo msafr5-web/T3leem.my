@@ -19,6 +19,9 @@ const MESSAGES: Record<string, string> = {
   COURSE_IS_FREE: 'هذه الدورة مجانية ولا تحتاج إلى دفع.',
   TENANT_BILLING_NOT_CONFIGURED: 'لا يمكن لهذه الأكاديمية إصدار فواتير ضريبية بعد.',
   FORBIDDEN: 'ليست لديك صلاحية لهذه العملية.',
+  COURSE_NOT_FREE: 'هذه الدورة مدفوعة. أكمل الشراء من صفحة الدفع.',
+  POST_TOO_SHORT: 'اكتب سؤالك أولاً.',
+  POST_NOT_FOUND: 'السؤال الذي ترد عليه لم يعد موجوداً.',
 };
 
 function describe(err: unknown): string {
@@ -134,6 +137,37 @@ export async function completeLessonAction(slug: string, courseId: string, lesso
   await api(slug, `/me/lessons/${encodeURIComponent(lessonId)}/complete`, { method: 'POST', token: session.token });
   revalidatePath(`/${slug}/learn/${courseId}`);
   revalidatePath(`/${slug}/my`);
+}
+
+/** Free course: enroll in one click (no payment, no invoice), then go straight to learning. */
+export async function enrollFreeAction(slug: string, courseId: string, _prev: FormState): Promise<FormState> {
+  if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  const learnPath = `/${slug}/learn/${courseId}`;
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/courses/${courseId}`)}`);
+  try {
+    await api(slug, '/enrollments/free', { method: 'POST', token: session.token, body: { course_id: courseId } });
+  } catch (err) {
+    if (!(err instanceof ApiError && err.code === 'ALREADY_ENROLLED')) return { error: describe(err) };
+  }
+  revalidatePath(`/${slug}/my`);
+  redirect(learnPath);
+}
+
+/** Ask a question (or reply) on a day's discussion board. */
+export async function postDiscussionAction(slug: string, courseId: string, moduleId: string, parentId: string | null, _prev: FormState, form: FormData): Promise<FormState> {
+  if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/learn/${courseId}`)}`);
+  const body = String(form.get('body') ?? '').trim();
+  if (body.length < 2) return { error: 'اكتب سؤالك أولاً.' };
+  try {
+    await api(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { method: 'POST', token: session.token, body: { body, parent_id: parentId } });
+  } catch (err) {
+    return { error: describe(err) };
+  }
+  revalidatePath(`/${slug}/learn/${courseId}`);
+  return {};
 }
 
 export async function logoutAction(slug: string): Promise<void> {

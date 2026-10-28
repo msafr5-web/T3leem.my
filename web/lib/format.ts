@@ -38,7 +38,18 @@ export const planStatusLabel = { DRAFT: 'مسودة', ACTIVE: 'نشطة', ARCHIV
 export const meetingProviderLabel = { ZOOM: 'Zoom', TEAMS: 'Microsoft Teams', GOOGLE_MEET: 'Google Meet', OTHER: 'أخرى' } as const;
 export const classroomStatusLabel = { SCHEDULED: 'مجدول', COMPLETED: 'منتهٍ', CANCELLED: 'ملغى' } as const;
 
-export const lessonTypeLabel = { VIDEO: 'فيديو', ZOOM: 'جلسة مباشرة', PDF: 'ملف PDF' } as const;
+export const lessonTypeLabel = { VIDEO: 'فيديو', ZOOM: 'جلسة مباشرة', PDF: 'ملف PDF', YOUTUBE: 'جزء مسجّل' } as const;
+
+/** 632 -> "10:32", 3725 -> "1:02:05" (video timestamps stay in Latin digits, left-to-right). */
+export const formatTimestamp = (total: number): string => {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = Math.floor(total % 60);
+  return `${h > 0 ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(s).padStart(2, '0')}`;
+};
+
+/** 1265 -> "٢١ دقيقة" */
+export const formatMinutes = (seconds: number): string => `${new Intl.NumberFormat('ar-SA').format(Math.max(1, Math.round(seconds / 60)))} دقيقة`;
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 export const isValidSlug = (slug: string): boolean => SLUG_RE.test(slug);

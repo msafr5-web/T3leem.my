@@ -41,6 +41,9 @@ export class ContentService {
   }
 
   async createLesson(tenantId: string, actor: Actor, moduleId: string, data: { title: string; contentType: ContentType; mediaUrl: string | null }): Promise<string> {
+    // YOUTUBE lessons carry a time range of the course's source video: only the recorded-course
+    // scheduler creates them, never a bare link from this form.
+    if (data.contentType === 'YOUTUBE') throw HttpError.unprocessable('USE_RECORDED_COURSES', 'Create YouTube lessons from the recorded courses section');
     const mediaUrl = data.contentType === 'VIDEO' ? null : data.mediaUrl;
     if (data.contentType === 'PDF' && !mediaUrl) throw HttpError.unprocessable('MEDIA_URL_REQUIRED', 'PDF lessons need a document link');
     const id = await this.deps.repository.createLesson(tenantId, actor, moduleId, { ...data, mediaUrl });

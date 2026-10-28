@@ -51,6 +51,7 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
   afterAll(async () => {
     for (const tenantId of [tenantA, tenantB]) {
       await db.withTenantTransaction(tenantId, async (tx) => {
+        await tx.auditLog.deleteMany({ where: { tenantId } });
         await tx.course.deleteMany({ where: { tenantId } });
         await tx.trainer.deleteMany({ where: { tenantId } });
         await tx.user.deleteMany({ where: { tenantId } });
@@ -98,6 +99,40 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     const trainers = await db.forTenant(tenantA).trainer.findMany({ select: { id: true } });
     expect(trainers.map((t) => t.id)).toEqual([userA]);
     await expect(db.prisma.trainer.count()).resolves.toBe(0);
+  });
+
+  it('recorded courses: the real repository builds days + YOUTUBE lessons, and discussions stay per-tenant', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaRecordedCourseRepository } = require('../../src/modules/lms/recorded/recorded.repository') as typeof import('../../src/modules/lms/recorded/recorded.repository');
+    const repo = new PrismaRecordedCourseRepository();
+    const actor = { userId: userA, role: 'TENANT_ADMIN' as const, ip: null };
+    const input = {
+      title: 'GitHub',
+      description: null,
+      trainerId: userA,
+      price: '0.00',
+      isPublished: false,
+      videoId: 'ZJQ-c4HyeX8',
+      durationSeconds: 1265,
+      config: { maxLectureMinutes: 15, minLectureMinutes: 10, breakMinutes: 5, discussionMinutes: 15, dailyVideoMinutes: 60 },
+      trainingHours: 0.6,
+      days: [{ title: 'اليوم 1', lessons: [{ title: 'الجزء 1', startSecond: 0, endSecond: 632 }, { title: 'الجزء 2', startSecond: 632, endSecond: 1265 }] }],
+    };
+    // Tenant B's trainer id satisfies the FK but must be rejected (FK checks bypass RLS).
+    await expect(repo.createRecordedCourse(tenantA, actor, { ...input, trainerId: userB })).resolves.toBeNull();
+    const courseId = (await repo.createRecordedCourse(tenantA, actor, input))!;
+    const detail = (await repo.getRecordedCourse(tenantA, courseId))!;
+    expect(detail.days[0]!.lessons.map((l) => [l.startSecond, l.endSecond])).toEqual([[0, 632], [632, 1265]]);
+    await expect(repo.getRecordedCourse(tenantB, courseId)).resolves.toBeNull();
+
+    const dayId = detail.days[0]!.id;
+    const posted = await repo.createPost(tenantA, userA, dayId, null, 'سؤال');
+    expect(posted.kind).toBe('ok');
+    // Tenant B can neither see tenant A's day nor post into it.
+    await expect(repo.createPost(tenantB, userB, dayId, null, 'x')).resolves.toEqual({ kind: 'module_not_found' });
+    await expect(db.forTenant(tenantB).discussionPost.count()).resolves.toBe(0);
+    await expect(db.prisma.discussionPost.count()).resolves.toBe(0);
+    expect(await repo.listDiscussion(tenantA, dayId, userA)).toEqual([expect.objectContaining({ body: 'سؤال', mine: true, replies: [] })]);
   });
 
   it('tenant context does not leak across pooled connections', async () => {

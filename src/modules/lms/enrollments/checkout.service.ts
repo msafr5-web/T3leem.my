@@ -54,6 +54,27 @@ export class CheckoutService {
     this.clock = deps.clock ?? (() => new Date());
   }
 
+  /**
+   * Free courses (price 0): enroll directly. No charge and no ZATCA invoice — a zero-value
+   * supply has nothing to invoice. Paid courses must go through checkout().
+   */
+  async enrollFree(cmd: { tenantId: string; userId: string; courseId: string }): Promise<{ enrollmentId: string; status: EnrollmentStatus }> {
+    const course = await this.deps.repository.findCourseForCheckout(cmd.tenantId, cmd.courseId);
+    if (!course || !course.isPublished) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    if (course.priceHalalas !== 0) throw HttpError.paymentRequired('COURSE_NOT_FREE', 'This course requires checkout');
+    if (await this.deps.repository.hasEnrollment(cmd.tenantId, cmd.userId, cmd.courseId)) {
+      throw HttpError.conflict('ALREADY_ENROLLED', 'You are already enrolled in this course');
+    }
+    try {
+      const created = await this.deps.repository.createFreeEnrollment(cmd.tenantId, cmd.userId, cmd.courseId);
+      return { enrollmentId: created.enrollmentId, status: created.enrollmentStatus };
+    } catch (err) {
+      // Double-click / two tabs: the unique (tenant, user, course) constraint is the real guard.
+      if (isUniqueViolation(err)) throw HttpError.conflict('ALREADY_ENROLLED', 'You are already enrolled in this course');
+      throw err;
+    }
+  }
+
   async checkout(cmd: CheckoutCommand): Promise<CheckoutResult> {
     const { repository, paymentGateway, zatcaQueue, vatRatePercent } = this.deps;
 

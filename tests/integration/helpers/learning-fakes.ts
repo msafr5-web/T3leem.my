@@ -82,13 +82,15 @@ export function buildLearningFakes(ids: { tenantA: string; user: string; course:
             progress: (completed.size / 2) * 100,
             completionStatus: completed.size === 2 ? 'COMPLETED' : 'ENROLLED',
             certificateCode: [...certificates.keys()][0] ?? null,
+            youtubeVideoId: null,
+            schedule: null,
             modules: [
               {
                 id: 'm1',
                 title: 'Basics',
                 lessons: [
-                  { id: VIDEO_LESSON, title: 'Intro video', contentType: 'VIDEO', mediaUrl: null, hlsStatus: lessons.get(VIDEO_LESSON)!.hlsStatus, durationSeconds: 10, completed: completed.has(VIDEO_LESSON) },
-                  { id: PDF_LESSON, title: 'Guide', contentType: 'PDF', mediaUrl: 'https://example.com/guide.pdf', hlsStatus: 'NONE', durationSeconds: null, completed: completed.has(PDF_LESSON) },
+                  { id: VIDEO_LESSON, title: 'Intro video', contentType: 'VIDEO', mediaUrl: null, hlsStatus: lessons.get(VIDEO_LESSON)!.hlsStatus, durationSeconds: 10, startSecond: null, endSecond: null, completed: completed.has(VIDEO_LESSON) },
+                  { id: PDF_LESSON, title: 'Guide', contentType: 'PDF', mediaUrl: 'https://example.com/guide.pdf', hlsStatus: 'NONE', durationSeconds: null, startSecond: null, endSecond: null, completed: completed.has(PDF_LESSON) },
                 ],
               },
             ],

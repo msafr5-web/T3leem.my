@@ -245,3 +245,41 @@ textarea { min-height: 96px; resize: vertical; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ----- recorded (YouTube) courses ----- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+label.checkbox { display: flex; align-items: center; gap: 8px; }
+.yt-stage[hidden] { display: none; }
+.yt-frame { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
+.yt-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+.segment-meta { display: grid; gap: 6px; }
+.break-card { text-align: center; justify-items: center; padding: 32px 20px; }
+.break-card h3 { font-size: 20px; }
+.countdown { font-family: var(--font-display), sans-serif; font-size: 56px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.schedule-gap { padding: 0 34px 4px; font-size: 12px; }
+
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.timeline-day { display: grid; gap: 6px; }
+.timeline-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.timeline-track { display: flex; gap: 4px; min-height: 64px; }
+.timeline-track .block { flex-basis: 0; min-width: 48px; border-radius: 8px; padding: 6px 8px; display: grid; align-content: center; gap: 1px; font-size: 12px; overflow: hidden; }
+.timeline-track .block b { font-size: 12px; }
+.timeline-track .lecture { background: var(--brand); color: var(--brand-ink); }
+.timeline-track .pause { background: var(--amber-soft); color: var(--amber); }
+.timeline-track .talk { background: var(--ok-soft); color: var(--ok); }
+@media (max-width: 640px) {
+  .timeline-track { flex-direction: column; min-height: 0; }
+  .timeline-track .block { grid-auto-flow: column; justify-content: space-between; }
+}
+.yt-summary { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.yt-summary img { border-radius: 8px; object-fit: cover; background: var(--line); }
+
+.discussion textarea { min-height: 72px; }
+.threads, .replies { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.thread { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.replies { padding-inline-start: 18px; border-inline-start: 3px solid var(--brand-soft); gap: 8px; }
+.post { display: grid; gap: 4px; }
+.post-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.post-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply-box summary { cursor: pointer; color: var(--brand); font-weight: 600; width: max-content; }
+.reply-box[open] summary { margin-bottom: 8px; }
