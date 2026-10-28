@@ -63,15 +63,16 @@ const displayName = (u: { fullName: string | null; email: string }) => u.fullNam
 const parseConfig = (raw: Prisma.JsonValue | null): ScheduleConfig | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const c = raw as Record<string, unknown>;
-  const n = (k: keyof ScheduleConfig) => (typeof c[k] === 'number' ? (c[k] as number) : NaN);
-  const config: ScheduleConfig = {
+  const n = (k: Exclude<keyof ScheduleConfig, 'splitMode'>) => (typeof c[k] === 'number' ? (c[k] as number) : NaN);
+  const numbers = {
     maxLectureMinutes: n('maxLectureMinutes'),
     minLectureMinutes: n('minLectureMinutes'),
     breakMinutes: n('breakMinutes'),
     discussionMinutes: n('discussionMinutes'),
     dailyVideoMinutes: n('dailyVideoMinutes'),
   };
-  return Object.values(config).every(Number.isFinite) ? config : null;
+  if (!Object.values(numbers).every(Number.isFinite)) return null;
+  return { ...numbers, splitMode: c.splitMode === 'fixed' ? 'fixed' : 'balanced' };
 };
 
 export { parseConfig as parseScheduleConfig };

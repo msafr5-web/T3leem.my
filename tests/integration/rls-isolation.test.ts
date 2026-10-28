@@ -114,7 +114,7 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
       isPublished: false,
       videoId: 'ZJQ-c4HyeX8',
       durationSeconds: 1265,
-      config: { maxLectureMinutes: 15, minLectureMinutes: 10, breakMinutes: 5, discussionMinutes: 15, dailyVideoMinutes: 60 },
+      config: { splitMode: 'balanced' as const, maxLectureMinutes: 15, minLectureMinutes: 10, breakMinutes: 5, discussionMinutes: 15, dailyVideoMinutes: 60 },
       trainingHours: 0.6,
       days: [{ title: 'اليوم 1', lessons: [{ title: 'الجزء 1', startSecond: 0, endSecond: 632 }, { title: 'الجزء 2', startSecond: 632, endSecond: 1265 }] }],
     };

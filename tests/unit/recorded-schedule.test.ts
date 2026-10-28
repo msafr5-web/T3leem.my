@@ -110,3 +110,29 @@ describe('YoutubeMetadataClient (no API key)', () => {
     expect(await failing.lookup('ZJQ-c4HyeX8')).toEqual({ kind: 'unavailable' });
   });
 });
+
+describe('fixed split — "a break every N minutes" chosen by the supervisor', () => {
+  const every = (n: number, extra: Partial<typeof DEFAULT_SCHEDULE> = {}) => ({ ...DEFAULT_SCHEDULE, splitMode: 'fixed' as const, maxLectureMinutes: n, ...extra });
+
+  it('cuts exactly every 25 minutes; the remainder becomes the last lecture', () => {
+    const plan = planSchedule(110 * 60, every(25), 1);
+    expect(minutes(plan.days[0]!.lectures)).toEqual([25, 25, 25, 25, 10]);
+    expect(plan.days[0]!.breakCount).toBe(4);
+  });
+
+  it('merges a tail shorter than 5 minutes into the previous lecture', () => {
+    expect(minutes(planSchedule(62 * 60, every(30), 1).days[0]!.lectures)).toEqual([30, 32]);
+  });
+
+  it('groups whole lectures into days — a day never starts mid-lecture', () => {
+    const plan = planSchedule(150 * 60, every(30)); // 5 lectures, 2 per 60-minute day → 3 days
+    expect(plan.days.map((d) => minutes(d.lectures))).toEqual([[30, 30], [30, 30], [30]]);
+    expect(plan.days[1]!.lectures[0]!.startSecond).toBe(60 * 60);
+    const two = planSchedule(150 * 60, every(30), 2);
+    expect(two.days.map((d) => d.lectures.length)).toEqual([3, 2]);
+  });
+
+  it('rejects more days than lectures', () => {
+    expect(() => planSchedule(50 * 60, every(25), 3)).toThrow('More days than lectures');
+  });
+});

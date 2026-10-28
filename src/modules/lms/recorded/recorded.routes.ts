@@ -14,6 +14,7 @@ const L = SCHEDULE_LIMITS;
 const scheduleRules = [
   body('youtube_url').isString().trim().isLength({ min: 11, max: 500 }).withMessage('youtube_url is required'),
   body('days').optional({ values: 'falsy' }).isInt({ min: L.days.min, max: L.days.max }),
+  body('split_mode').optional({ values: 'falsy' }).isIn(['fixed', 'balanced']),
   body('max_lecture_minutes').optional({ values: 'falsy' }).isInt(L.lectureMinutes),
   body('min_lecture_minutes').optional({ values: 'falsy' }).isInt(L.lectureMinutes),
   body('break_minutes').optional({ values: 'null' }).isInt(L.breakMinutes),
@@ -26,7 +27,8 @@ const int = (v: unknown): number | undefined => (v === undefined || v === null |
 
 function scheduleRequest(b: Record<string, unknown>): ScheduleRequest {
   const config: Partial<ScheduleConfig> = {};
-  const set = (key: keyof ScheduleConfig, raw: unknown) => {
+  if (b.split_mode === 'fixed' || b.split_mode === 'balanced') config.splitMode = b.split_mode;
+  const set = (key: Exclude<keyof ScheduleConfig, 'splitMode'>, raw: unknown) => {
     const v = int(raw);
     if (v !== undefined) config[key] = v;
   };
@@ -39,6 +41,7 @@ function scheduleRequest(b: Record<string, unknown>): ScheduleRequest {
 }
 
 const configJson = (c: ScheduleConfig) => ({
+  split_mode: c.splitMode,
   max_lecture_minutes: c.maxLectureMinutes,
   min_lecture_minutes: c.minLectureMinutes,
   break_minutes: c.breakMinutes,

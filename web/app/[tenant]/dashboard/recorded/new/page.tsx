@@ -9,6 +9,7 @@ import { ScheduleTimeline } from '../schedule-timeline';
 type Search = {
   url?: string;
   days?: string;
+  mode?: string;
   max?: string;
   min?: string;
   pause?: string;
@@ -21,7 +22,7 @@ const PREVIEW_ERRORS: Record<string, string> = {
   YOUTUBE_VIDEO_NOT_FOUND: 'الفيديو غير موجود أو خاص. استخدم فيديو عاماً أو غير مدرج.',
   YOUTUBE_NOT_EMBEDDABLE: 'صاحب الفيديو منع تشغيله خارج YouTube، فلا يمكن بناء دورة عليه.',
   YOUTUBE_DURATION_UNKNOWN: 'تعذّر قراءة مدة الفيديو من YouTube. أدخل المدة بالدقائق في خانة «مدة الفيديو» ثم اعرض الجدولة مجدداً.',
-  TOO_MANY_DAYS: 'عدد الأيام كبير بالنسبة لمدة الفيديو: كل يوم يحتاج ٥ دقائق فيديو على الأقل.',
+  TOO_MANY_DAYS: 'عدد الأيام أكبر من المناسب: كل يوم يحتاج جزءاً واحداً على الأقل و٥ دقائق فيديو. قلّل الأيام أو طول الجزء.',
   VIDEO_TOO_LONG: 'الفيديوهات الأطول من ١٢ ساعة غير مدعومة.',
   VALIDATION_FAILED: 'تحقق من قيم الإعدادات (الأرقام خارج النطاق المسموح).',
 };
@@ -36,6 +37,8 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
   // Settings default to the owner-approved schedule: 10–15 min lectures, 5 min breaks, 15 min discussion.
   const settings = {
     days: num(q.days),
+    // Supervisor's choice: a break every N minutes (fixed), or equal parts within a range (balanced).
+    mode: q.mode === 'balanced' ? 'balanced' : 'fixed',
     max: num(q.max) ?? 15,
     min: num(q.min) ?? 10,
     pause: num(q.pause) ?? 5,
@@ -48,6 +51,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
   if (q.url) {
     const body: Record<string, string | number> = {
       youtube_url: q.url,
+      split_mode: settings.mode,
       max_lecture_minutes: settings.max,
       min_lecture_minutes: settings.min,
       break_minutes: settings.pause,
@@ -86,12 +90,19 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
               رابط فيديو YouTube
               <input id="url" name="url" type="url" dir="ltr" required defaultValue={q.url ?? ''} placeholder="https://www.youtube.com/watch?v=…" />
             </label>
+            <label htmlFor="mode">
+              طريقة التقسيم
+              <select id="mode" name="mode" defaultValue={settings.mode}>
+                <option value="fixed">ثابتة: استراحة كل «طول الجزء» بالضبط</option>
+                <option value="balanced">متوازنة: أجزاء متساوية بين الحد الأدنى والأقصى</option>
+              </select>
+            </label>
             <label htmlFor="max">
-              أقصى طول للجزء <span className="hint">(دقائق)</span>
-              <input id="max" name="max" type="number" min={3} max={60} defaultValue={settings.max} />
+              طول الجزء <span className="hint">(دقائق، مثل ٢٥ أو ٣٠. في المتوازنة: الحد الأقصى)</span>
+              <input id="max" name="max" type="number" min={3} max={60} required defaultValue={settings.max} />
             </label>
             <label htmlFor="min">
-              أدنى طول للجزء <span className="hint">(دقائق)</span>
+              أدنى طول للجزء <span className="hint">(للطريقة المتوازنة فقط)</span>
               <input id="min" name="min" type="number" min={3} max={60} defaultValue={settings.min} />
             </label>
             <label htmlFor="pause">
@@ -144,6 +155,10 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
             </div>
             <div className="stats">
               <div>
+                <strong>{formatNumber(Math.round(preview.video.duration_seconds / 60))}</strong>
+                <span>دقيقة إجمالي مدة الفيديو</span>
+              </div>
+              <div>
                 <strong>{formatNumber(preview.plan.days.length)}</strong>
                 <span>{preview.plan.days.length === 1 ? 'يوم تدريبي' : 'أيام تدريبية'}</span>
               </div>
@@ -162,7 +177,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
               discussionMinutes={preview.config.discussion_minutes}
             />
             <p className="small muted">
-              الأجزاء متساوية الطول داخل اليوم حتى لا يبقى جزء قصير جداً بعد استراحة. الأيام تُفتح للمتدرب يوماً بعد يوم بعد إكمال اليوم السابق.
+              {preview.config.split_mode === 'fixed' ? `استراحة كل ${preview.config.max_lecture_minutes} دقيقة، والجزء الأخير يأخذ ما تبقى (ما يقل عن ٥ دقائق يُضم للجزء السابق).` : 'الأجزاء متساوية الطول داخل اليوم حتى لا يبقى جزء قصير جداً بعد استراحة.'} الأيام تُفتح للمتدرب يوماً بعد يوم بعد إكمال اليوم السابق.
             </p>
           </section>
 
@@ -177,6 +192,7 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
             ) : (
               <AdminForm action={createRecordedCourseAction.bind(null, slug)} submitLabel="إنشاء الدورة المسجلة">
                 <input type="hidden" name="youtube_url" value={q.url} />
+                <input type="hidden" name="split_mode" value={preview.config.split_mode} />
                 <input type="hidden" name="max_lecture_minutes" value={preview.config.max_lecture_minutes} />
                 <input type="hidden" name="min_lecture_minutes" value={preview.config.min_lecture_minutes} />
                 <input type="hidden" name="break_minutes" value={preview.config.break_minutes} />

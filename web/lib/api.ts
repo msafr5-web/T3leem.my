@@ -182,6 +182,7 @@ export interface MyCourse {
 }
 
 export interface ScheduleSettings {
+  split_mode: 'fixed' | 'balanced';
   max_lecture_minutes: number;
   min_lecture_minutes: number;
   break_minutes: number;

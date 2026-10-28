@@ -18,7 +18,7 @@ describe('POST /api/v1/admin/recorded-courses/preview', () => {
     const res = await call(buildApp(), adminToken).post('/admin/recorded-courses/preview', { youtube_url: `https://youtu.be/${YT_OK}` });
     expect(res.status).toBe(200);
     expect(res.body.data.video).toMatchObject({ id: YT_OK, duration_seconds: 1265, duration_source: 'youtube', channel: 'Syntax' });
-    expect(res.body.data.config).toEqual({ max_lecture_minutes: 15, min_lecture_minutes: 10, break_minutes: 5, discussion_minutes: 15, daily_video_minutes: 60 });
+    expect(res.body.data.config).toEqual({ split_mode: 'balanced', max_lecture_minutes: 15, min_lecture_minutes: 10, break_minutes: 5, discussion_minutes: 15, daily_video_minutes: 60 });
     expect(res.body.data.plan.days).toEqual([
       { day: 1, video_seconds: 1265, break_count: 1, total_minutes: 41, lectures: [{ start_second: 0, end_second: 632 }, { start_second: 632, end_second: 1265 }] },
     ]);

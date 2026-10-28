@@ -92,7 +92,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   YOUTUBE_VIDEO_NOT_FOUND: 'الفيديو غير موجود أو خاص. تأكد أنه عام أو غير مدرج.',
   YOUTUBE_NOT_EMBEDDABLE: 'صاحب الفيديو منع تشغيله خارج YouTube، فلا يمكن استخدامه.',
   YOUTUBE_DURATION_UNKNOWN: 'تعذّر قراءة مدة الفيديو من YouTube. أدخل المدة يدوياً.',
-  TOO_MANY_DAYS: 'عدد الأيام كبير بالنسبة لمدة الفيديو: كل يوم يحتاج ٥ دقائق فيديو على الأقل.',
+  TOO_MANY_DAYS: 'عدد الأيام أكبر من المناسب لمدة الفيديو وطول الجزء. قلّل الأيام أو طول الجزء.',
   VIDEO_TOO_LONG: 'الفيديوهات الأطول من ١٢ ساعة غير مدعومة.',
   TITLE_REQUIRED: 'أدخل عنوان الدورة.',
   USE_RECORDED_COURSES: 'أجزاء YouTube تُنشأ من قسم «دورات مسجلة».',
@@ -296,7 +296,7 @@ export async function deleteLessonAction(slug: string, courseId: string, lessonI
 
 // ----- recorded (YouTube) courses -----
 
-const SCHEDULE_FIELDS = ['youtube_url', 'days', 'max_lecture_minutes', 'min_lecture_minutes', 'break_minutes', 'discussion_minutes', 'manual_duration_seconds'] as const;
+const SCHEDULE_FIELDS = ['youtube_url', 'split_mode', 'days', 'max_lecture_minutes', 'min_lecture_minutes', 'break_minutes', 'discussion_minutes', 'manual_duration_seconds'] as const;
 
 /** Creates the course + its days and lectures in one call, then opens its schedule page. */
 export async function createRecordedCourseAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
@@ -310,7 +310,7 @@ export async function createRecordedCourseAction(slug: string, _prev: AdminFormS
   };
   for (const key of SCHEDULE_FIELDS) {
     const v = str(form, key);
-    if (v !== '') body[key] = key === 'youtube_url' ? v : Number(v);
+    if (v !== '') body[key] = key === 'youtube_url' || key === 'split_mode' ? v : Number(v);
   }
   let id: string;
   try {
