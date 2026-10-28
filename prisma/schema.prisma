@@ -42,6 +42,17 @@ enum ContentType {
   YOUTUBE
 }
 
+enum QuizQuestionType {
+  MCQ
+  TEXT
+}
+
+enum QuizDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
 enum EnrollmentStatus {
   ACTIVE
   SUSPENDED
@@ -153,6 +164,7 @@ model User {
   enrollments     Enrollment[]
   trainer         Trainer?
   discussionPosts DiscussionPost[]
+  quizAttempts    QuizAttempt[]
 
   @@unique([tenantId, email])
   @@map("users")
@@ -205,15 +217,20 @@ model Course {
   sourceChannelUrl      String?    @map("source_channel_url")
   sourceChannelName     String?    @map("source_channel_name")
   scheduleStartsAt      DateTime?  @map("schedule_starts_at") @db.Timestamptz(3)
+  // End-of-day quiz: how long the learner has and how many random questions are drawn.
+  quizDurationMinutes   Int        @default(10) @map("quiz_duration_minutes")
+  quizQuestionCount     Int        @default(3) @map("quiz_question_count")
   isPublished           Boolean    @default(false) @map("is_published")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")
 
-  trainer     Trainer              @relation(fields: [trainerId], references: [id])
-  modules     Module[]
-  enrollments Enrollment[]
-  plans       TrainingPlanCourse[]
-  classrooms  VirtualClassroom[]
+  trainer       Trainer              @relation(fields: [trainerId], references: [id])
+  modules       Module[]
+  enrollments   Enrollment[]
+  quizQuestions QuizQuestion[]
+  quizAttempts  QuizAttempt[]
+  plans         TrainingPlanCourse[]
+  classrooms    VirtualClassroom[]
 
   @@index([tenantId, isPublished])
   @@map("courses")
@@ -342,9 +359,11 @@ model Module {
   title     String
   sortOrder Int    @map("sort_order")
 
-  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  lessons     Lesson[]
-  discussions DiscussionPost[]
+  course        Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons       Lesson[]
+  discussions   DiscussionPost[]
+  quizQuestions QuizQuestion[]
+  quizAttempts  QuizAttempt[]
 
   @@index([courseId, sortOrder])
   @@map("modules")
@@ -367,6 +386,55 @@ model DiscussionPost {
 
   @@index([moduleId, createdAt])
   @@map("discussion_posts")
+}
+
+// Question bank of a course (imported from Excel). moduleId = the day it belongs to;
+// null = shared pool used by every day that has no questions of its own.
+model QuizQuestion {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  courseId      String           @map("course_id") @db.Uuid
+  moduleId      String?          @map("module_id") @db.Uuid
+  code          String
+  body          String
+  type          QuizQuestionType
+  options       Json             @default("[]")
+  correctAnswer String           @map("correct_answer")
+  difficulty    QuizDifficulty   @default(MEDIUM)
+  sortOrder     Int              @default(0) @map("sort_order")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module Module? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+
+  @@unique([courseId, code])
+  @@index([courseId, moduleId])
+  @@map("quiz_questions")
+}
+
+// One learner's single attempt at a day's quiz. The drawn questions (with their shuffled
+// options) are frozen in `questions`; the deadline is decided by the server, never the client.
+model QuizAttempt {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  courseId    String    @map("course_id") @db.Uuid
+  moduleId    String    @map("module_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  startedAt   DateTime  @default(now()) @map("started_at")
+  expiresAt   DateTime  @map("expires_at")
+  submittedAt DateTime? @map("submitted_at")
+  questions   Json
+  answers     Json      @default("{}")
+  score       Int?
+  maxScore    Int?      @map("max_score")
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@index([courseId, moduleId])
+  @@map("quiz_attempts")
 }
 
 model Lesson {

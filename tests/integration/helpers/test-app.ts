@@ -28,6 +28,7 @@ import { RegistrationService, type RegistrationRepository } from '../../../src/m
 import type { TenantResolver } from '../../../src/shared/middlewares/tenant-context.middleware';
 import { buildLearningFakes } from './learning-fakes';
 import { buildRecordedFakes } from './recorded-fakes';
+import { buildQuizFakes } from './quiz-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
@@ -97,6 +98,13 @@ const pmp: CourseDetailRow = {
 // Hashing is slow by design; do it once for the whole file.
 const learnerHash = hashPassword(LEARNER_PASSWORD);
 const dummyHash = hashPassword('dummy-password-for-timing');
+
+/** Course whose question bank / quiz the quiz contract tests use; USER is enrolled in it. */
+export const QUIZ_COURSE = '77777777-7777-4777-8777-777777777771';
+export const QUIZ_DAYS = [
+  { id: '77777777-7777-4777-8777-777777777772', title: 'اليوم 1' },
+  { id: '77777777-7777-4777-8777-777777777773', title: 'اليوم 2' },
+];
 
 export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean } = {}) {
   const enrolled = new Set<string>();
@@ -294,6 +302,8 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     users: { [USER]: { name: 'Sara', role: 'LEARNER' }, [ADMIN]: { name: 'Admin', role: 'TENANT_ADMIN' } },
   });
 
+  const quiz = buildQuizFakes({ tenantA: TENANT_A, courseId: QUIZ_COURSE, days: QUIZ_DAYS, enrolled: [USER] });
+
   const app = createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
@@ -325,6 +335,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     domainService: fakes.domains,
     contentService: fakes.content,
     recordedCourseService: recorded.service,
+    quizService: quiz.service,
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,
@@ -332,5 +343,6 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   // Lets contract tests inspect side effects (attendance rows, queued jobs, issued certificates).
   app.locals.fakes = fakes;
   app.locals.recorded = recorded;
+  app.locals.quiz = quiz;
   return app;
 }

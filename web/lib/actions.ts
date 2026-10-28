@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
-import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse } from './api';
+import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse, type QuizResult, type QuizStatus } from './api';
 import { isValidSlug, safeNextPath } from './format';
 import { clearSession, getSession, setSession } from './session';
 
@@ -22,6 +22,10 @@ const MESSAGES: Record<string, string> = {
   COURSE_NOT_FREE: 'هذه الدورة مدفوعة. أكمل الشراء من صفحة الدفع.',
   POST_TOO_SHORT: 'اكتب سؤالك أولاً.',
   POST_NOT_FOUND: 'السؤال الذي ترد عليه لم يعد موجوداً.',
+  QUIZ_NOT_AVAILABLE: 'لا توجد أسئلة لاختبار هذا اليوم بعد.',
+  QUIZ_NOT_STARTED: 'ابدأ الاختبار أولاً.',
+  QUIZ_ALREADY_SUBMITTED: 'سلّمت هذا الاختبار من قبل.',
+  QUIZ_EXPIRED: 'انتهى وقت الاختبار قبل وصول إجاباتك.',
 };
 
 function describe(err: unknown): string {
@@ -168,6 +172,45 @@ export async function postDiscussionAction(slug: string, courseId: string, modul
   }
   revalidatePath(`/${slug}/learn/${courseId}`);
   return {};
+}
+
+export interface QuizActionState {
+  status?: QuizStatus;
+  result?: QuizResult;
+  error?: string;
+  /** The server closed the window (or it was already submitted): reload the status. */
+  stale?: boolean;
+}
+
+async function quizToken(slug: string, courseId: string): Promise<string | null> {
+  if (!isValidSlug(slug)) return null;
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/learn/${courseId}`)}`);
+  return session.token;
+}
+
+/** Starts (or resumes) the end-of-day quiz. The deadline is set by the API, not the browser. */
+export async function startQuizAction(slug: string, courseId: string, moduleId: string): Promise<QuizActionState> {
+  const token = await quizToken(slug, courseId);
+  if (!token) return { error: 'أكاديمية غير معروفة.' };
+  try {
+    return { status: await api<QuizStatus>(slug, `/me/modules/${encodeURIComponent(moduleId)}/quiz/start`, { method: 'POST', token }) };
+  } catch (err) {
+    return { error: describe(err) };
+  }
+}
+
+/** Sends the answers (MCQ: chosen option's index; text: the written answer). */
+export async function submitQuizAction(slug: string, courseId: string, moduleId: string, answers: Record<string, string | number>): Promise<QuizActionState> {
+  const token = await quizToken(slug, courseId);
+  if (!token) return { error: 'أكاديمية غير معروفة.' };
+  try {
+    const result = await api<QuizResult>(slug, `/me/modules/${encodeURIComponent(moduleId)}/quiz/submit`, { method: 'POST', token, body: { answers } });
+    return { result };
+  } catch (err) {
+    const stale = err instanceof ApiError && (err.code === 'QUIZ_EXPIRED' || err.code === 'QUIZ_ALREADY_SUBMITTED');
+    return { error: describe(err), stale };
+  }
 }
 
 export async function logoutAction(slug: string): Promise<void> {

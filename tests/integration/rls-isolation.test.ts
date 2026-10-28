@@ -138,6 +138,61 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     expect(await repo.listDiscussion(tenantA, dayId, userA)).toEqual([expect.objectContaining({ body: 'سؤال', mine: true, replies: [] })]);
   });
 
+  it('quiz: bank and attempts are per-tenant, one attempt per learner per day, first submission wins', async () => {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { PrismaRecordedCourseRepository } = require('../../src/modules/lms/recorded/recorded.repository') as typeof import('../../src/modules/lms/recorded/recorded.repository');
+    const { PrismaQuizRepository } = require('../../src/modules/lms/quiz/quiz.repository') as typeof import('../../src/modules/lms/quiz/quiz.repository');
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    const recorded = new PrismaRecordedCourseRepository();
+    const quiz = new PrismaQuizRepository();
+    const actor = { userId: userA, role: 'TENANT_ADMIN' as const, ip: null };
+    const courseId = (await recorded.createRecordedCourse(tenantA, actor, {
+      title: 'Quiz course',
+      description: null,
+      trainerId: userA,
+      price: '0.00',
+      isPublished: false,
+      videoId: 'ZJQ-c4HyeX8',
+      durationSeconds: 1265,
+      config: { splitMode: 'balanced' as const, maxLectureMinutes: 15, minLectureMinutes: 10, breakMinutes: 5, discussionMinutes: 15, dailyVideoMinutes: 60 },
+      trainingHours: 0.6,
+      channelUrl: null,
+      channelName: null,
+      startsAt: null,
+      days: [{ title: 'اليوم 1', lessons: [{ title: 'الجزء 1', startSecond: 0, endSecond: 632 }] }],
+    }))!;
+    const dayId = (await quiz.courseDays(tenantA, courseId))![0]!.id;
+
+    const row = (code: string, moduleId: string | null) => ({ code, body: `سؤال ${code}`, type: 'MCQ' as const, options: ['أ', 'ب'], correctAnswer: 'أ', difficulty: 'MEDIUM' as const, day: null, moduleId });
+    await expect(quiz.importQuestions(tenantA, actor, courseId, [row('Q1', dayId), row('Q2', null)], 'append')).resolves.toEqual({ created: 2, updated: 0, removed: 0 });
+    await expect(quiz.importQuestions(tenantA, actor, courseId, [row('q1', dayId)], 'replace')).resolves.toEqual({ created: 0, updated: 1, removed: 1 });
+    expect((await quiz.listQuestions(tenantA, courseId)).map((q) => q.code)).toEqual(['Q1']);
+
+    // Tenant B can't see, import into, or take a quiz of tenant A's course.
+    await expect(quiz.listQuestions(tenantB, courseId)).resolves.toEqual([]);
+    await expect(quiz.courseDays(tenantB, courseId)).resolves.toBeNull();
+    await expect(quiz.importQuestions(tenantB, { ...actor, userId: userB }, courseId, [row('X', null)], 'append')).resolves.toBeNull();
+    await expect(quiz.staffModuleContext(tenantB, dayId)).resolves.toBeNull();
+    await expect(db.prisma.quizQuestion.count()).resolves.toBe(0); // no tenant context = no rows
+
+    // A learner who is not enrolled has no quiz context; staff do.
+    await expect(quiz.moduleContext(tenantA, userA, dayId)).resolves.toBeNull();
+    await expect(quiz.staffModuleContext(tenantA, dayId)).resolves.toMatchObject({ courseId, settings: { durationMinutes: 10, questionCount: 3 } });
+
+    const questions = (await quiz.poolFor(tenantA, courseId, dayId)).map((q) => ({ id: q.id, body: q.body, type: q.type, options: q.options, correctAnswer: q.correctAnswer }));
+    const input = { courseId, moduleId: dayId, userId: userA, expiresAt: new Date(Date.now() + 600_000), questions };
+    const first = await quiz.createAttempt(tenantA, input);
+    const second = await quiz.createAttempt(tenantA, input); // double click: unique (user, day) -> same attempt
+    expect(second.id).toBe(first.id);
+    await expect(quiz.findAttempt(tenantB, userA, dayId)).resolves.toBeNull();
+    await expect(db.prisma.quizAttempt.count()).resolves.toBe(0);
+
+    const done = { answers: { [questions[0]!.id]: 0 }, score: 1, maxScore: 1, at: new Date() };
+    await expect(quiz.submitAttempt(tenantA, first.id, done)).resolves.toBe(true);
+    await expect(quiz.submitAttempt(tenantA, first.id, { ...done, score: 0 })).resolves.toBe(false);
+    expect((await quiz.findAttempt(tenantA, userA, dayId))!.score).toBe(1);
+  });
+
   it('tenant context does not leak across pooled connections', async () => {
     // Interleave many concurrent queries for both tenants over the shared pool.
     const results = await Promise.all(

@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ApiError, admin, type DiscussionThread, type RecordedCourseDetail } from '@/lib/api';
+import { ApiError, admin, type AdminQuiz, type DiscussionThread, type QuizAttemptSummary, type RecordedCourseDetail } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
 import { adminPostDiscussionAction, updateRecordedSourceAction } from '@/lib/admin-actions';
 import { dayOpensAt, formatDateTime, formatMinutes, formatNumber } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
 import { DiscussionBoard } from '../../../../discussion-board';
+import { QuizSection } from './quiz-section';
 import { ScheduleTimeline } from '../schedule-timeline';
 import { SourceFields } from '../source-fields';
 
@@ -28,6 +29,11 @@ export default async function RecordedCourseSchedule({
   }
   // Every day's board in parallel; one failing board shouldn't hide the others.
   const boards: DiscussionThread[][] = await Promise.all(course.days.map((d) => admin.discussion(slug, token, d.id).catch(() => [])));
+  // The quiz part must not take the whole page down if it fails to load.
+  const [quiz, quizResults]: [AdminQuiz | null, QuizAttemptSummary[]] = await Promise.all([
+    admin.quiz(slug, token, id).catch(() => null),
+    admin.quizResults(slug, token, id).catch(() => []),
+  ]);
   const breakMinutes = course.config?.break_minutes ?? 5;
   const discussionMinutes = course.config?.discussion_minutes ?? 15;
 
@@ -102,7 +108,7 @@ export default async function RecordedCourseSchedule({
         <h2 id="source" style={{ fontSize: 18 }}>
           القناة وموعد الدورة
         </h2>
-        {saved && (
+        {saved && saved !== 'quiz' && (
           <p className="notice ok small" role="status">
             حُفظت التعديلات.
           </p>
@@ -118,6 +124,8 @@ export default async function RecordedCourseSchedule({
           </div>
         </AdminForm>
       </section>
+
+      {quiz && <QuizSection slug={slug} courseId={course.id} quiz={quiz} results={quizResults} saved={saved === 'quiz'} />}
 
       {course.days.map((d, i) => (
         <DiscussionBoard

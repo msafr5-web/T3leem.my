@@ -9,6 +9,8 @@ import type { AuthController } from './modules/auth/auth.controller';
 import { buildAuthRouter } from './modules/auth/auth.routes';
 import type { ZoomWebhookService } from './modules/live/zoom-webhook.service';
 import type { ContentService } from './modules/lms/content/content.service';
+import { buildQuizAdminRouter, buildQuizLearnerRouter } from './modules/lms/quiz/quiz.routes';
+import type { QuizService } from './modules/lms/quiz/quiz.service';
 import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/lms/recorded/recorded.routes';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
@@ -46,6 +48,7 @@ export interface AppDependencies {
   domainService: DomainService;
   contentService: ContentService;
   recordedCourseService: RecordedCourseService;
+  quizService: QuizService;
   learningService: LearningService;
   videoService: VideoService;
   zoomWebhooks: ZoomWebhookService;
@@ -107,9 +110,11 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/enrollments', buildEnrollmentRouter(deps.enrollmentController, deps.jwt));
   api.use('/me', buildLearnerRouter(deps.learningService, deps.videoService, deps.jwt));
   api.use('/me', buildRecordedLearnerRouter(deps.recordedCourseService, deps.jwt));
+  api.use('/me', buildQuizLearnerRouter(deps.quizService, deps.jwt));
   api.use('/admin', buildProviderAdminRouter(deps.providerController, deps.jwt));
   api.use('/admin', buildContentAdminRouter(deps.contentService, deps.videoService, deps.learningService, deps.jwt));
   api.use('/admin', buildRecordedAdminRouter(deps.recordedCourseService, deps.jwt));
+  api.use('/admin', buildQuizAdminRouter(deps.quizService, deps.jwt));
   api.use('/', buildProviderPublicRouter(deps.providerController));
 
   app.use('/api/v1', api);

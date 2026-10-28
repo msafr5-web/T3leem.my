@@ -247,6 +247,65 @@ export interface DiscussionPost {
   mine: boolean;
 }
 
+/** End-of-day quiz (question bank + a learner's attempt). */
+export interface QuizSettings {
+  duration_minutes: number;
+  question_count: number;
+}
+export interface AdminQuizQuestion {
+  id: string;
+  code: string;
+  body: string;
+  type: 'MCQ' | 'TEXT';
+  options: string[];
+  correct_answer: string;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  day_id: string | null;
+}
+export interface AdminQuiz {
+  settings: QuizSettings;
+  days: { id: string; title: string; question_count: number }[];
+  shared_count: number;
+  questions: AdminQuizQuestion[];
+}
+export interface QuizAttemptSummary {
+  id: string;
+  learner_name: string;
+  learner_email: string;
+  day_title: string;
+  started_at: string;
+  submitted_at: string | null;
+  score: number | null;
+  max_score: number | null;
+  text_answers: { question: string; answer: string }[];
+}
+export interface QuizResultQuestion {
+  id: string;
+  body: string;
+  type: 'MCQ' | 'TEXT';
+  options: string[];
+  your_answer: string | number | null;
+  correct_answer: string;
+  is_correct: boolean | null;
+}
+export interface QuizResult {
+  score: number;
+  max_score: number;
+  percent: number | null;
+  submitted_at: string;
+  questions: QuizResultQuestion[];
+}
+export interface QuizStatus {
+  available: boolean;
+  duration_minutes: number;
+  question_count: number;
+  server_now: string;
+  attempt:
+    | null
+    | { state: 'in_progress'; expires_at: string; questions: { id: string; body: string; type: 'MCQ' | 'TEXT'; options: string[] }[] }
+    | { state: 'submitted'; result: QuizResult };
+}
+
 export interface DiscussionThread extends DiscussionPost {
   replies: DiscussionPost[];
 }
@@ -448,6 +507,8 @@ export const admin = {
   recordedPreview: (slug: string, token: string, body: Record<string, string | number>) =>
     api<SchedulePreview>(slug, '/admin/recorded-courses/preview', { method: 'POST', token, body }),
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/admin/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
+  quiz: (slug: string, token: string, courseId: string) => api<AdminQuiz>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz`, { token }),
+  quizResults: (slug: string, token: string, courseId: string) => api<QuizAttemptSummary[]>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/results`, { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */
@@ -456,6 +517,7 @@ export const me = {
   course: (slug: string, token: string, courseId: string) => api<MyCourse>(slug, `/me/courses/${encodeURIComponent(courseId)}`, { token }),
   classrooms: (slug: string, token: string) => api<MyClassroom[]>(slug, '/me/classrooms', { token }),
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
+  quiz: (slug: string, token: string, moduleId: string) => api<QuizStatus>(slug, `/me/modules/${encodeURIComponent(moduleId)}/quiz`, { token }),
   playback: (slug: string, token: string, lessonId: string) =>
     api<{ playlist_path: string; expires_in: number }>(slug, `/me/lessons/${encodeURIComponent(lessonId)}/playback`, { token }),
 };

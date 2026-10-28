@@ -38,6 +38,7 @@ const FIELD_LABELS: Record<string, string> = {
   course_ids: 'الدورات',
   starts_at: 'موعد البدء',
   duration_minutes: 'المدة بالدقائق',
+  question_count: 'عدد الأسئلة',
   capacity: 'السعة',
   join_url: 'رابط الانضمام',
   name: 'اسم الأكاديمية',
@@ -102,6 +103,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   TITLE_REQUIRED: 'أدخل عنوان الدورة.',
   USE_RECORDED_COURSES: 'أجزاء YouTube تُنشأ من قسم «دورات مسجلة».',
   POST_TOO_SHORT: 'اكتب الرد أولاً.',
+  INVALID_QUESTION_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُستورد شيء).',
+  FILE_TOO_LARGE: 'حجم الملف يجب ألا يتجاوز ٢ ميغابايت.',
+  FILE_REQUIRED: 'اختر ملف Excel أو CSV.',
+  INVALID_QUIZ_SETTINGS: 'المدة من ١ إلى ١٨٠ دقيقة، وعدد الأسئلة من ١ إلى ٥٠.',
+  QUESTION_NOT_FOUND: 'السؤال لم يعد موجوداً.',
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
 };
 
@@ -473,4 +479,56 @@ export async function uploadLogoAction(slug: string, _prev: AdminFormState, form
 
 export async function removeLogoAction(slug: string, _prev: AdminFormState): Promise<AdminFormState> {
   return save(slug, '/tenant/branding/logo', 'DELETE', undefined, `/${slug}/dashboard/settings?saved=1`);
+}
+
+
+// ---- End-of-day quiz: question bank (Excel) and settings -------------------------------------
+
+export interface QuizImportState extends AdminFormState {
+  /** Row-level problems from the sheet (nothing was imported). */
+  rowErrors?: { row: number; message: string }[];
+  totalErrors?: number;
+  done?: string;
+}
+
+const MAX_SHEET = 2 * 1024 * 1024;
+
+export async function importQuizAction(slug: string, courseId: string, _prev: QuizImportState, form: FormData): Promise<QuizImportState> {
+  const token = await adminToken(slug);
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) return { error: ERROR_MESSAGES.FILE_REQUIRED };
+  if (file.size > MAX_SHEET) return { error: ERROR_MESSAGES.FILE_TOO_LARGE };
+  const mode = form.get('mode') === 'replace' ? 'replace' : 'append';
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const r = await api<{ created: number; updated: number; removed: number }>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/import?mode=${mode}`, {
+      method: 'POST',
+      token,
+      raw: { data, contentType: 'application/octet-stream' },
+    });
+    revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
+    const parts = [`أُضيف ${r.created}`, `حُدّث ${r.updated}`];
+    if (r.removed > 0) parts.push(`حُذف ${r.removed}`);
+    return { done: `تم الاستيراد: ${parts.join('، ')} سؤالاً.` };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'INVALID_QUESTION_SHEET') {
+      const d = err.details as unknown as { errors?: { row: number; message: string }[]; total_errors?: number } | undefined;
+      return { error: ERROR_MESSAGES.INVALID_QUESTION_SHEET, rowErrors: d?.errors ?? [], totalErrors: d?.total_errors ?? d?.errors?.length ?? 0 };
+    }
+    return describeError(err);
+  }
+}
+
+export async function saveQuizSettingsAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz-settings`,
+    'PUT',
+    { duration_minutes: Number(str(form, 'duration_minutes')), question_count: Number(str(form, 'question_count')) },
+    `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`,
+  );
+}
+
+export async function deleteQuizQuestionAction(slug: string, courseId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`);
 }

@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ApiError, me, type DiscussionThread, type MyCourse, type MyLesson } from '@/lib/api';
+import { ApiError, me, type DiscussionThread, type MyCourse, type MyLesson, type QuizStatus } from '@/lib/api';
 import { completeLessonAction, postDiscussionAction } from '@/lib/actions';
 import { dayOpensAt, formatDateTime, formatNumber, lessonTypeLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
 import { DiscussionBoard } from '../../../discussion-board';
+import { DayQuiz } from './day-quiz';
 import { HlsPlayer } from './hls-player';
 import { YoutubeSegmentPlayer } from './youtube-segment-player';
 
@@ -75,8 +76,13 @@ export default async function LearnCourse({
 
   // The day's discussion board (recorded courses): a failure here must not break the lesson.
   let threads: DiscussionThread[] = [];
+  let quiz: QuizStatus | null = null;
   if (isRecorded && currentModule && !currentLocked) {
-    threads = await me.discussion(slug, session.token, currentModule.id).catch(() => []);
+    [threads, quiz] = await Promise.all([
+      me.discussion(slug, session.token, currentModule.id).catch(() => []),
+      // Same for the day's quiz: no questions yet (or an API hiccup) just means no quiz card.
+      me.quiz(slug, session.token, currentModule.id).catch(() => null),
+    ]);
   }
 
   // Fresh signed playback URL for this page view (expires in ~2h).
@@ -201,6 +207,17 @@ export default async function LearnCourse({
                   </Link>
                 )}
               </div>
+              {isRecorded && currentModule && !currentLocked && quiz && (
+                <DayQuiz
+                  key={currentModule.id}
+                  slug={slug}
+                  courseId={courseId}
+                  moduleId={currentModule.id}
+                  dayTitle={currentModule.title}
+                  initial={quiz}
+                  dayComplete={currentModule.lessons.every((l) => l.completed)}
+                />
+              )}
               {isRecorded && currentModule && !currentLocked && (
                 <DiscussionBoard
                   title={`نقاش ${currentModule.title}`}
