@@ -68,6 +68,16 @@ export interface QuizWindow {
   closesAt: Date | null;
 }
 
+/** A question typed in by the supervisor (same shape the Excel import produces). */
+export interface QuestionInput {
+  moduleId: string | null;
+  body: string;
+  type: QuestionType;
+  options: string[];
+  correctAnswer: string;
+  difficulty: Difficulty;
+}
+
 export interface ImportOutcome {
   created: number;
   updated: number;
@@ -93,6 +103,10 @@ export interface QuizRepository {
   listQuestions(tenantId: string, courseId: string): Promise<QuizQuestionRow[]>;
   /** Upserts by Question_ID; 'replace' also removes every question that is not in the file. */
   importQuestions(tenantId: string, actor: Actor, courseId: string, rows: (ParsedQuestion & { moduleId: string | null })[], mode: 'append' | 'replace'): Promise<ImportOutcome | null>;
+  /** Adds one question with a ready-made unique code. 'duplicate' = that code was taken meanwhile. */
+  createQuestion(tenantId: string, actor: Actor, courseId: string, code: string, input: QuestionInput): Promise<{ kind: 'ok'; id: string } | { kind: 'not_found' } | { kind: 'duplicate' }>;
+  /** Rewrites a question (its code stays). false = no such question in this course. */
+  updateQuestion(tenantId: string, actor: Actor, courseId: string, questionId: string, input: QuestionInput): Promise<boolean>;
   deleteQuestion(tenantId: string, actor: Actor, courseId: string, questionId: string): Promise<boolean>;
   results(tenantId: string, courseId: string): Promise<AttemptSummaryRow[]>;
 
@@ -226,6 +240,37 @@ export class PrismaQuizRepository implements QuizRepository {
       }
       await audit(tx, tenantId, actor, 'quiz.questions_imported', courseId, { mode, created, updated, removed });
       return { created, updated, removed };
+    });
+  }
+
+  async createQuestion(tenantId: string, actor: Actor, courseId: string, code: string, input: QuestionInput) {
+    try {
+      return await withTenantTransaction(tenantId, async (tx) => {
+        const course = await tx.course.findFirst({ where: { tenantId, id: courseId }, select: { id: true } });
+        if (!course) return { kind: 'not_found' } as const;
+        const count = await tx.quizQuestion.count({ where: { tenantId, courseId } });
+        const row = await tx.quizQuestion.create({
+          data: { tenantId, courseId, code, ...input, options: input.options as Prisma.InputJsonValue, sortOrder: count },
+          select: { id: true },
+        });
+        await audit(tx, tenantId, actor, 'quiz.question_created', courseId, { questionId: row.id, code });
+        return { kind: 'ok', id: row.id } as const;
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return { kind: 'duplicate' } as const;
+      throw err;
+    }
+  }
+
+  updateQuestion(tenantId: string, actor: Actor, courseId: string, questionId: string, input: QuestionInput): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.quizQuestion.updateMany({
+        where: { tenantId, courseId, id: questionId },
+        data: { ...input, options: input.options as Prisma.InputJsonValue },
+      });
+      if (count === 0) return false;
+      await audit(tx, tenantId, actor, 'quiz.question_updated', courseId, { questionId });
+      return true;
     });
   }
 

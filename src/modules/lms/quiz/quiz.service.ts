@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { HttpError } from '../../../shared/utils/http-error';
 import type { Actor } from '../../provider/provider.types';
-import { QUIZ_LIMITS, buildQuestionWorkbook, parseQuestionSheet } from './quiz.excel';
+import { QUIZ_LIMITS, buildQuestionWorkbook, parseQuestionSheet, type Difficulty, type QuestionType } from './quiz.excel';
 import type {
   AttemptQuestion,
   AttemptSummaryRow,
@@ -11,6 +11,7 @@ import type {
   QuizDay,
   QuizQuestionRow,
   QuizRepository,
+  QuestionInput,
   QuizSettings,
   QuizWindow,
 } from './quiz.repository';
@@ -72,6 +73,17 @@ export interface QuizServiceDeps {
 }
 
 type Who = { id: string; role: string };
+
+/** What the supervisor types into the question form (before validation). */
+export interface QuestionDraft {
+  dayId: string | null;
+  body: string;
+  type: QuestionType;
+  options: string[];
+  /** MCQ: the right option's text. TEXT: the model answer (optional). */
+  correctAnswer: string;
+  difficulty: Difficulty;
+}
 
 /**
  * End-of-day quiz of a course: the supervisor maintains a question bank (Excel in/out); each
@@ -161,6 +173,53 @@ export class QuizService {
       })),
       template || questions.length === 0,
     );
+  }
+
+  /** Same rules as the Excel sheet, applied to one question typed in the form. */
+  private async validated(tenantId: string, courseId: string, draft: QuestionDraft): Promise<{ input: QuestionInput; dayNumber: number | null }> {
+    const days = await this.deps.repository.courseDays(tenantId, courseId);
+    if (!days) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    const dayIndex = draft.dayId ? days.findIndex((d) => d.id === draft.dayId) : -1;
+    if (draft.dayId && dayIndex < 0) throw HttpError.unprocessable('UNKNOWN_DAY', 'The day does not belong to this course');
+
+    const L = QUIZ_LIMITS;
+    const body = draft.body.trim();
+    if (body.length < 1 || body.length > L.maxBodyLength) throw HttpError.unprocessable('INVALID_QUESTION', `Question text must be 1-${L.maxBodyLength} characters`);
+    const base = { moduleId: draft.dayId, body, type: draft.type, difficulty: draft.difficulty };
+
+    if (draft.type === 'TEXT') {
+      const model = draft.correctAnswer.trim();
+      if (model.length > L.maxBodyLength) throw HttpError.unprocessable('INVALID_QUESTION', 'The model answer is too long');
+      return { input: { ...base, options: [], correctAnswer: model }, dayNumber: dayIndex >= 0 ? dayIndex + 1 : null };
+    }
+
+    const options = draft.options.map((o) => o.trim()).filter(Boolean);
+    if (options.length < L.options.min || options.length > L.options.max) {
+      throw HttpError.unprocessable('INVALID_QUESTION', `A multiple-choice question needs ${L.options.min}-${L.options.max} options`);
+    }
+    if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw HttpError.unprocessable('INVALID_QUESTION', 'Options must not repeat');
+    if (options.some((o) => o.length > L.maxOptionLength)) throw HttpError.unprocessable('INVALID_QUESTION', `An option is longer than ${L.maxOptionLength} characters`);
+    const correct = options.find((o) => o.toLowerCase() === draft.correctAnswer.trim().toLowerCase());
+    if (!correct) throw HttpError.unprocessable('INVALID_QUESTION', 'Choose which option is correct');
+    return { input: { ...base, options, correctAnswer: correct }, dayNumber: dayIndex >= 0 ? dayIndex + 1 : null };
+  }
+
+  async createQuestion(tenantId: string, actor: Actor, courseId: string, draft: QuestionDraft): Promise<string> {
+    const { input, dayNumber } = await this.validated(tenantId, courseId, draft);
+    // Codes follow the template's convention (Q_D1_001 / Q_ALL_001) and stay unique per course.
+    const taken = new Set((await this.deps.repository.listQuestions(tenantId, courseId)).map((q) => q.code.toLowerCase()));
+    const prefix = dayNumber ? `Q_D${dayNumber}_` : 'Q_ALL_';
+    let n = 1;
+    while (taken.has(`${prefix}${String(n).padStart(3, '0')}`.toLowerCase())) n++;
+    const result = await this.deps.repository.createQuestion(tenantId, actor, courseId, `${prefix}${String(n).padStart(3, '0')}`, input);
+    if (result.kind === 'not_found') throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    if (result.kind === 'duplicate') throw HttpError.conflict('QUESTION_CODE_TAKEN', 'Another question was added at the same moment; try again');
+    return result.id;
+  }
+
+  async updateQuestion(tenantId: string, actor: Actor, courseId: string, questionId: string, draft: QuestionDraft): Promise<void> {
+    const { input } = await this.validated(tenantId, courseId, draft);
+    if (!(await this.deps.repository.updateQuestion(tenantId, actor, courseId, questionId, input))) throw HttpError.notFound('QUESTION_NOT_FOUND', 'Question not found');
   }
 
   async deleteQuestion(tenantId: string, actor: Actor, courseId: string, questionId: string): Promise<void> {

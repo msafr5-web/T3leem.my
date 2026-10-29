@@ -6,6 +6,7 @@ import type {
   ModuleQuizContext,
   QuizAttemptRow,
   QuizDay,
+  QuestionInput,
   QuizQuestionRow,
   QuizRepository,
   QuizSettings,
@@ -89,6 +90,19 @@ export class InMemoryQuizRepository implements QuizRepository {
       removed = before - this.questions.length;
     }
     return { created, updated, removed };
+  }
+  async createQuestion(tenantId: string, _a: unknown, courseId: string, code: string, input: QuestionInput) {
+    if (!this.mine(tenantId, courseId)) return { kind: 'not_found' } as const;
+    if (this.questions.some((q) => q.code.toLowerCase() === code.toLowerCase())) return { kind: 'duplicate' } as const;
+    const id = randomUUID();
+    this.questions.push({ id, code, ...input });
+    return { kind: 'ok', id } as const;
+  }
+  async updateQuestion(tenantId: string, _a: unknown, courseId: string, id: string, input: QuestionInput) {
+    const q = this.mine(tenantId, courseId) ? this.questions.find((x) => x.id === id) : undefined;
+    if (!q) return false;
+    Object.assign(q, input);
+    return true;
   }
   async deleteQuestion(tenantId: string, _a: unknown, courseId: string, id: string) {
     if (!this.mine(tenantId, courseId)) return false;

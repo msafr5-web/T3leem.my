@@ -110,6 +110,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   QUESTION_NOT_FOUND: 'السؤال لم يعد موجوداً.',
   INVALID_QUIZ_WINDOW: 'وقت إغلاق الاختبار يجب أن يكون بعد وقت فتحه.',
   UNKNOWN_DAY: 'أحد الأيام لا يتبع هذه الدورة.',
+  INVALID_QUESTION: 'تحقق من السؤال: النص مطلوب، وللاختيار من متعدد من ٢ إلى ٦ خيارات غير مكررة مع تحديد الإجابة الصحيحة.',
+  QUESTION_CODE_TAKEN: 'أُضيف سؤال آخر في اللحظة نفسها. حاول مرة أخرى.',
+  body: 'نص السؤال',
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
 };
 
@@ -551,4 +554,26 @@ export async function saveQuizWindowsAction(slug: string, courseId: string, _pre
   }
   if (windows.length === 0) return { error: 'لا توجد أيام لحفظ مواعيدها.' };
   return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz-windows`, 'PUT', { windows }, `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`);
+}
+
+/** Adds (questionId null) or edits one question of a day, typed in the form. */
+export async function saveQuizQuestionAction(slug: string, courseId: string, dayId: string, questionId: string | null, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const type = str(form, 'type') === 'TEXT' ? 'TEXT' : 'MCQ';
+  const options = form.getAll('option').map((o) => String(o).trim());
+  const correctIndex = Number(str(form, 'correct'));
+  const body = {
+    day_id: dayId,
+    body: str(form, 'body'),
+    type,
+    difficulty: str(form, 'difficulty') || 'MEDIUM',
+    options: type === 'MCQ' ? options : [],
+    // The radio names the option by position; the API wants its text.
+    correct_answer: type === 'MCQ' ? (options[correctIndex] ?? '') : str(form, 'model_answer'),
+  };
+  const base = `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions`;
+  return save(slug, questionId ? `${base}/${encodeURIComponent(questionId)}` : base, questionId ? 'PUT' : 'POST', body, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}?saved=1`);
+}
+
+export async function deleteDayQuestionAction(slug: string, courseId: string, dayId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}`);
 }

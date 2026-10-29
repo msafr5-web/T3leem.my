@@ -1,9 +1,12 @@
+import type { ReactNode } from 'react';
 import { formatTimestamp } from '@/lib/format';
 
 export interface TimelineDay {
   key: string;
   title: string;
   lectures: { title?: string; start_second: number; end_second: number }[];
+  /** Optional control shown in the day's header (e.g. the day's quiz builder). */
+  action?: ReactNode;
 }
 
 /**
@@ -20,8 +23,11 @@ export function ScheduleTimeline({ days, breakMinutes, discussionMinutes }: { da
           <li key={d.key} className="timeline-day">
             <div className="timeline-head">
               <strong>{d.title}</strong>
-              <span className="small muted">
-                {d.lectures.length} أجزاء · نحو {total} دقيقة إجمالاً
+              <span className="timeline-meta">
+                <span className="small muted">
+                  {d.lectures.length} أجزاء · نحو {total} دقيقة إجمالاً
+                </span>
+                {d.action}
               </span>
             </div>
             <div className="timeline-track" role="list">

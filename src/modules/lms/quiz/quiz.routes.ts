@@ -7,7 +7,7 @@ import { ok } from '../../../shared/utils/api-response';
 import { HttpError } from '../../../shared/utils/http-error';
 import { QUIZ_LIMITS } from './quiz.excel';
 import type { QuizQuestionRow } from './quiz.repository';
-import { QUIZ_SETTING_LIMITS, type QuizResult, type QuizService, type QuizStatus } from './quiz.service';
+import { QUIZ_SETTING_LIMITS, type QuestionDraft, type QuizResult, type QuizService, type QuizStatus } from './quiz.service';
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
 
@@ -58,6 +58,25 @@ const statusJson = (s: QuizStatus) => ({
             expires_at: s.attempt.expiresAt.toISOString(),
             questions: s.attempt.questions.map((q) => ({ id: q.id, body: q.body, type: q.type, options: q.options })),
           },
+});
+
+const questionRules = [
+  body('day_id').optional({ values: 'null' }).isUUID().withMessage('day_id must be a UUID'),
+  body('body').isString().trim().isLength({ min: 1, max: QUIZ_LIMITS.maxBodyLength }).withMessage('body is required'),
+  body('type').isIn(['MCQ', 'TEXT']),
+  body('options').optional().isArray({ max: QUIZ_LIMITS.options.max }).withMessage('options must be a list'),
+  body('options.*').isString().isLength({ max: QUIZ_LIMITS.maxOptionLength }),
+  body('correct_answer').optional({ values: 'null' }).isString().isLength({ max: QUIZ_LIMITS.maxBodyLength }),
+  body('difficulty').optional().isIn(['EASY', 'MEDIUM', 'HARD']),
+];
+
+const draftOf = (b: Record<string, unknown>): QuestionDraft => ({
+  dayId: typeof b.day_id === 'string' && b.day_id ? b.day_id : null,
+  body: String(b.body),
+  type: b.type === 'TEXT' ? 'TEXT' : 'MCQ',
+  options: Array.isArray(b.options) ? b.options.map(String) : [],
+  correctAnswer: typeof b.correct_answer === 'string' ? b.correct_answer : '',
+  difficulty: b.difficulty === 'EASY' || b.difficulty === 'HARD' ? b.difficulty : 'MEDIUM',
 });
 
 /** Provider dashboard: question bank, Excel in/out, settings and results (TENANT_ADMIN). */
@@ -138,6 +157,19 @@ export function buildQuizAdminRouter(service: QuizService, jwt: JwtVerifyOptions
       res.status(201).json(ok(outcome));
     },
   );
+
+  // Build a question in the form (no Excel): same validation as the import.
+  router.post('/recorded-courses/:id/quiz/questions', ...admin, uuid('id'), ...questionRules, validate, async (req: Request<{ id: string }>, res: Response) => {
+    const { tenantId, actor } = actorOf(req);
+    const id = await service.createQuestion(tenantId, actor, req.params.id, draftOf(req.body as Record<string, unknown>));
+    res.status(201).json(ok({ id }));
+  });
+
+  router.put('/recorded-courses/:id/quiz/questions/:qid', ...admin, uuid('id'), uuid('qid'), ...questionRules, validate, async (req: Request<{ id: string; qid: string }>, res: Response) => {
+    const { tenantId, actor } = actorOf(req);
+    await service.updateQuestion(tenantId, actor, req.params.id, req.params.qid, draftOf(req.body as Record<string, unknown>));
+    res.json(ok({ id: req.params.qid }));
+  });
 
   router.delete('/recorded-courses/:id/quiz/questions/:qid', ...admin, uuid('id'), uuid('qid'), validate, async (req: Request<{ id: string; qid: string }>, res: Response) => {
     const { tenantId, actor } = actorOf(req);

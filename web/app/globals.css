@@ -348,3 +348,15 @@ label.checkbox { display: flex; align-items: center; gap: 8px; }
 .gf-review.right { border-inline-start-color: var(--ok); }
 .gf-review.wrong { border-inline-start-color: var(--danger); }
 .gf-review.text { border-inline-start-color: var(--brand); }
+
+/* Day quiz builder */
+.timeline-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.day-quiz-link { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--brand); color: var(--brand); font-size: 13px; font-weight: 600; text-decoration: none; background: var(--surface); }
+.day-quiz-link:hover { background: var(--brand-soft); }
+.day-quiz-link .badge { padding: 0 6px; }
+.qf-options { display: grid; gap: 8px; }
+.qf-option { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.qf-option input[type=radio] { accent-color: var(--brand); width: 18px; height: 18px; }
+.qf-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.qf-list li { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.qf-list li.right { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }

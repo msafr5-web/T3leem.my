@@ -333,3 +333,63 @@ describe('quiz time window (opens / closes)', () => {
     expect(late.body.error.code).toBe('QUIZ_EXPIRED');
   });
 });
+
+describe('building questions in the form (no Excel)', () => {
+  const send = (app: ReturnType<typeof buildApp>, method: 'post' | 'put', p: string, body: object, token = adminToken) =>
+    request(app)[method](`/api/v1${base}${p}`).set('x-tenant-id', TENANT_A).set('Authorization', `Bearer ${token}`).send(body);
+  const mcq = { day_id: DAY1, body: 'ما عاصمة مصر؟', type: 'MCQ', options: ['القاهرة', 'الإسكندرية', ' '], correct_answer: 'القاهرة', difficulty: 'EASY' };
+
+  it('creates a day question with the next template-style code, trimming blank options', async () => {
+    const app = buildApp();
+    const a = await send(app, 'post', '/quiz/questions', mcq);
+    expect(a.status).toBe(201);
+    const b = await send(app, 'post', '/quiz/questions', { ...mcq, body: 'سؤال آخر' });
+    const shared = await send(app, 'post', '/quiz/questions', { ...mcq, day_id: null, body: 'مشترك' });
+    const day2 = await send(app, 'post', '/quiz/questions', { ...mcq, day_id: DAY2, body: 'لليوم الثاني' });
+    expect([a, b, shared, day2].map((r) => r.status)).toEqual([201, 201, 201, 201]);
+    const rows = quizOf(app).repository.questions;
+    expect(rows.map((q) => q.code)).toEqual(['Q_D1_001', 'Q_D1_002', 'Q_ALL_001', 'Q_D2_001']);
+    expect(rows[0]).toMatchObject({ options: ['القاهرة', 'الإسكندرية'], correctAnswer: 'القاهرة', difficulty: 'EASY', moduleId: DAY1 });
+    expect(rows[2]!.moduleId).toBeNull();
+  });
+
+  it('keeps codes unique after an import and after a deletion', async () => {
+    const app = buildApp();
+    await admin(app).upload(`${base}/quiz/import`, await workbook([['Q_D1_001', 'مستورد', 'MCQ', 'a | b', 'a', '', 1]]));
+    await send(app, 'post', '/quiz/questions', mcq);
+    expect(quizOf(app).repository.questions.map((q) => q.code)).toEqual(['Q_D1_001', 'Q_D1_002']);
+  });
+
+  it('accepts a text question with an optional model answer', async () => {
+    const app = buildApp();
+    const res = await send(app, 'post', '/quiz/questions', { day_id: DAY1, body: 'اشرح', type: 'TEXT' });
+    expect(res.status).toBe(201);
+    expect(quizOf(app).repository.questions[0]).toMatchObject({ type: 'TEXT', options: [], correctAnswer: '' });
+  });
+
+  it('applies the same rules as the Excel import', async () => {
+    const app = buildApp();
+    const code = async (body: object) => (await send(app, 'post', '/quiz/questions', body)).body.error?.code;
+    expect(await code({ ...mcq, options: ['وحيد'], correct_answer: 'وحيد' })).toBe('INVALID_QUESTION');
+    expect(await code({ ...mcq, options: ['أ', 'أ'], correct_answer: 'أ' })).toBe('INVALID_QUESTION');
+    expect(await code({ ...mcq, correct_answer: 'غير موجود' })).toBe('INVALID_QUESTION');
+    expect(await code({ ...mcq, options: ['1', '2', '3', '4', '5', '6', '7'] })).toBe('VALIDATION_FAILED');
+    expect(await code({ ...mcq, body: '   ' })).toBe('VALIDATION_FAILED');
+    expect(await code({ ...mcq, type: 'ESSAY' })).toBe('VALIDATION_FAILED');
+    expect(await code({ ...mcq, day_id: '99999999-9999-4999-8999-999999999999' })).toBe('UNKNOWN_DAY');
+    expect(quizOf(app).repository.questions).toHaveLength(0);
+  });
+
+  it('edits a question in place (code kept) and is admin-only and tenant-bound', async () => {
+    const app = buildApp();
+    await send(app, 'post', '/quiz/questions', mcq);
+    const id = quizOf(app).repository.questions[0]!.id;
+    const res = await send(app, 'put', `/quiz/questions/${id}`, { ...mcq, body: 'معدّل', options: ['س', 'ص'], correct_answer: 'ص', day_id: DAY2 });
+    expect(res.status).toBe(200);
+    expect(quizOf(app).repository.questions[0]).toMatchObject({ code: 'Q_D1_001', body: 'معدّل', correctAnswer: 'ص', moduleId: DAY2 });
+    expect((await send(app, 'put', '/quiz/questions/99999999-9999-4999-8999-999999999999', mcq)).body.error.code).toBe('QUESTION_NOT_FOUND');
+    expect((await send(app, 'post', '/quiz/questions', mcq, learnerToken)).status).toBe(403);
+    const other = sign({ sub: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00', tid: TENANT_B, role: 'TENANT_ADMIN' });
+    expect((await request(app).post(`/api/v1${base}/quiz/questions`).set('x-tenant-id', TENANT_B).set('Authorization', `Bearer ${other}`).send(mcq)).status).toBe(404);
+  });
+});
