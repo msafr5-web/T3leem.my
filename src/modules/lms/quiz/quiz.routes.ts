@@ -42,6 +42,9 @@ const resultJson = (r: QuizResult) => ({
 
 const statusJson = (s: QuizStatus) => ({
   available: s.available,
+  window: s.window,
+  opens_at: s.opensAt?.toISOString() ?? null,
+  closes_at: s.closesAt?.toISOString() ?? null,
   duration_minutes: s.durationMinutes,
   question_count: s.questionCount,
   server_now: s.serverNow.toISOString(),
@@ -72,7 +75,7 @@ export function buildQuizAdminRouter(service: QuizService, jwt: JwtVerifyOptions
     res.json(
       ok({
         settings: { duration_minutes: b.settings.durationMinutes, question_count: b.settings.questionCount },
-        days: b.days.map((d) => ({ id: d.id, title: d.title, question_count: d.questionCount })),
+        days: b.days.map((d) => ({ id: d.id, title: d.title, question_count: d.questionCount, opens_at: d.opensAt?.toISOString() ?? null, closes_at: d.closesAt?.toISOString() ?? null })),
         shared_count: b.sharedCount,
         questions: b.questions.map(questionJson),
       }),
@@ -89,6 +92,25 @@ export function buildQuizAdminRouter(service: QuizService, jwt: JwtVerifyOptions
     async (req: Request<{ id: string }>, res: Response) => {
       const { tenantId, actor } = actorOf(req);
       await service.updateSettings(tenantId, actor, req.params.id, { durationMinutes: Number(req.body.duration_minutes), questionCount: Number(req.body.question_count) });
+      res.json(ok({ id: req.params.id }));
+    },
+  );
+
+  // Body: { windows: [{ day_id, opens_at: ISO | null, closes_at: ISO | null }] }
+  router.put(
+    '/recorded-courses/:id/quiz-windows',
+    ...admin,
+    uuid('id'),
+    body('windows').isArray({ min: 1, max: 100 }).withMessage('windows must be a list'),
+    body('windows.*.day_id').isUUID().withMessage('day_id must be a UUID'),
+    body('windows.*.opens_at').optional({ values: 'null' }).isISO8601().withMessage('opens_at must be a date-time'),
+    body('windows.*.closes_at').optional({ values: 'null' }).isISO8601().withMessage('closes_at must be a date-time'),
+    validate,
+    async (req: Request<{ id: string }>, res: Response) => {
+      const { tenantId, actor } = actorOf(req);
+      const date = (v: unknown) => (typeof v === 'string' && v ? new Date(v) : null);
+      const windows = (req.body.windows as Record<string, unknown>[]).map((w) => ({ moduleId: String(w.day_id), opensAt: date(w.opens_at), closesAt: date(w.closes_at) }));
+      await service.updateWindows(tenantId, actor, req.params.id, windows);
       res.json(ok({ id: req.params.id }));
     },
   );

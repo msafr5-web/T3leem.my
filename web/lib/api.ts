@@ -264,7 +264,7 @@ export interface AdminQuizQuestion {
 }
 export interface AdminQuiz {
   settings: QuizSettings;
-  days: { id: string; title: string; question_count: number }[];
+  days: { id: string; title: string; question_count: number; opens_at: string | null; closes_at: string | null }[];
   shared_count: number;
   questions: AdminQuizQuestion[];
 }
@@ -297,6 +297,10 @@ export interface QuizResult {
 }
 export interface QuizStatus {
   available: boolean;
+  /** Where "now" falls in the supervisor's opening/closing times for this day. */
+  window: 'not_open' | 'open' | 'closed';
+  opens_at: string | null;
+  closes_at: string | null;
   duration_minutes: number;
   question_count: number;
   server_now: string;

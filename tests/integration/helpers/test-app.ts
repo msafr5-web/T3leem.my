@@ -104,7 +104,7 @@ export const QUIZ_COURSE = '77777777-7777-4777-8777-777777777771';
 export const QUIZ_DAYS = [
   { id: '77777777-7777-4777-8777-777777777772', title: 'اليوم 1' },
   { id: '77777777-7777-4777-8777-777777777773', title: 'اليوم 2' },
-];
+].map((d) => ({ ...d, opensAt: null as Date | null, closesAt: null as Date | null }));
 
 export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean } = {}) {
   const enrolled = new Set<string>();

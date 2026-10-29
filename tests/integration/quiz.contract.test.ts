@@ -44,8 +44,8 @@ describe('question bank import / export', () => {
     const bank = (await admin(app).get(`${base}/quiz`)).body.data;
     expect(bank.shared_count).toBe(1);
     expect(bank.days).toEqual([
-      { id: DAY1, title: 'اليوم 1', question_count: 3 },
-      { id: DAY2, title: 'اليوم 2', question_count: 0 },
+      { id: DAY1, title: 'اليوم 1', question_count: 3, opens_at: null, closes_at: null },
+      { id: DAY2, title: 'اليوم 2', question_count: 0, opens_at: null, closes_at: null },
     ]);
     const byCode = Object.fromEntries(bank.questions.map((q: { code: string }) => [q.code, q]));
     expect(byCode.Q2).toMatchObject({ options: ['3', '4', '5'], correct_answer: '4', difficulty: 'MEDIUM', day_id: DAY1 });
@@ -266,3 +266,70 @@ async function sheetRows(file: Buffer): Promise<string[][]> {
   wb.worksheets[0]!.eachRow((row) => rows.push((row.values as unknown[]).slice(1).map((v) => (v === null || v === undefined ? '' : String(v)))));
   return rows;
 }
+
+describe('quiz time window (opens / closes)', () => {
+  const win = (app: ReturnType<typeof buildApp>, body: object, token = adminToken) =>
+    request(app).put(`/api/v1${base}/quiz-windows`).set('x-tenant-id', TENANT_A).set('Authorization', `Bearer ${token}`).send(body);
+  const learner = (app: ReturnType<typeof buildApp>) => ({
+    get: (p: string) => request(app).get(`/api/v1/me${p}`).set('x-tenant-id', TENANT_A).set('Authorization', `Bearer ${learnerToken}`),
+    post: (p: string) => request(app).post(`/api/v1/me${p}`).set('x-tenant-id', TENANT_A).set('Authorization', `Bearer ${learnerToken}`).send({}),
+  });
+  const seeded = async () => {
+    const app = buildApp();
+    await admin(app).upload(`${base}/quiz/import`, await workbook(GOOD));
+    return app;
+  };
+  // The fake clock reads 2026-11-01T10:00:00Z.
+  const at = (hhmm: string) => `2026-11-01T${hhmm}:00.000Z`;
+
+  it('saves per-day windows and returns them to the supervisor and the learner', async () => {
+    const app = await seeded();
+    const res = await win(app, { windows: [{ day_id: DAY1, opens_at: at('09:00'), closes_at: at('12:00') }, { day_id: DAY2, opens_at: null, closes_at: null }] });
+    expect(res.status).toBe(200);
+    const days = (await admin(app).get(`${base}/quiz`)).body.data.days;
+    expect(days[0]).toMatchObject({ opens_at: at('09:00'), closes_at: at('12:00') });
+    expect(days[1]).toMatchObject({ opens_at: null, closes_at: null });
+    expect((await learner(app).get(`/modules/${DAY1}/quiz`)).body.data).toMatchObject({ window: 'open', opens_at: at('09:00'), closes_at: at('12:00') });
+  });
+
+  it('refuses a window that closes before it opens, unknown days, and non-admins', async () => {
+    const app = await seeded();
+    expect((await win(app, { windows: [{ day_id: DAY1, opens_at: at('12:00'), closes_at: at('09:00') }] })).body.error.code).toBe('INVALID_QUIZ_WINDOW');
+    expect((await win(app, { windows: [{ day_id: DAY1, opens_at: at('12:00'), closes_at: at('12:00') }] })).status).toBe(422);
+    expect((await win(app, { windows: [{ day_id: '99999999-9999-4999-8999-999999999999', opens_at: at('09:00') }] })).body.error.code).toBe('UNKNOWN_DAY');
+    expect((await win(app, { windows: [{ day_id: DAY1, opens_at: 'soon' }] })).status).toBe(422);
+    expect((await win(app, { windows: [] })).status).toBe(422);
+    expect((await win(app, { windows: [{ day_id: DAY1, opens_at: at('09:00') }] }, learnerToken)).status).toBe(403);
+  });
+
+  it('keeps the quiz closed until it opens, and starting early is refused by the server', async () => {
+    const app = await seeded();
+    await win(app, { windows: [{ day_id: DAY1, opens_at: at('11:00'), closes_at: at('12:00') }] });
+    expect((await learner(app).get(`/modules/${DAY1}/quiz`)).body.data.window).toBe('not_open');
+    const early = await learner(app).post(`/modules/${DAY1}/quiz/start`);
+    expect(early.status).toBe(409);
+    expect(early.body.error.code).toBe('QUIZ_NOT_OPEN');
+
+    quizOf(app).clock.now = new Date(at('11:00')); // opens exactly now
+    expect((await learner(app).post(`/modules/${DAY1}/quiz/start`)).body.data.attempt.state).toBe('in_progress');
+  });
+
+  it('refuses to start after the closing time, but a finished attempt stays viewable', async () => {
+    const app = await seeded();
+    await win(app, { windows: [{ day_id: DAY1, opens_at: at('08:00'), closes_at: at('09:30') }] });
+    const late = await learner(app).post(`/modules/${DAY1}/quiz/start`);
+    expect(late.body.error.code).toBe('QUIZ_CLOSED');
+    expect((await learner(app).get(`/modules/${DAY1}/quiz`)).body.data.window).toBe('closed');
+  });
+
+  it('never lets an attempt run past the closing time, whatever the duration', async () => {
+    const app = await seeded();
+    await win(app, { windows: [{ day_id: DAY1, opens_at: at('09:00'), closes_at: at('10:03') }] }); // 3 min left, duration 10
+    const started = (await learner(app).post(`/modules/${DAY1}/quiz/start`)).body.data;
+    expect(started.attempt.expires_at).toBe(at('10:03'));
+
+    quizOf(app).clock.now = new Date('2026-11-01T10:03:20Z'); // past close + the 15 s grace
+    const late = await learner(app).post(`/modules/${DAY1}/quiz/submit`).send({ answers: {} });
+    expect(late.body.error.code).toBe('QUIZ_EXPIRED');
+  });
+});

@@ -1,6 +1,6 @@
 import type { AdminQuiz, QuizAttemptSummary } from '@/lib/api';
-import { deleteQuizQuestionAction, importQuizAction, saveQuizSettingsAction } from '@/lib/admin-actions';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { deleteQuizQuestionAction, importQuizAction, saveQuizSettingsAction, saveQuizWindowsAction } from '@/lib/admin-actions';
+import { formatDateTime, formatNumber, riyadhInputs } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
 import { DeleteButton } from '../../delete-button';
 import { QuizImportForm } from './quiz-import-form';
@@ -71,6 +71,44 @@ export function QuizSection({
           </div>
           <QuizImportForm action={importQuizAction.bind(null, slug, courseId)} />
         </div>
+      </div>
+
+      <div className="stack">
+        <h3 style={{ fontSize: 15 }}>موعد فتح الاختبار وإغلاقه لكل يوم</h3>
+        <p className="small muted">بتوقيت السعودية. اترك الحقل فارغاً لعدم التقييد. لا يستطيع المتدرب بدء الاختبار قبل الفتح ولا بعد الإغلاق، ولا يتجاوز وقته لحظة الإغلاق.</p>
+        <AdminForm action={saveQuizWindowsAction.bind(null, slug, courseId)} submitLabel="حفظ المواعيد">
+          <div className="table-wrap">
+            <table className="quiz-table">
+              <thead>
+                <tr>
+                  <th>اليوم</th>
+                  <th>يفتح</th>
+                  <th>يُغلق</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quiz.days.map((d) => {
+                  const o = riyadhInputs(d.opens_at);
+                  const c = riyadhInputs(d.closes_at);
+                  return (
+                    <tr key={d.id}>
+                      <td>
+                        {d.title}
+                        <input type="hidden" name="day_id" value={d.id} />
+                      </td>
+                      <td>
+                        <input type="datetime-local" name={`opens_${d.id}`} aria-label={`فتح ${d.title}`} defaultValue={o.date ? `${o.date}T${o.time}` : ''} />
+                      </td>
+                      <td>
+                        <input type="datetime-local" name={`closes_${d.id}`} aria-label={`إغلاق ${d.title}`} defaultValue={c.date ? `${c.date}T${c.time}` : ''} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </AdminForm>
       </div>
 
       <div className="stack" style={{ gap: 6 }}>

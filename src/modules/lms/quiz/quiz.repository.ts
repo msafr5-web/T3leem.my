@@ -57,6 +57,15 @@ export interface AttemptSummaryRow {
 export interface QuizDay {
   id: string;
   title: string;
+  /** When the day's quiz opens / closes (null = no limit). */
+  opensAt: Date | null;
+  closesAt: Date | null;
+}
+
+export interface QuizWindow {
+  moduleId: string;
+  opensAt: Date | null;
+  closesAt: Date | null;
 }
 
 export interface ImportOutcome {
@@ -70,6 +79,8 @@ export interface ModuleQuizContext {
   courseId: string;
   moduleTitle: string;
   settings: QuizSettings;
+  opensAt: Date | null;
+  closesAt: Date | null;
 }
 
 export interface QuizRepository {
@@ -77,6 +88,8 @@ export interface QuizRepository {
   courseDays(tenantId: string, courseId: string): Promise<QuizDay[] | null>;
   getSettings(tenantId: string, courseId: string): Promise<QuizSettings | null>;
   setSettings(tenantId: string, actor: Actor, courseId: string, settings: QuizSettings): Promise<boolean>;
+  /** Sets each day's quiz window. 'unknown_day' = a module that is not a day of this course. */
+  setWindows(tenantId: string, actor: Actor, courseId: string, windows: QuizWindow[]): Promise<'ok' | 'not_found' | 'unknown_day'>;
   listQuestions(tenantId: string, courseId: string): Promise<QuizQuestionRow[]>;
   /** Upserts by Question_ID; 'replace' also removes every question that is not in the file. */
   importQuestions(tenantId: string, actor: Actor, courseId: string, rows: (ParsedQuestion & { moduleId: string | null })[], mode: 'append' | 'replace'): Promise<ImportOutcome | null>;
@@ -137,9 +150,9 @@ export class PrismaQuizRepository implements QuizRepository {
   async courseDays(tenantId: string, courseId: string): Promise<QuizDay[] | null> {
     const c = await forTenant(tenantId).course.findFirst({
       where: { tenantId, id: courseId },
-      select: { modules: { orderBy: { sortOrder: 'asc' }, select: { id: true, title: true } } },
+      select: { modules: { orderBy: { sortOrder: 'asc' }, select: { id: true, title: true, quizOpensAt: true, quizClosesAt: true } } },
     });
-    return c ? c.modules : null;
+    return c ? c.modules.map((m) => ({ id: m.id, title: m.title, opensAt: m.quizOpensAt, closesAt: m.quizClosesAt })) : null;
   }
 
   async getSettings(tenantId: string, courseId: string): Promise<QuizSettings | null> {
@@ -154,6 +167,21 @@ export class PrismaQuizRepository implements QuizRepository {
       await tx.course.update({ where: { id: courseId }, data: { quizDurationMinutes: settings.durationMinutes, quizQuestionCount: settings.questionCount } });
       await audit(tx, tenantId, actor, 'quiz.settings_changed', courseId, { ...settings });
       return true;
+    });
+  }
+
+  setWindows(tenantId: string, actor: Actor, courseId: string, windows: QuizWindow[]): Promise<'ok' | 'not_found' | 'unknown_day'> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const course = await tx.course.findFirst({ where: { tenantId, id: courseId }, select: { modules: { select: { id: true } } } });
+      if (!course) return 'not_found' as const;
+      // A module id from another course/academy would pass the FK; only this course's days are accepted.
+      const own = new Set(course.modules.map((m) => m.id));
+      if (windows.some((w) => !own.has(w.moduleId))) return 'unknown_day' as const;
+      for (const w of windows) {
+        await tx.module.update({ where: { id: w.moduleId }, data: { quizOpensAt: w.opensAt, quizClosesAt: w.closesAt } });
+      }
+      await audit(tx, tenantId, actor, 'quiz.windows_changed', courseId, { days: windows.length });
+      return 'ok' as const;
     });
   }
 
@@ -241,10 +269,16 @@ export class PrismaQuizRepository implements QuizRepository {
         id: moduleId,
         ...(enrolledUserId ? { course: { enrollments: { some: { tenantId, userId: enrolledUserId, status: 'ACTIVE' as const } } } } : {}),
       },
-      select: { title: true, courseId: true, course: { select: { quizDurationMinutes: true, quizQuestionCount: true } } },
+      select: { title: true, courseId: true, quizOpensAt: true, quizClosesAt: true, course: { select: { quizDurationMinutes: true, quizQuestionCount: true } } },
     });
     return mod
-      ? { courseId: mod.courseId, moduleTitle: mod.title, settings: { durationMinutes: mod.course.quizDurationMinutes, questionCount: mod.course.quizQuestionCount } }
+      ? {
+          courseId: mod.courseId,
+          moduleTitle: mod.title,
+          settings: { durationMinutes: mod.course.quizDurationMinutes, questionCount: mod.course.quizQuestionCount },
+          opensAt: mod.quizOpensAt,
+          closesAt: mod.quizClosesAt,
+        }
       : null;
   }
 

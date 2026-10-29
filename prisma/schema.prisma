@@ -353,11 +353,14 @@ model MeetingRegistry {
 }
 
 model Module {
-  id        String @id @default(uuid()) @db.Uuid
-  tenantId  String @map("tenant_id") @db.Uuid
-  courseId  String @map("course_id") @db.Uuid
-  title     String
-  sortOrder Int    @map("sort_order")
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  courseId     String    @map("course_id") @db.Uuid
+  title        String
+  sortOrder    Int       @map("sort_order")
+  // Window in which the day quiz can be started / must be finished (null = no limit).
+  quizOpensAt  DateTime? @map("quiz_opens_at") @db.Timestamptz(3)
+  quizClosesAt DateTime? @map("quiz_closes_at") @db.Timestamptz(3)
 
   course        Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
   lessons       Lesson[]

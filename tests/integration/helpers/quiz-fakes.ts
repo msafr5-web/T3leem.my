@@ -9,6 +9,7 @@ import type {
   QuizQuestionRow,
   QuizRepository,
   QuizSettings,
+  QuizWindow,
 } from '../../../src/modules/lms/quiz/quiz.repository';
 import { QuizService } from '../../../src/modules/lms/quiz/quiz.service';
 
@@ -26,14 +27,19 @@ export class InMemoryQuizRepository implements QuizRepository {
   questions: QuizQuestionRow[] = [];
   attempts: (QuizAttemptRow & { userId: string })[] = [];
 
-  constructor(private readonly o: QuizFakeOptions) {}
+  /** Own copy: tests change the windows and must not leak into each other. */
+  private readonly days: QuizDay[];
+
+  constructor(private readonly o: QuizFakeOptions) {
+    this.days = o.days.map((d) => ({ ...d }));
+  }
 
   private mine(tenantId: string, courseId: string) {
     return tenantId === this.o.tenantA && courseId === this.o.courseId;
   }
 
   async courseDays(tenantId: string, courseId: string) {
-    return this.mine(tenantId, courseId) ? this.o.days : null;
+    return this.mine(tenantId, courseId) ? this.days : null;
   }
   async getSettings(tenantId: string, courseId: string) {
     return this.mine(tenantId, courseId) ? this.settings : null;
@@ -42,6 +48,12 @@ export class InMemoryQuizRepository implements QuizRepository {
     if (!this.mine(tenantId, courseId)) return false;
     this.settings = settings;
     return true;
+  }
+  async setWindows(tenantId: string, _a: unknown, courseId: string, windows: QuizWindow[]) {
+    if (!this.mine(tenantId, courseId)) return 'not_found' as const;
+    if (windows.some((w) => !this.days.some((d) => d.id === w.moduleId))) return 'unknown_day' as const;
+    for (const w of windows) Object.assign(this.days.find((d) => d.id === w.moduleId)!, { opensAt: w.opensAt, closesAt: w.closesAt });
+    return 'ok' as const;
   }
   async listQuestions(tenantId: string, courseId: string) {
     return this.mine(tenantId, courseId) ? this.questions : [];
@@ -89,7 +101,7 @@ export class InMemoryQuizRepository implements QuizRepository {
       id: a.id,
       learnerName: a.userId,
       learnerEmail: `${a.userId}@x.test`,
-      dayTitle: this.o.days.find((d) => d.id === a.moduleId)?.title ?? '',
+      dayTitle: this.days.find((d) => d.id === a.moduleId)?.title ?? '',
       startedAt: a.startedAt,
       submittedAt: a.submittedAt,
       score: a.score,
@@ -99,8 +111,8 @@ export class InMemoryQuizRepository implements QuizRepository {
   }
 
   private ctx(tenantId: string, moduleId: string): ModuleQuizContext | null {
-    const day = this.o.days.find((d) => d.id === moduleId);
-    return tenantId === this.o.tenantA && day ? { courseId: this.o.courseId, moduleTitle: day.title, settings: this.settings } : null;
+    const day = this.days.find((d) => d.id === moduleId);
+    return tenantId === this.o.tenantA && day ? { courseId: this.o.courseId, moduleTitle: day.title, settings: this.settings, opensAt: day.opensAt, closesAt: day.closesAt } : null;
   }
   async moduleContext(tenantId: string, userId: string, moduleId: string) {
     return this.o.enrolled.includes(userId) ? this.ctx(tenantId, moduleId) : null;

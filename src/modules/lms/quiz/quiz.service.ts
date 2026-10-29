@@ -12,6 +12,7 @@ import type {
   QuizQuestionRow,
   QuizRepository,
   QuizSettings,
+  QuizWindow,
 } from './quiz.repository';
 
 export const QUIZ_SETTING_LIMITS = { durationMinutes: { min: 1, max: 180 }, questionCount: { min: 1, max: 50 } } as const;
@@ -52,6 +53,10 @@ export interface QuizStatus {
   available: boolean;
   durationMinutes: number;
   questionCount: number;
+  /** The supervisor's window for this day (null = no limit) and where "now" falls in it. */
+  opensAt: Date | null;
+  closesAt: Date | null;
+  window: 'not_open' | 'open' | 'closed';
   serverNow: Date;
   attempt:
     | null
@@ -108,6 +113,18 @@ export class QuizService {
       throw HttpError.unprocessable('INVALID_QUIZ_SETTINGS', `Question count must be ${c.min}-${c.max}`);
     }
     if (!(await this.deps.repository.setSettings(tenantId, actor, courseId, settings))) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+  }
+
+  /** Sets when each day's quiz opens and closes. Empty = no limit on that side. */
+  async updateWindows(tenantId: string, actor: Actor, courseId: string, windows: QuizWindow[]): Promise<void> {
+    for (const w of windows) {
+      if (w.opensAt && w.closesAt && w.closesAt.getTime() <= w.opensAt.getTime()) {
+        throw HttpError.unprocessable('INVALID_QUIZ_WINDOW', 'The quiz must close after it opens');
+      }
+    }
+    const result = await this.deps.repository.setWindows(tenantId, actor, courseId, windows);
+    if (result === 'not_found') throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    if (result === 'unknown_day') throw HttpError.unprocessable('UNKNOWN_DAY', 'One of the days does not belong to this course');
   }
 
   async importSheet(tenantId: string, actor: Actor, courseId: string, file: Buffer, mode: 'append' | 'replace'): Promise<ImportOutcome> {
@@ -175,6 +192,9 @@ export class QuizService {
       available: pool.length > 0,
       durationMinutes: ctx.settings.durationMinutes,
       questionCount: Math.min(ctx.settings.questionCount, pool.length),
+      opensAt: ctx.opensAt,
+      closesAt: ctx.closesAt,
+      window: this.windowState(ctx),
       serverNow: this.now(),
       attempt: attempt ? this.view(attempt) : null,
     };
@@ -187,11 +207,17 @@ export class QuizService {
     if (!existing) {
       const pool = await this.deps.repository.poolFor(tenantId, ctx.courseId, moduleId);
       if (pool.length === 0) throw HttpError.conflict('QUIZ_NOT_AVAILABLE', 'No quiz questions for this day');
+      // The supervisor's window is enforced here, not in the browser.
+      const state = this.windowState(ctx);
+      if (state === 'not_open') throw HttpError.conflict('QUIZ_NOT_OPEN', 'The quiz is not open yet');
+      if (state === 'closed') throw HttpError.conflict('QUIZ_CLOSED', 'The quiz is closed');
+      // Time allowed, but never past the moment the supervisor closes the quiz.
+      const byDuration = this.now().getTime() + ctx.settings.durationMinutes * 60_000;
       await this.deps.repository.createAttempt(tenantId, {
         courseId: ctx.courseId,
         moduleId,
         userId: user.id,
-        expiresAt: new Date(this.now().getTime() + ctx.settings.durationMinutes * 60_000),
+        expiresAt: new Date(ctx.closesAt ? Math.min(byDuration, ctx.closesAt.getTime()) : byDuration),
         questions: this.draw(pool, ctx.settings.questionCount),
       });
     }
@@ -212,6 +238,13 @@ export class QuizService {
   }
 
   // ---- internals ----------------------------------------------------------------------------
+
+  private windowState(ctx: Pick<ModuleQuizContext, 'opensAt' | 'closesAt'>): 'not_open' | 'open' | 'closed' {
+    const now = this.now().getTime();
+    if (ctx.opensAt && now < ctx.opensAt.getTime()) return 'not_open';
+    if (ctx.closesAt && now >= ctx.closesAt.getTime()) return 'closed';
+    return 'open';
+  }
 
   private expired(a: QuizAttemptRow): boolean {
     return this.now().getTime() > a.expiresAt.getTime() + GRACE_MS;

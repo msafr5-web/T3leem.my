@@ -3,16 +3,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuizResult, QuizStatus } from '@/lib/api';
 import { startQuizAction, submitQuizAction } from '@/lib/actions';
+import { formatDateTime } from '@/lib/format';
 
 type Running = Extract<NonNullable<QuizStatus['attempt']>, { state: 'in_progress' }>;
 
 const clock = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-const LETTERS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و'];
+
+/** Opening / closing times the supervisor set for this day, in words. */
+function WindowNote({ status }: { status: QuizStatus }) {
+  if (!status.opens_at && !status.closes_at) return null;
+  return (
+    <p className="small muted">
+      {status.opens_at && <>يفتح الاختبار: {formatDateTime(status.opens_at)}</>}
+      {status.opens_at && status.closes_at && ' · '}
+      {status.closes_at && <>يُغلق: {formatDateTime(status.closes_at)}</>}
+    </p>
+  );
+}
 
 /**
- * End-of-day quiz: N random questions, one attempt, a countdown. The deadline is decided by the
- * API; the browser only displays it (counted from the server's "now" so a wrong device clock
- * changes nothing) and auto-submits at zero. Correct answers arrive only with the result.
+ * End-of-day quiz in the style of an online form: one page, every question in its own card, a
+ * timer bar that stays on screen. Opening/closing times and the deadline are decided by the API;
+ * the browser only displays them (counted from the server's "now", so a wrong device clock changes
+ * nothing) and auto-submits at zero. Correct answers arrive only with the result.
  */
 export function DayQuiz({
   slug,
@@ -33,7 +46,6 @@ export function DayQuiz({
   const [status, setStatus] = useState(initial);
   const [result, setResult] = useState<QuizResult | null>(initial.attempt?.state === 'submitted' ? initial.attempt.result : null);
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
-  const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -88,7 +100,6 @@ export function DayQuiz({
     if (r.status) {
       sent.current = false;
       setStatus(r.status);
-      setIndex(0);
       if (r.status.attempt?.state === 'submitted') setResult(r.status.attempt.result);
     } else {
       setError(r.error ?? 'تعذّر بدء الاختبار.');
@@ -101,110 +112,135 @@ export function DayQuiz({
   if (result) return <QuizResultView result={result} dayTitle={dayTitle} />;
 
   if (running) {
-    const q = running.questions[index]!;
     const total = running.questions.length;
     const answered = running.questions.filter((x) => answers[x.id] !== undefined && answers[x.id] !== '').length;
     const low = remaining !== null && remaining <= 60;
     return (
-      <section className="card quiz stack" aria-labelledby="quiz-title">
-        <div className="quiz-bar">
-          <div>
-            <h2 id="quiz-title" style={{ fontSize: 18 }}>
-              اختبار {dayTitle}
-            </h2>
-            <p className="small muted">
-              السؤال {index + 1} من {total} · أجبت عن {answered}
-            </p>
-          </div>
-          <div className={`quiz-timer${low ? ' low' : ''}`} role="timer" aria-label="الوقت المتبقي">
-            <span className="small">المتبقي</span>
-            <b dir="ltr">{remaining === null ? '--:--' : clock(remaining)}</b>
-          </div>
-        </div>
-        <div className="quiz-dots" aria-hidden="true">
-          {running.questions.map((x, i) => (
-            <span key={x.id} className={`${i === index ? 'on' : ''}${answers[x.id] !== undefined && answers[x.id] !== '' ? ' done' : ''}`} />
-          ))}
+      <section className="gf" aria-labelledby="quiz-title">
+        <div className={`gf-bar${low ? ' low' : ''}`}>
+          <span className="small">
+            أجبت عن {answered} من {total}
+          </span>
+          <span className="gf-time" role="timer" aria-label="الوقت المتبقي">
+            <span className="small">المتبقي</span> <b dir="ltr">{remaining === null ? '--:--' : clock(remaining)}</b>
+          </span>
         </div>
 
-        <fieldset className="quiz-q" key={q.id}>
-          <legend>{q.body}</legend>
-          {q.type === 'MCQ' ? (
-            <div className="quiz-options">
-              {q.options.map((o, i) => (
-                <label key={`${q.id}-${i}`} className={answers[q.id] === i ? 'picked' : ''}>
-                  <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === i} onChange={() => setAnswers((a) => ({ ...a, [q.id]: i }))} />
-                  <span className="letter" aria-hidden="true">
-                    {LETTERS[i]}
-                  </span>
-                  <span>{o}</span>
+        <header className="gf-card gf-header">
+          <h2 id="quiz-title">اختبار {dayTitle}</h2>
+          <p className="small muted">أجب عن الأسئلة التالية ثم اضغط «إرسال». يُرسل الاختبار تلقائياً عند انتهاء الوقت.</p>
+          <WindowNote status={status} />
+        </header>
+
+        <form
+          className="stack"
+          style={{ gap: 12 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (answered < total && !window.confirm(`لم تُجب عن ${total - answered} من الأسئلة. إرسال الإجابات الآن؟`)) return;
+            void submit();
+          }}
+        >
+          {running.questions.map((q, i) => (
+            <fieldset key={q.id} className="gf-card gf-q">
+              <legend>
+                <span className="gf-num">{i + 1}</span>
+                <span>{q.body}</span>
+              </legend>
+              <span className="gf-kind">{q.type === 'MCQ' ? 'اختيار من متعدد' : 'إجابة نصية'}</span>
+              {q.type === 'MCQ' ? (
+                <>
+                  <div className="gf-options">
+                    {q.options.map((o, oi) => (
+                      <label key={`${q.id}-${oi}`}>
+                        <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === oi} onChange={() => setAnswers((a) => ({ ...a, [q.id]: oi }))} />
+                        <span>{o}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {answers[q.id] !== undefined && (
+                    <button
+                      type="button"
+                      className="gf-clear"
+                      onClick={() =>
+                        setAnswers((a) => {
+                          const { [q.id]: _removed, ...rest } = a;
+                          return rest;
+                        })
+                      }
+                    >
+                      مسح الاختيار
+                    </button>
+                  )}
+                </>
+              ) : (
+                <label className="stack" style={{ gap: 4 }}>
+                  <span className="visually-hidden">إجابتك</span>
+                  <textarea
+                    className="gf-text"
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="اكتب إجابتك هنا…"
+                    value={String(answers[q.id] ?? '')}
+                    onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                  />
+                  <span className="small muted">تُراجَع من المدرب ولا تُحتسب في الدرجة.</span>
                 </label>
-              ))}
-            </div>
-          ) : (
-            <label className="stack" style={{ gap: 4 }}>
-              <span className="small muted">اكتب إجابتك بكلماتك (تُراجَع من المدرب ولا تُحتسب في الدرجة).</span>
-              <textarea rows={5} maxLength={2000} value={String(answers[q.id] ?? '')} onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))} />
-            </label>
-          )}
-        </fieldset>
+              )}
+            </fieldset>
+          ))}
 
-        {error && (
-          <p className="notice error small" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="row-actions">
-          <button type="button" className="btn btn-ghost" disabled={index === 0 || busy} onClick={() => setIndex((i) => i - 1)}>
-            → السابق
-          </button>
-          {index < total - 1 ? (
-            <button type="button" className="btn btn-primary" onClick={() => setIndex((i) => i + 1)}>
-              التالي ←
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => {
-                if (answered < total && !window.confirm(`لم تُجب عن ${total - answered} من الأسئلة. إرسال الإجابات الآن؟`)) return;
-                void submit();
-              }}
-            >
-              {busy ? 'جارٍ الإرسال…' : 'إرسال الإجابة النهائية'}
-            </button>
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="card quiz stack" aria-labelledby="quiz-title">
-      <h2 id="quiz-title" style={{ fontSize: 18 }}>
-        اختبار {dayTitle}
-      </h2>
-      <p className="small muted">
-        {status.question_count} {status.question_count === 1 ? 'سؤال' : 'أسئلة'} تُسحب عشوائياً لكل متدرب · مدة الاختبار {status.duration_minutes} دقيقة · محاولة واحدة فقط.
-      </p>
-      {!dayComplete ? (
-        <p className="notice small">يُفتح الاختبار بعد إكمال جميع أجزاء هذا اليوم.</p>
-      ) : (
-        <>
-          <p className="small">يبدأ العدّ التنازلي عند الضغط على «ابدأ الاختبار»، ويُغلق الاختبار تلقائياً بانتهاء الوقت وتُرسل إجاباتك كما هي.</p>
           {error && (
             <p className="notice error small" role="alert">
               {error}
             </p>
           )}
-          <div>
-            <button type="button" className="btn btn-primary" onClick={start} disabled={busy}>
-              {busy ? 'جارٍ التحضير…' : 'ابدأ الاختبار'}
+          <div className="gf-actions">
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? 'جارٍ الإرسال…' : 'إرسال'}
             </button>
+            <span className="small muted">
+              {answered} / {total} مُجاب
+            </span>
           </div>
-        </>
-      )}
+        </form>
+      </section>
+    );
+  }
+
+  // Not started: the form's cover card, with the supervisor's opening / closing times.
+  const closed = status.window === 'closed';
+  const notOpen = status.window === 'not_open';
+  return (
+    <section className="gf" aria-labelledby="quiz-title">
+      <header className="gf-card gf-header">
+        <h2 id="quiz-title">اختبار {dayTitle}</h2>
+        <p className="small muted">
+          {status.question_count} {status.question_count === 1 ? 'سؤال' : 'أسئلة'} تُسحب عشوائياً لكل متدرب · مدة الاختبار {status.duration_minutes} دقيقة · محاولة واحدة فقط.
+        </p>
+        <WindowNote status={status} />
+        {!dayComplete ? (
+          <p className="notice small">يُفتح الاختبار بعد إكمال جميع أجزاء هذا اليوم.</p>
+        ) : notOpen ? (
+          <p className="notice sandbox small">لم يحن موعد الاختبار بعد{status.opens_at ? `، يفتح ${formatDateTime(status.opens_at)}` : ''}.</p>
+        ) : closed ? (
+          <p className="notice error small">انتهى موعد هذا الاختبار ولم يعد متاحاً.</p>
+        ) : (
+          <>
+            <p className="small">يبدأ العدّ التنازلي عند الضغط على «ابدأ الاختبار»، ويُغلق تلقائياً بانتهاء الوقت وتُرسل إجاباتك كما هي.</p>
+            {error && (
+              <p className="notice error small" role="alert">
+                {error}
+              </p>
+            )}
+            <div>
+              <button type="button" className="btn btn-primary" onClick={start} disabled={busy}>
+                {busy ? 'جارٍ التحضير…' : 'ابدأ الاختبار'}
+              </button>
+            </div>
+          </>
+        )}
+      </header>
     </section>
   );
 }
@@ -212,48 +248,54 @@ export function DayQuiz({
 function QuizResultView({ result, dayTitle }: { result: QuizResult; dayTitle: string }) {
   const graded = result.max_score > 0;
   return (
-    <section className="card quiz stack" aria-labelledby="quiz-title">
-      <h2 id="quiz-title" style={{ fontSize: 18 }}>
-        نتيجة اختبار {dayTitle}
-      </h2>
-      {graded ? (
-        <div className={`quiz-score ${result.percent !== null && result.percent >= 60 ? 'pass' : 'fail'}`}>
-          <b>
-            {result.score} / {result.max_score}
-          </b>
-          <span>{result.percent}٪</span>
-        </div>
-      ) : (
-        <p className="notice small">هذا الاختبار أسئلته نصية فقط: أُرسلت إجاباتك للمدرب ولا درجة آلية له.</p>
-      )}
-      <ol className="quiz-review">
-        {result.questions.map((q, i) => {
-          const mine = typeof q.your_answer === 'number' ? q.options[q.your_answer] : q.your_answer;
-          return (
-            <li key={q.id} className={q.is_correct === null ? 'text' : q.is_correct ? 'right' : 'wrong'}>
-              <p>
-                <b>
-                  {i + 1}. {q.body}
-                </b>
-              </p>
-              {q.type === 'MCQ' ? (
-                <>
+    <section className="gf" aria-labelledby="quiz-title">
+      <header className="gf-card gf-header">
+        <h2 id="quiz-title">نتيجة اختبار {dayTitle}</h2>
+        {graded ? (
+          <div className={`quiz-score ${result.percent !== null && result.percent >= 60 ? 'pass' : 'fail'}`}>
+            <b>
+              {result.score} / {result.max_score}
+            </b>
+            <span>{result.percent}٪</span>
+          </div>
+        ) : (
+          <p className="notice small">هذا الاختبار أسئلته نصية فقط: أُرسلت إجاباتك للمدرب ولا درجة آلية له.</p>
+        )}
+      </header>
+      {result.questions.map((q, i) => {
+        const mine = typeof q.your_answer === 'number' ? q.options[q.your_answer] : q.your_answer;
+        return (
+          <article key={q.id} className={`gf-card gf-review ${q.is_correct === null ? 'text' : q.is_correct ? 'right' : 'wrong'}`}>
+            <p>
+              <b>
+                {i + 1}. {q.body}
+              </b>
+            </p>
+            {q.type === 'MCQ' ? (
+              <>
+                <p className="small">
+                  إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}{' '}
+                  <span className={`badge ${q.is_correct ? 'ok' : 'draft'}`}>{q.is_correct ? 'صحيحة' : 'غير صحيحة'}</span>
+                </p>
+                {!q.is_correct && (
                   <p className="small">
-                    إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}{' '}
-                    <span className={`badge ${q.is_correct ? 'ok' : 'draft'}`}>{q.is_correct ? 'صحيحة' : 'غير صحيحة'}</span>
+                    الإجابة الصحيحة: <b>{q.correct_answer}</b>
                   </p>
-                  {!q.is_correct && <p className="small">الإجابة الصحيحة: <b>{q.correct_answer}</b></p>}
-                </>
-              ) : (
-                <>
-                  <p className="small">إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}</p>
-                  {q.correct_answer && <p className="small">الإجابة النموذجية: <b>{q.correct_answer}</b></p>}
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="small">إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}</p>
+                {q.correct_answer && (
+                  <p className="small">
+                    الإجابة النموذجية: <b>{q.correct_answer}</b>
+                  </p>
+                )}
+              </>
+            )}
+          </article>
+        );
+      })}
     </section>
   );
 }

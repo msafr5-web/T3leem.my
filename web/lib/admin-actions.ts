@@ -108,6 +108,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   FILE_REQUIRED: 'اختر ملف Excel أو CSV.',
   INVALID_QUIZ_SETTINGS: 'المدة من ١ إلى ١٨٠ دقيقة، وعدد الأسئلة من ١ إلى ٥٠.',
   QUESTION_NOT_FOUND: 'السؤال لم يعد موجوداً.',
+  INVALID_QUIZ_WINDOW: 'وقت إغلاق الاختبار يجب أن يكون بعد وقت فتحه.',
+  UNKNOWN_DAY: 'أحد الأيام لا يتبع هذه الدورة.',
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
 };
 
@@ -531,4 +533,22 @@ export async function saveQuizSettingsAction(slug: string, courseId: string, _pr
 
 export async function deleteQuizQuestionAction(slug: string, courseId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
   return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`);
+}
+
+/** Opening / closing time of each day's quiz. Inputs are Saudi time (UTC+3, no daylight saving). */
+export async function saveQuizWindowsAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const toIso = (v: string): string | null | undefined => {
+    if (!v) return null;
+    const d = new Date(`${v}:00+03:00`);
+    return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+  };
+  const windows: { day_id: string; opens_at: string | null; closes_at: string | null }[] = [];
+  for (const dayId of form.getAll('day_id').map(String)) {
+    const opens = toIso(str(form, `opens_${dayId}`));
+    const closes = toIso(str(form, `closes_${dayId}`));
+    if (opens === undefined || closes === undefined) return { error: 'تاريخ أو وقت غير صالح.' };
+    windows.push({ day_id: dayId, opens_at: opens, closes_at: closes });
+  }
+  if (windows.length === 0) return { error: 'لا توجد أيام لحفظ مواعيدها.' };
+  return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz-windows`, 'PUT', { windows }, `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`);
 }
