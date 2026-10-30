@@ -1,13 +1,12 @@
 import type { AdminQuiz, QuizAttemptSummary } from '@/lib/api';
-import { deleteQuizQuestionAction, importQuizAction, saveQuizSettingsAction, saveQuizWindowsAction } from '@/lib/admin-actions';
+import { importQuizAction, saveQuizSettingsAction, saveQuizWindowsAction } from '@/lib/admin-actions';
 import { formatDateTime, formatNumber, riyadhInputs } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
-import { DeleteButton } from '../../delete-button';
 import { QuizImportForm } from './quiz-import-form';
+import { fromServer } from './quiz-builder/builder-model';
+import { QuizFormBuilder } from './quiz-builder/quiz-form-builder';
 
-const LEVEL: Record<string, string> = { EASY: 'سهل', MEDIUM: 'متوسط', HARD: 'صعب' };
-
-/** Supervisor's end-of-day quiz: Excel in/out, settings, coverage per day, the bank and learners' results. */
+/** Supervisor's end-of-day quiz: the question form, settings, Excel in/out, opening windows and learners' results. */
 export function QuizSection({
   slug,
   courseId,
@@ -21,10 +20,8 @@ export function QuizSection({
   results: QuizAttemptSummary[];
   saved: boolean;
 }) {
-  const dayTitle = new Map(quiz.days.map((d) => [d.id, d.title]));
   const base = `/${slug}/dashboard/recorded/${courseId}/quiz/export`;
   const total = quiz.questions.length;
-  const uncovered = quiz.days.filter((d) => d.question_count === 0);
 
   return (
     <section className="card stack" id="quiz" aria-labelledby="quiz-h">
@@ -32,13 +29,22 @@ export function QuizSection({
         الاختبارات القصيرة في نهاية كل يوم
       </h2>
       <p className="small muted">
-        يرفع المشرف بنك الأسئلة بملف Excel. في نهاية كل يوم يُسحب لكل متدرب عدد عشوائي من أسئلة ذلك اليوم (أو من المجموعة المشتركة إن لم يكن لليوم أسئلة)، بمؤقت يحسبه الخادم ومحاولة واحدة.
+        يضيف المشرف الأسئلة في النموذج أدناه (أو يرفع بنكاً جاهزاً بملف Excel). في نهاية كل يوم يُسحب لكل متدرب عدد عشوائي من أسئلة ذلك اليوم (أو من المجموعة المشتركة إن لم يكن لليوم أسئلة)، بمؤقت يحسبه الخادم ومحاولة واحدة.
       </p>
       {saved && (
         <p className="notice ok small" role="status">
           حُفظت التعديلات.
         </p>
       )}
+
+      <QuizFormBuilder
+        slug={slug}
+        courseId={courseId}
+        days={quiz.days.map((d) => ({ id: d.id, title: d.title }))}
+        initial={quiz.questions.map(fromServer)}
+        perLearner={quiz.settings.question_count}
+        durationMinutes={quiz.settings.duration_minutes}
+      />
 
       <div className="quiz-admin-grid">
         <div className="stack">
@@ -57,7 +63,7 @@ export function QuizSection({
           </AdminForm>
         </div>
 
-        <div className="stack">
+        <div className="stack" id="quiz-import">
           <h3 style={{ fontSize: 15 }}>استيراد وتصدير</h3>
           <div className="row-actions">
             <a className="btn btn-ghost" href={`${base}?template=1`} download>
@@ -110,62 +116,6 @@ export function QuizSection({
           </div>
         </AdminForm>
       </div>
-
-      <div className="stack" style={{ gap: 6 }}>
-        <h3 style={{ fontSize: 15 }}>تغطية الأيام</h3>
-        <div className="quiz-days">
-          {quiz.days.map((d) => (
-            <span key={d.id} className={`badge ${d.question_count > 0 ? 'ok' : ''}`}>
-              {d.title}: {formatNumber(d.question_count)}
-            </span>
-          ))}
-          <span className="badge">المجموعة المشتركة: {formatNumber(quiz.shared_count)}</span>
-        </div>
-        {total > 0 && uncovered.length > 0 && quiz.shared_count === 0 && (
-          <p className="notice sandbox small">
-            لا أسئلة لـ{uncovered.map((d) => d.title).join('، ')} ولا مجموعة مشتركة، فلن يظهر اختبار في هذه الأيام. أضف أسئلتها بعمود Day أو اترك Day فارغاً لتدخل في المجموعة المشتركة.
-          </p>
-        )}
-      </div>
-
-      {total > 0 && (
-        <details>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>بنك الأسئلة ({formatNumber(total)})</summary>
-          <div className="table-wrap" style={{ marginTop: 10 }}>
-            <table className="quiz-table">
-              <thead>
-                <tr>
-                  <th>الرقم</th>
-                  <th>السؤال</th>
-                  <th>النوع</th>
-                  <th>اليوم</th>
-                  <th>الصعوبة</th>
-                  <th>الإجابة الصحيحة</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {quiz.questions.map((q) => (
-                  <tr key={q.id}>
-                    <td className="ltr">{q.code}</td>
-                    <td className="q-body">
-                      {q.body}
-                      {q.type === 'MCQ' && <div className="small muted">{q.options.join(' · ')}</div>}
-                    </td>
-                    <td>{q.type === 'MCQ' ? 'اختيار من متعدد' : 'نصي'}</td>
-                    <td>{q.day_id ? (dayTitle.get(q.day_id) ?? '—') : 'مشترك'}</td>
-                    <td>{LEVEL[q.difficulty]}</td>
-                    <td className="q-body">{q.correct_answer || '—'}</td>
-                    <td>
-                      <DeleteButton action={deleteQuizQuestionAction.bind(null, slug, courseId, q.id)} label="حذف" confirmText="حذف هذا السؤال؟" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
 
       <div className="stack" style={{ gap: 6 }}>
         <h3 style={{ fontSize: 15 }}>نتائج المتدربين</h3>

@@ -577,3 +577,76 @@ export async function saveQuizQuestionAction(slug: string, courseId: string, day
 export async function deleteDayQuestionAction(slug: string, courseId: string, dayId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
   return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}`);
 }
+
+export interface QuizFormResult {
+  ok: boolean;
+  error?: string;
+  /** Client key -> server id for every question created, even when a later one failed (so a retry never duplicates). */
+  created: Record<string, string>;
+  /** Client key of the question whose save failed. */
+  failedKey?: string;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_FORM_CHANGES = 200;
+
+/**
+ * Saves the quiz form builder: the questions that were added or edited, then the ones removed,
+ * through the same per-question endpoints (and the same server-side validation) as the single
+ * question form. Stays on the page instead of redirecting, so the supervisor keeps their place.
+ * Sequential on purpose: question codes are numbered by the API, and parallel creates would collide.
+ */
+export async function saveQuizFormAction(slug: string, courseId: string, raw: string): Promise<QuizFormResult> {
+  const token = await adminToken(slug);
+  const created: Record<string, string> = {};
+  const fail = (error: string, failedKey?: string): QuizFormResult => ({ ok: false, error, created, ...(failedKey ? { failedKey } : {}) });
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return fail('تعذّر قراءة الأسئلة. أعد تحميل الصفحة وحاول مرة أخرى.');
+  }
+  const input = parsed as { upserts?: unknown; deletes?: unknown };
+  if (!Array.isArray(input.upserts) || !Array.isArray(input.deletes) || input.upserts.length + input.deletes.length > MAX_FORM_CHANGES) {
+    return fail(`عدد التغييرات كبير. احفظ على دفعات، أو استورد الأسئلة من ملف Excel (حتى ${MAX_FORM_CHANGES} تغييراً في الحفظ الواحد).`);
+  }
+  const deletes = input.deletes.filter((id): id is string => typeof id === 'string' && UUID.test(id));
+  if (deletes.length !== input.deletes.length) return fail('بيانات غير صالحة.');
+
+  const base = `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions`;
+  try {
+    for (const item of input.upserts as Record<string, unknown>[]) {
+      const key = typeof item.key === 'string' ? item.key : '';
+      const id = typeof item.id === 'string' ? item.id : null;
+      if (!key || (id !== null && !UUID.test(id))) return fail('بيانات غير صالحة.', key || undefined);
+      // The API validates every field again; only the shape the form is allowed to send is forwarded.
+      const body = {
+        day_id: typeof item.day_id === 'string' && UUID.test(item.day_id) ? item.day_id : null,
+        body: String(item.body ?? ''),
+        type: item.type === 'TEXT' ? 'TEXT' : 'MCQ',
+        difficulty: item.difficulty === 'EASY' || item.difficulty === 'HARD' ? item.difficulty : 'MEDIUM',
+        options: Array.isArray(item.options) ? item.options.map(String) : [],
+        correct_answer: String(item.correct_answer ?? ''),
+      };
+      try {
+        if (id) await api(slug, `${base}/${encodeURIComponent(id)}`, { method: 'PUT', token, body });
+        else created[key] = (await api<{ id: string }>(slug, base, { method: 'POST', token, body })).id;
+      } catch (err) {
+        return fail(describeError(err).error ?? 'تعذّر حفظ السؤال.', key);
+      }
+    }
+    for (const id of deletes) {
+      try {
+        await api(slug, `${base}/${encodeURIComponent(id)}`, { method: 'DELETE', token });
+      } catch (err) {
+        // Already gone (e.g. deleted in another tab): the goal is met.
+        if (!(err instanceof ApiError && err.code === 'QUESTION_NOT_FOUND')) return fail(describeError(err).error ?? 'تعذّر حذف السؤال.');
+      }
+    }
+  } catch (err) {
+    return fail(describeError(err).error ?? 'حدث خطأ غير متوقع.');
+  }
+  revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
+  return { ok: true, created };
+}

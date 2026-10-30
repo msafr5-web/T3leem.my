@@ -36,6 +36,11 @@ export default async function RecordedCourseSchedule({
   ]);
   const breakMinutes = course.config?.break_minutes ?? 5;
   const discussionMinutes = course.config?.discussion_minutes ?? 15;
+  const builderHref = '#quiz-form';
+  const totalQuestions = quiz?.questions.length ?? 0;
+  const coveredDays = quiz?.days.filter((d) => d.question_count > 0).length ?? 0;
+  // Before publishing, the next step is the quiz questions; afterwards, publishing stays the main action.
+  const quizFirst = !course.is_published && totalQuestions === 0;
 
   return (
     <>
@@ -49,7 +54,10 @@ export default async function RecordedCourseSchedule({
           </p>
         </div>
         <div className="cta-row">
-          <Link href={`/${slug}/dashboard/courses/${course.id}`} className="btn btn-primary">
+          <a href={builderHref} className={`btn ${quizFirst ? 'btn-primary' : 'btn-ghost'}`}>
+            إعداد أسئلة الاختبار
+          </a>
+          <Link href={`/${slug}/dashboard/courses/${course.id}`} className={`btn ${quizFirst ? 'btn-ghost' : 'btn-primary'}`}>
             السعر والنشر والترخيص
           </Link>
           {course.is_published && (
@@ -58,7 +66,7 @@ export default async function RecordedCourseSchedule({
             </Link>
           )}
           <a href="#quiz" className="btn btn-ghost">
-            استيراد الأسئلة
+            استيراد من Excel
           </a>
           <a href={`/${slug}/dashboard/recorded/${course.id}/quiz/export${quiz && quiz.questions.length > 0 ? '' : '?template=1'}`} className="btn btn-ghost" download>
             {quiz && quiz.questions.length > 0 ? 'تصدير الأسئلة' : 'قالب الأسئلة'}
@@ -76,6 +84,43 @@ export default async function RecordedCourseSchedule({
         </div>
       )}
 
+      {!course.is_published && (
+        <section className="card publish-check stack" aria-labelledby="before-publish">
+          <h2 id="before-publish" style={{ fontSize: 18 }}>
+            قبل نشر الدورة
+          </h2>
+          <ul>
+            <li>
+              <span className="tick" aria-hidden="true">
+                ✓
+              </span>
+              <span>أُنشئت الدورة وقُسّم الفيديو إلى {formatNumber(course.days.length)} {course.days.length === 1 ? 'يوم' : 'أيام'}.</span>
+            </li>
+            <li>
+              <span className={totalQuestions > 0 ? 'tick' : 'todo'} aria-hidden="true">
+                {totalQuestions > 0 ? '✓' : '!'}
+              </span>
+              <span>
+                {totalQuestions > 0
+                  ? `أسئلة الاختبار: ${formatNumber(totalQuestions)} ${totalQuestions === 1 ? 'سؤال' : 'أسئلة'} تغطي ${formatNumber(coveredDays)} من ${formatNumber(course.days.length)} أيام${quiz && quiz.shared_count > 0 ? ` + ${formatNumber(quiz.shared_count)} مشتركة` : ''}.`
+                  : 'لم تُضف أسئلة الاختبار بعد: بدونها لن يجد المتدربون اختباراً في نهاية الأيام.'}
+              </span>
+            </li>
+            <li>
+              <span className="todo" aria-hidden="true">
+                !
+              </span>
+              <span>حدّد السعر والترخيص ثم انشر الدورة من «السعر والنشر والترخيص».</span>
+            </li>
+          </ul>
+          <div className="cta-row">
+            <a href={builderHref} className={`btn ${quizFirst ? 'btn-primary' : 'btn-ghost'}`}>
+              {totalQuestions > 0 ? 'تعديل أسئلة الاختبار' : 'ابدأ إعداد أسئلة الاختبار'}
+            </a>
+          </div>
+        </section>
+      )}
+
       <section className="card stack" aria-labelledby="schedule">
         <h2 id="schedule" style={{ fontSize: 18 }}>
           الجدولة
@@ -86,14 +131,14 @@ export default async function RecordedCourseSchedule({
             title: course.starts_at ? `${d.title} · ${formatDateTime(dayOpensAt(course.starts_at, i).toISOString())}` : d.title,
             lectures: d.lessons,
             action: (
-              <Link href={`/${slug}/dashboard/recorded/${course.id}/quiz/${d.id}`} className="day-quiz-link" title={`بناء أسئلة ${d.title}`}>
+              <a href={`#quiz-day-${d.id}`} className="day-quiz-link" title={`بناء أسئلة ${d.title}`}>
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="4" y="3" width="16" height="18" rx="2" />
                   <path d="M8 8h8M8 12h8M8 16h5" />
                 </svg>
                 أسئلة اليوم
                 <span className="badge">{formatNumber(quiz?.days.find((q) => q.id === d.id)?.question_count ?? 0)}</span>
-              </Link>
+              </a>
             ),
           }))}
           breakMinutes={breakMinutes}
