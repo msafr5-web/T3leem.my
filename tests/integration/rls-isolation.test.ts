@@ -193,6 +193,53 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     expect((await quiz.findAttempt(tenantA, userA, dayId))!.score).toBe(1);
   });
 
+  it('health academy: sectors, questions, progress and settings are per-tenant; the starter bank installs once', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaHealthRepository } = require('../../src/modules/lms/health/health.repository') as typeof import('../../src/modules/lms/health/health.repository');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { HealthService } = require('../../src/modules/lms/health/health.service') as typeof import('../../src/modules/lms/health/health.service');
+    const repo = new PrismaHealthRepository();
+    const service = new HealthService({ repository: repo });
+    const actor = { userId: userA, role: 'TENANT_ADMIN' as const, ip: null };
+
+    await expect(service.installStarter(tenantA, actor)).resolves.toMatchObject({ sectorsCreated: 6, created: 660, updated: 0 });
+    await expect(service.installStarter(tenantA, actor)).resolves.toMatchObject({ sectorsCreated: 0, created: 0, updated: 660 });
+    const sectorA = (await repo.listSectors(tenantA, false))[0]!;
+    expect(sectorA.totalCount).toBe(110);
+
+    // Tenant B sees nothing of tenant A and cannot write into its sector (FK checks bypass RLS).
+    await expect(repo.listSectors(tenantB, false)).resolves.toEqual([]);
+    await expect(repo.listQuestions(tenantB, { onlyActive: false, limit: 10, offset: 0 })).resolves.toEqual({ rows: [], total: 0 });
+    const input = { code: 'X1', body: 'q', options: ['a', 'b'], correctIndex: 0, explanation: '', active: true };
+    await expect(repo.createQuestion(tenantB, { ...actor, userId: userB }, sectorA.id, input)).resolves.toEqual({ kind: 'not_found' });
+    await expect(repo.deleteSector(tenantB, { ...actor, userId: userB }, sectorA.id)).resolves.toBe('not_found');
+    await expect(db.prisma.healthQuestion.count()).resolves.toBe(0);
+
+    // A sector with questions cannot be deleted; a question the DB would reject (bad answer index) never lands.
+    await expect(repo.deleteSector(tenantA, actor, sectorA.id)).resolves.toBe('has_questions');
+    await expect(repo.createQuestion(tenantA, actor, sectorA.id, { ...input, correctIndex: 5 })).rejects.toThrow();
+
+    // Progress: favourites are per user and tenant; a repeated session counts once; a foreign sector id is dropped.
+    const q = (await repo.listQuestions(tenantA, { onlyActive: true, limit: 1, offset: 0 })).rows[0]!;
+    await repo.setState(tenantA, userA, q.id, { isFavorite: true });
+    await repo.setState(tenantA, userA, q.id, { isRead: true });
+    await expect(repo.userStates(tenantA, userA)).resolves.toEqual([{ questionId: q.id, isFavorite: true, isRead: true }]);
+    await expect(repo.userStates(tenantB, userA)).resolves.toEqual([]);
+    const session = { clientSessionId: 'sess-0001', sectorId: sectorA.id, total: 10, correct: 7 };
+    await repo.recordSession(tenantA, userA, session);
+    await repo.recordSession(tenantA, userA, session);
+    await expect(repo.sessions(tenantA, userA, 10)).resolves.toMatchObject({ answered: 10, correct: 7, sessions: 1 });
+    await repo.recordSession(tenantB, userB, { clientSessionId: 'sess-0002', sectorId: sectorA.id, total: 5, correct: 5 });
+    await expect(repo.sessions(tenantB, userB, 10)).resolves.toMatchObject({ sessions: 1 });
+    expect((await db.forTenant(tenantB).healthSession.findFirst({ where: { tenantId: tenantB } }))!.sectorId).toBeNull();
+
+    // Settings and entitlements are per tenant too.
+    await repo.saveSettings(tenantA, actor, { enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5 });
+    await expect(repo.getSettings(tenantA)).resolves.toEqual({ enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5 });
+    await expect(repo.getSettings(tenantB)).resolves.toEqual({ enabled: true, trialEndsAt: null, price: null });
+    await expect(db.prisma.healthSetting.count()).resolves.toBe(0);
+  }, 30_000);
+
   it('tenant context does not leak across pooled connections', async () => {
     // Interleave many concurrent queries for both tenants over the shared pool.
     const results = await Promise.all(

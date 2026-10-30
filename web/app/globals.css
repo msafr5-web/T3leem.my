@@ -451,3 +451,47 @@ label.checkbox { display: flex; align-items: center; gap: 8px; }
 .qb-points { width: 72px; }
 .qb-required { display: inline-flex; align-items: center; gap: 6px; }
 .qb-opt input[type=checkbox] { accent-color: var(--brand); width: 18px; height: 18px; flex: none; }
+
+/* ---- Health certificates (learner practice) ---- */
+.hl-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.hl-stats > div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; }
+.hl-stats strong { font-size: 1.4rem; color: var(--brand); }
+.hl-stats span { font-size: 0.85rem; color: var(--muted); }
+.hl-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.hl-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
+.hl-tabs button.active { color: var(--brand); border-bottom-color: var(--brand); }
+.hl-setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.hl-setup label, .hl-filters label { display: grid; gap: 6px; font-weight: 600; }
+.hl-filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: center; }
+@media (max-width: 640px) { .hl-filters { grid-template-columns: 1fr; } }
+.hl-progress { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.hl-progress span { display: block; height: 100%; background: var(--brand); transition: width 0.25s; }
+.hl-question { font-size: 1.25rem; line-height: 1.7; }
+.hl-options { display: grid; gap: 10px; }
+.hl-option { display: flex; align-items: center; gap: 12px; text-align: start; width: 100%; padding: 14px 16px; border: 2px solid var(--line); border-radius: 10px; background: var(--surface); font: inherit; color: inherit; cursor: pointer; min-height: 52px; }
+.hl-option:hover:not(:disabled) { border-color: var(--brand); }
+.hl-option:disabled { cursor: default; }
+.hl-option.right { border-color: #1f8a4c; background: #e8f6ee; color: #11522d; }
+.hl-option.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.hl-option.dim { opacity: 0.55; }
+.hl-letter { display: inline-grid; place-items: center; min-width: 30px; height: 30px; border-radius: 50%; background: var(--line); font-weight: 700; font-size: 0.9rem; }
+.hl-mark { margin-inline-start: auto; font-weight: 800; }
+.hl-score { font-size: 2.2rem; font-weight: 800; color: var(--brand); margin: 0; }
+.hl-score span { font-size: 1.1rem; color: var(--muted); }
+.hl-history { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.hl-history li { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.hl-history li > div { display: grid; gap: 2px; }
+.hl-review header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hl-review-actions { display: inline-flex; align-items: center; gap: 8px; }
+.hl-star { background: none; border: 0; font-size: 1.5rem; line-height: 1; cursor: pointer; color: var(--muted); }
+.hl-star.on { color: #e0a100; }
+.hl-answers { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.hl-answers li { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.hl-answers li.right { border-color: #1f8a4c; background: #e8f6ee; color: #11522d; font-weight: 600; }
+.hl-explain { background: var(--surface-2, #f5f7f6); border-radius: 8px; padding: 10px 12px; margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-color-scheme: dark) {
+  .hl-option.right, .hl-answers li.right { background: #12301f; color: #9ee5b8; }
+}
+
+.row { display: flex; align-items: center; }

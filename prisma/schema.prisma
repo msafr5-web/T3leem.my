@@ -137,7 +137,8 @@ model Tenant {
   createdAt              DateTime     @default(now()) @map("created_at")
   updatedAt              DateTime     @updatedAt @map("updated_at")
 
-  plan SaasPlan? @relation(fields: [planId], references: [id])
+  plan          SaasPlan?      @relation(fields: [planId], references: [id])
+  healthSetting HealthSetting?
 
   @@map("tenants")
 }
@@ -171,6 +172,9 @@ model User {
   trainer         Trainer?
   discussionPosts DiscussionPost[]
   quizAttempts    QuizAttempt[]
+  healthStates    HealthUserState[]
+  healthSessions  HealthSession[]
+  healthAccess    HealthEntitlement?
 
   @@unique([tenantId, email])
   @@map("users")
@@ -561,4 +565,106 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
   @@map("audit_logs")
+}
+
+// ---- Health certificates academy (practice question bank per sector) ----
+
+// One row per tenant: switch, free-trial end and the fee that applies after it (null = free).
+model HealthSetting {
+  tenantId    String    @id @map("tenant_id") @db.Uuid
+  enabled     Boolean   @default(true)
+  trialEndsAt DateTime? @map("trial_ends_at")
+  price       Decimal?  @db.Decimal(12, 2)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("health_settings")
+}
+
+model HealthSector {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  slug      String
+  name      String
+  title     String   @default("")
+  sortOrder Int      @default(0) @map("sort_order")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  questions HealthQuestion[]
+  sessions  HealthSession[]
+
+  @@unique([tenantId, slug])
+  @@map("health_sectors")
+}
+
+model HealthQuestion {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  sectorId     String   @map("sector_id") @db.Uuid
+  code         String
+  body         String
+  // 2-6 option texts; correctIndex points into this list.
+  options      Json
+  correctIndex Int      @map("correct_index")
+  explanation  String   @default("")
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  sector HealthSector      @relation(fields: [sectorId], references: [id], onDelete: Restrict)
+  states HealthUserState[]
+
+  @@unique([tenantId, code])
+  @@index([sectorId, active])
+  @@map("health_questions")
+}
+
+model HealthUserState {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  isRead     Boolean  @default(false) @map("is_read")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question HealthQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, questionId])
+  @@map("health_user_states")
+}
+
+model HealthSession {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  sectorId        String?  @map("sector_id") @db.Uuid
+  clientSessionId String   @map("client_session_id")
+  total           Int
+  correct         Int
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sector HealthSector? @relation(fields: [sectorId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, clientSessionId])
+  @@index([userId, createdAt])
+  @@map("health_sessions")
+}
+
+// Paid access after the trial (granted by the provider until online payment is wired).
+model HealthEntitlement {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("health_entitlements")
 }

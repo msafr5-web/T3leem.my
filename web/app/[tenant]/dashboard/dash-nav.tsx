@@ -12,6 +12,7 @@ const ITEMS = [
   { href: '/trainees', label: 'المتدربون' },
   { href: '/classrooms', label: 'الفصول الافتراضية' },
   { href: '/certificates', label: 'الشهادات الصادرة' },
+  { href: '/health', label: 'الشهادات الصحية' },
   { href: '/settings', label: 'الإعدادات والهوية' },
 ];
 

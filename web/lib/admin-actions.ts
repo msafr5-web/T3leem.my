@@ -106,11 +106,17 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_QUESTION_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُستورد شيء).',
   FILE_TOO_LARGE: 'حجم الملف يجب ألا يتجاوز ٢ ميغابايت.',
   FILE_REQUIRED: 'اختر ملف Excel أو CSV.',
+  SECTOR_EXISTS: 'يوجد قطاع بهذا الرمز.',
+  SECTOR_NOT_FOUND: 'القطاع غير موجود.',
+  SECTOR_NOT_EMPTY: 'لا يمكن حذف قطاع فيه أسئلة. انقل أسئلته أو احذفها، أو أخفِ القطاع بدلاً من حذفه.',
+  QUESTION_EXISTS: 'رقم السؤال مستخدم لسؤال آخر.',
+  EMPTY_SHEET: 'الملف لا يحتوي أسئلة.',
+  USER_NOT_FOUND: 'لا يوجد مستخدم بهذا البريد في أكاديميتك. يجب أن يكون مسجلاً أولاً.',
   INVALID_QUIZ_SETTINGS: 'المدة من ١ إلى ١٨٠ دقيقة، وعدد الأسئلة من ١ إلى ٥٠.',
   QUESTION_NOT_FOUND: 'السؤال لم يعد موجوداً.',
   INVALID_QUIZ_WINDOW: 'وقت إغلاق الاختبار يجب أن يكون بعد وقت فتحه.',
   UNKNOWN_DAY: 'أحد الأيام لا يتبع هذه الدورة.',
-  INVALID_QUESTION: 'تحقق من السؤال: النص مطلوب، والدرجة من ١ إلى ١٠٠، وأسئلة الاختيار من ٢ إلى ٦ خيارات غير مكررة مع تحديد الإجابة الصحيحة.',
+  INVALID_QUESTION: 'تحقق من السؤال: النص مطلوب، وأسئلة الاختيار من ٢ إلى ٦ خيارات غير مكررة مع تحديد الإجابة الصحيحة، والدرجة (إن وُجدت) من ١ إلى ١٠٠.',
   QUESTION_CODE_TAKEN: 'أُضيف سؤال آخر في اللحظة نفسها. حاول مرة أخرى.',
   body: 'نص السؤال',
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
@@ -631,4 +637,91 @@ export async function saveQuizFormAction(slug: string, courseId: string, raw: st
   }
   revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
   return { ok: true, created };
+}
+
+
+// ---------------- Health certificates academy ----------------
+
+const HEALTH_PATH = (slug: string, flag = 'saved') => `/${slug}/dashboard/health?${flag}=1`;
+const MAX_HEALTH_SHEET = 3 * 1024 * 1024;
+
+/** Switch, free-trial end (Saudi time) and the fee that applies after it. */
+export async function saveHealthSettingsAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const trial = riyadhToIso(str(form, 'trial_ends_at'));
+  const price = optionalNumber(form, 'price');
+  if (price !== null && (!Number.isFinite(price) || price < 0)) return { error: 'الرسوم يجب أن تكون رقماً صفراً أو أكثر.' };
+  return save(slug, '/admin/health/settings', 'PUT', { enabled: form.get('enabled') === 'on', trial_ends_at: trial || null, price }, HEALTH_PATH(slug));
+}
+
+export async function grantHealthAccessAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, '/admin/health/access', 'POST', { email: str(form, 'email'), days: Number(str(form, 'days') || 0) }, HEALTH_PATH(slug, 'granted'));
+}
+
+export async function addHealthSectorAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, '/admin/health/sectors', 'POST', { name: str(form, 'name'), title: str(form, 'title') }, HEALTH_PATH(slug, 'sectors'));
+}
+
+export async function updateHealthSectorAction(slug: string, sectorId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    `/admin/health/sectors/${encodeURIComponent(sectorId)}`,
+    'PUT',
+    { name: str(form, 'name'), title: str(form, 'title'), sort_order: Number(str(form, 'sort_order') || 0), active: form.get('active') === 'on' },
+    HEALTH_PATH(slug, 'sectors'),
+  );
+}
+
+export async function deleteHealthSectorAction(slug: string, sectorId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/health/sectors/${encodeURIComponent(sectorId)}`, 'DELETE', undefined, HEALTH_PATH(slug, 'sectors'));
+}
+
+/** Add (questionId null) or edit one question. Blank option boxes are dropped; the radio value is the box index. */
+export async function saveHealthQuestionAction(slug: string, questionId: string | null, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const slots = [0, 1, 2, 3, 4, 5].map((i) => ({ i, text: str(form, `option_${i}`) })).filter((o) => o.text);
+  const correctSlot = Number(str(form, 'correct'));
+  const correctIndex = slots.findIndex((o) => o.i === correctSlot);
+  if (correctIndex < 0) return { error: 'حدّد الإجابة الصحيحة من الخيارات المكتوبة.' };
+  const body = {
+    sector_id: str(form, 'sector_id'),
+    body: str(form, 'body'),
+    options: slots.map((o) => o.text),
+    correct_index: correctIndex,
+    explanation: str(form, 'explanation'),
+    active: form.get('active') === 'on',
+  };
+  const done = `/${slug}/dashboard/health?saved=1&sector=${encodeURIComponent(body.sector_id)}`;
+  return questionId
+    ? save(slug, `/admin/health/questions/${encodeURIComponent(questionId)}`, 'PUT', body, done)
+    : save(slug, '/admin/health/questions', 'POST', body, done);
+}
+
+export async function deleteHealthQuestionAction(slug: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/health/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, HEALTH_PATH(slug));
+}
+
+/** Installs the bundled starter bank (6 sectors, 660 questions); safe to run again. */
+export async function installHealthStarterAction(slug: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, '/admin/health/starter', 'POST', {}, HEALTH_PATH(slug, 'starter'));
+}
+
+export async function importHealthAction(slug: string, _prev: QuizImportState, form: FormData): Promise<QuizImportState> {
+  const token = await adminToken(slug);
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) return { error: ERROR_MESSAGES.FILE_REQUIRED };
+  if (file.size > MAX_HEALTH_SHEET) return { error: 'حجم الملف يجب ألا يتجاوز ٣ ميغابايت.' };
+  const mode = form.get('mode') === 'replace' ? 'replace' : 'append';
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const r = await api<{ created: number; updated: number; removed: number }>(slug, `/admin/health/import?mode=${mode}`, { method: 'POST', token, raw: { data, contentType: 'application/octet-stream' } });
+    revalidatePath(`/${slug}/dashboard/health`);
+    const parts = [`أُضيف ${r.created}`, `حُدّث ${r.updated}`];
+    if (r.removed > 0) parts.push(`حُذف ${r.removed}`);
+    return { done: `تم الاستيراد: ${parts.join('، ')} سؤالاً.` };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'INVALID_QUESTION_SHEET') {
+      const d = err.details as unknown as { errors?: { row: number; message: string }[]; total_errors?: number } | undefined;
+      return { error: ERROR_MESSAGES.INVALID_QUESTION_SHEET, rowErrors: d?.errors ?? [], totalErrors: d?.total_errors ?? d?.errors?.length ?? 0 };
+    }
+    return describeError(err);
+  }
 }

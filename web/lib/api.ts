@@ -411,6 +411,74 @@ export interface CheckoutResponse {
   invoice: { invoice_number: string; total_amount: number; vat_amount: number; zatca_qr_base64: string };
 }
 
+/** Health-certificates academy: practice question bank per sector. */
+export type HealthAccess = 'disabled' | 'open' | 'trial' | 'paid' | 'locked';
+
+export interface HealthSectorSummary {
+  id: string;
+  name: string;
+  title: string;
+  question_count: number;
+}
+
+export interface HealthStatus {
+  access: HealthAccess;
+  trial_ends_at: string | null;
+  price: number | null;
+  server_now: string;
+  sectors: HealthSectorSummary[];
+}
+
+export interface HealthQuestion {
+  id: string;
+  code: string;
+  sector_id: string;
+  body: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+  active: boolean;
+}
+
+export interface HealthQuestionPage {
+  total: number;
+  questions: HealthQuestion[];
+}
+
+export interface HealthProgress {
+  favorites: string[];
+  read: string[];
+  answered: number;
+  correct: number;
+  sessions: number;
+  history: { id: string; sector_id: string | null; total: number; correct: number; created_at: string }[];
+}
+
+export interface AdminHealthSector {
+  id: string;
+  slug: string;
+  name: string;
+  title: string;
+  sort_order: number;
+  active: boolean;
+  question_count: number;
+  total_count: number;
+}
+
+export interface AdminHealth {
+  settings: { enabled: boolean; trial_ends_at: string | null; price: number | null };
+  sectors: AdminHealthSector[];
+  active_subscribers: number;
+  server_now: string;
+}
+
+export interface PracticeQuestion {
+  id: string;
+  sector_id: string;
+  body: string;
+  options: string[];
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -526,6 +594,8 @@ export const admin = {
     api<SchedulePreview>(slug, '/admin/recorded-courses/preview', { method: 'POST', token, body }),
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/admin/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
   quiz: (slug: string, token: string, courseId: string) => api<AdminQuiz>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz`, { token }),
+  health: (slug: string, token: string) => api<AdminHealth>(slug, '/admin/health', { token }),
+  healthQuestions: (slug: string, token: string, qs: string) => api<HealthQuestionPage>(slug, `/admin/health/questions?${qs}`, { token }),
   quizResults: (slug: string, token: string, courseId: string) => api<QuizAttemptSummary[]>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/results`, { token }),
 };
 
@@ -535,6 +605,9 @@ export const me = {
   course: (slug: string, token: string, courseId: string) => api<MyCourse>(slug, `/me/courses/${encodeURIComponent(courseId)}`, { token }),
   classrooms: (slug: string, token: string) => api<MyClassroom[]>(slug, '/me/classrooms', { token }),
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
+  health: (slug: string, token: string) => api<HealthStatus>(slug, '/me/health', { token }),
+  healthQuestions: (slug: string, token: string, qs: string) => api<HealthQuestionPage>(slug, `/me/health/questions?${qs}`, { token }),
+  healthProgress: (slug: string, token: string) => api<HealthProgress>(slug, '/me/health/progress', { token }),
   quiz: (slug: string, token: string, moduleId: string) => api<QuizStatus>(slug, `/me/modules/${encodeURIComponent(moduleId)}/quiz`, { token }),
   playback: (slug: string, token: string, lessonId: string) =>
     api<{ playlist_path: string; expires_in: number }>(slug, `/me/lessons/${encodeURIComponent(lessonId)}/playback`, { token }),

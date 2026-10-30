@@ -74,10 +74,10 @@ const HEADER_ALIASES: Record<string, Column> = {
   mandatory: 'Required',
 };
 
-const headerKey = (raw: string) => raw.replace(/^﻿/, '').toLowerCase().replace(/[\s_-]+/g, '');
+export const headerKey = (raw: string) => raw.replace(/^﻿/, '').toLowerCase().replace(/[\s_-]+/g, '');
 
 /** Cell → trimmed string, whatever shape ExcelJS gives (rich text, formula result, hyperlink, number). */
-function cellText(cell: ExcelJS.Cell): string {
+export function cellText(cell: ExcelJS.Cell): string {
   const v = cell.value;
   if (v === null || v === undefined) return '';
   if (typeof v === 'object' && !(v instanceof Date)) {
@@ -91,7 +91,7 @@ function cellText(cell: ExcelJS.Cell): string {
 
 const isZip = (b: Buffer) => b.length > 4 && b[0] === 0x50 && b[1] === 0x4b;
 
-async function loadWorkbook(file: Buffer): Promise<ExcelJS.Workbook> {
+export async function loadWorkbook(file: Buffer): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   if (isZip(file)) await wb.xlsx.load(file as unknown as ExcelJS.Buffer);
   else await wb.csv.read(Readable.from(file.toString('utf8')));

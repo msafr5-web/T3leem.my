@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ApiUnavailableError, getTenant, isMissingTenant, type Tenant } from '@/lib/api';
+import { ApiUnavailableError, getTenant, isMissingTenant, me, type Tenant } from '@/lib/api';
 import { logoutAction } from '@/lib/actions';
 import { isValidSlug, safeBrandColor } from '@/lib/format';
 import { getSession } from '@/lib/session';
@@ -25,6 +25,16 @@ export default async function TenantLayout({ children, params }: { children: Rea
 
   const session = await getSession(slug);
   const brand = safeBrandColor(tenant.brand_settings?.primaryColor);
+  // The health-certificates link only appears where the academy has switched the section on and added sectors.
+  let showHealth = false;
+  if (session) {
+    try {
+      const h = await me.health(slug, session.token);
+      showHealth = h.access !== 'disabled' && h.sectors.length > 0;
+    } catch {
+      showHealth = false;
+    }
+  }
 
   return (
     <div style={brand ? ({ ['--brand' as string]: brand } as React.CSSProperties) : undefined}>
@@ -37,6 +47,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
           <div className="header-actions">
             {session ? (
               <>
+                {showHealth && <Link href={`/${slug}/health`} className="btn btn-ghost">الشهادات الصحية</Link>}
                 {session.role === 'TENANT_ADMIN' ? (
                   <Link href={`/${slug}/dashboard`} className="btn btn-primary">لوحة التحكم</Link>
                 ) : (

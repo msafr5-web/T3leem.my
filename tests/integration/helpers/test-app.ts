@@ -29,6 +29,7 @@ import type { TenantResolver } from '../../../src/shared/middlewares/tenant-cont
 import { buildLearningFakes } from './learning-fakes';
 import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
+import { buildHealthFakes } from './health-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
@@ -304,6 +305,9 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
 
   const quiz = buildQuizFakes({ tenantA: TENANT_A, courseId: QUIZ_COURSE, days: QUIZ_DAYS, enrolled: [USER] });
 
+  const healthClock = { now: new Date() };
+  const health = { ...buildHealthFakes({ tenantA: TENANT_A, now: () => healthClock.now }), clock: healthClock };
+
   const app = createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
@@ -336,6 +340,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     contentService: fakes.content,
     recordedCourseService: recorded.service,
     quizService: quiz.service,
+    healthService: health.service,
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,
@@ -344,5 +349,6 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.fakes = fakes;
   app.locals.recorded = recorded;
   app.locals.quiz = quiz;
+  app.locals.health = health;
   return app;
 }
