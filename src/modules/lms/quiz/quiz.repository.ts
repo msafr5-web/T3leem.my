@@ -14,11 +14,19 @@ export interface QuizQuestionRow {
   body: string;
   type: QuestionType;
   options: string[];
+  /** MCQ: the right option's text. SHORT / TEXT: the model answer. */
   correctAnswer: string;
+  /** CHECKBOX: the text of every right option. */
+  correctOptions: string[];
+  points: number;
+  required: boolean;
   difficulty: Difficulty;
   /** null = shared course pool. */
   moduleId: string | null;
 }
+
+/** A learner's answer: MCQ = option index, CHECKBOX = option indexes, RATING = 1-5, SHORT/TEXT = the text. */
+export type AnswerValue = string | number | number[];
 
 /** A question frozen into an attempt (options already shuffled for this learner). */
 export interface AttemptQuestion {
@@ -27,6 +35,10 @@ export interface AttemptQuestion {
   type: QuestionType;
   options: string[];
   correctAnswer: string;
+  /** Attempts started before points / required existed lack these: read them with `?? default`. */
+  correctOptions?: string[];
+  points?: number;
+  required?: boolean;
 }
 
 export interface QuizAttemptRow {
@@ -37,7 +49,7 @@ export interface QuizAttemptRow {
   expiresAt: Date;
   submittedAt: Date | null;
   questions: AttemptQuestion[];
-  answers: Record<string, string | number>;
+  answers: Record<string, AnswerValue>;
   score: number | null;
   maxScore: number | null;
 }
@@ -75,6 +87,9 @@ export interface QuestionInput {
   type: QuestionType;
   options: string[];
   correctAnswer: string;
+  correctOptions: string[];
+  points: number;
+  required: boolean;
   difficulty: Difficulty;
 }
 
@@ -123,18 +138,21 @@ export interface QuizRepository {
     input: { courseId: string; moduleId: string; userId: string; expiresAt: Date; questions: AttemptQuestion[] },
   ): Promise<QuizAttemptRow>;
   /** Stores the answers and score once; false when it was already submitted. */
-  submitAttempt(tenantId: string, attemptId: string, input: { answers: Record<string, string | number>; score: number; maxScore: number; at: Date }): Promise<boolean>;
+  submitAttempt(tenantId: string, attemptId: string, input: { answers: Record<string, AnswerValue>; score: number; maxScore: number; at: Date }): Promise<boolean>;
 }
 
 const displayName = (u: { fullName: string | null; email: string }) => u.fullName ?? u.email.split('@')[0] ?? u.email;
 
-const toRow = (q: { id: string; code: string; body: string; type: QuestionType; options: Prisma.JsonValue; correctAnswer: string; difficulty: Difficulty; moduleId: string | null }): QuizQuestionRow => ({
+const toRow = (q: { id: string; code: string; body: string; type: QuestionType; options: Prisma.JsonValue; correctAnswer: string; correctOptions: Prisma.JsonValue; points: number; required: boolean; difficulty: Difficulty; moduleId: string | null }): QuizQuestionRow => ({
   id: q.id,
   code: q.code,
   body: q.body,
   type: q.type,
   options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string') : [],
   correctAnswer: q.correctAnswer,
+  correctOptions: Array.isArray(q.correctOptions) ? q.correctOptions.filter((o): o is string => typeof o === 'string') : [],
+  points: q.points,
+  required: q.required,
   difficulty: q.difficulty,
   moduleId: q.moduleId,
 });
@@ -150,7 +168,7 @@ const toAttempt = (a: {
   expiresAt: a.expiresAt,
   submittedAt: a.submittedAt,
   questions: a.questions as unknown as AttemptQuestion[],
-  answers: (a.answers ?? {}) as Record<string, string | number>,
+  answers: (a.answers ?? {}) as Record<string, AnswerValue>,
   score: a.score,
   maxScore: a.maxScore,
 });
@@ -219,6 +237,9 @@ export class PrismaQuizRepository implements QuizRepository {
           type: q.type,
           options: q.options as Prisma.InputJsonValue,
           correctAnswer: q.correctAnswer,
+          correctOptions: q.correctOptions as Prisma.InputJsonValue,
+          points: q.points,
+          required: q.required,
           difficulty: q.difficulty,
           moduleId: q.moduleId,
           sortOrder: i,
@@ -250,7 +271,7 @@ export class PrismaQuizRepository implements QuizRepository {
         if (!course) return { kind: 'not_found' } as const;
         const count = await tx.quizQuestion.count({ where: { tenantId, courseId } });
         const row = await tx.quizQuestion.create({
-          data: { tenantId, courseId, code, ...input, options: input.options as Prisma.InputJsonValue, sortOrder: count },
+          data: { tenantId, courseId, code, ...input, options: input.options as Prisma.InputJsonValue, correctOptions: input.correctOptions as Prisma.InputJsonValue, sortOrder: count },
           select: { id: true },
         });
         await audit(tx, tenantId, actor, 'quiz.question_created', courseId, { questionId: row.id, code });
@@ -266,7 +287,7 @@ export class PrismaQuizRepository implements QuizRepository {
     return withTenantTransaction(tenantId, async (tx) => {
       const { count } = await tx.quizQuestion.updateMany({
         where: { tenantId, courseId, id: questionId },
-        data: { ...input, options: input.options as Prisma.InputJsonValue },
+        data: { ...input, options: input.options as Prisma.InputJsonValue, correctOptions: input.correctOptions as Prisma.InputJsonValue },
       });
       if (count === 0) return false;
       await audit(tx, tenantId, actor, 'quiz.question_updated', courseId, { questionId });
@@ -291,7 +312,7 @@ export class PrismaQuizRepository implements QuizRepository {
       select: { id: true, startedAt: true, submittedAt: true, score: true, maxScore: true, questions: true, answers: true, user: { select: { fullName: true, email: true, role: true } }, module: { select: { title: true } } },
     });
     return rows.map((a) => {
-      const answers = (a.answers ?? {}) as Record<string, string | number>;
+      const answers = (a.answers ?? {}) as Record<string, AnswerValue>;
       const questions = a.questions as unknown as AttemptQuestion[];
       return {
         id: a.id,
@@ -302,7 +323,7 @@ export class PrismaQuizRepository implements QuizRepository {
         submittedAt: a.submittedAt,
         score: a.score,
         maxScore: a.maxScore,
-        textAnswers: questions.filter((q) => q.type === 'TEXT' && typeof answers[q.id] === 'string' && String(answers[q.id]).trim()).map((q) => ({ question: q.body, answer: String(answers[q.id]) })),
+        textAnswers: questions.filter((q) => (q.type === 'TEXT' || q.type === 'SHORT') && typeof answers[q.id] === 'string' && String(answers[q.id]).trim()).map((q) => ({ question: q.body, answer: String(answers[q.id]) })),
       };
     });
   }
@@ -364,7 +385,7 @@ export class PrismaQuizRepository implements QuizRepository {
     }
   }
 
-  async submitAttempt(tenantId: string, attemptId: string, input: { answers: Record<string, string | number>; score: number; maxScore: number; at: Date }): Promise<boolean> {
+  async submitAttempt(tenantId: string, attemptId: string, input: { answers: Record<string, AnswerValue>; score: number; maxScore: number; at: Date }): Promise<boolean> {
     // The `submittedAt: null` guard makes the first submission win under concurrent requests.
     const { count } = await forTenant(tenantId).quizAttempt.updateMany({
       where: { tenantId, id: attemptId, submittedAt: null },

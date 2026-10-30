@@ -1,13 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { QuizResult, QuizStatus } from '@/lib/api';
+import type { QuizAnswer, QuizResult, QuizResultQuestion, QuizStatus } from '@/lib/api';
 import { startQuizAction, submitQuizAction } from '@/lib/actions';
 import { formatDateTime } from '@/lib/format';
 
 type Running = Extract<NonNullable<QuizStatus['attempt']>, { state: 'in_progress' }>;
+type RunningQuestion = Running['questions'][number];
 
 const clock = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+const KIND: Record<RunningQuestion['type'], string> = {
+  MCQ: 'اختيار واحد',
+  CHECKBOX: 'اختر كل ما ينطبق',
+  SHORT: 'إجابة قصيرة',
+  TEXT: 'فقرة',
+  RATING: 'تقييم',
+};
+
+/** Has the learner given a usable answer? (Same notion of "answered" as the API's required check.) */
+const isAnswered = (v: QuizAnswer | undefined): boolean => (Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? true : typeof v === 'string' && v.trim() !== '');
+
+const pointsLabel = (n: number) => `${n} ${n === 1 ? 'درجة' : 'درجات'}`;
 
 /** Opening / closing times the supervisor set for this day, in words. */
 function WindowNote({ status }: { status: QuizStatus }) {
@@ -45,9 +59,10 @@ export function DayQuiz({
 }) {
   const [status, setStatus] = useState(initial);
   const [result, setResult] = useState<QuizResult | null>(initial.attempt?.state === 'submitted' ? initial.attempt.result : null);
-  const [answers, setAnswers] = useState<Record<string, string | number>>({});
+  const [answers, setAnswers] = useState<Record<string, QuizAnswer>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);
   const answersRef = useRef(answers);
   const sent = useRef(false);
@@ -55,27 +70,62 @@ export function DayQuiz({
 
   const running = status.attempt?.state === 'in_progress' && !result ? (status.attempt as Running) : null;
 
-  const submit = useCallback(async () => {
-    if (sent.current) return;
-    sent.current = true;
-    setBusy(true);
-    setError(null);
-    const r = await submitQuizAction(slug, courseId, moduleId, answersRef.current);
-    if (r.result) {
-      setResult(r.result);
-    } else {
-      // Window closed or already handed in: show what the server recorded instead of an error loop.
-      const fresh = r.stale ? await startQuizAction(slug, courseId, moduleId) : null;
-      if (fresh?.status) {
-        setStatus(fresh.status);
-        if (fresh.status.attempt?.state === 'submitted') setResult(fresh.status.attempt.result);
-      } else {
-        sent.current = false;
+  const setAnswer = (id: string, value: QuizAnswer | undefined) => {
+    setMissing((m) => m.filter((x) => x !== id));
+    setAnswers((a) => {
+      if (value === undefined || (Array.isArray(value) && value.length === 0) || value === '') {
+        const { [id]: _removed, ...rest } = a;
+        return rest;
       }
-      setError(r.error ?? null);
-    }
-    setBusy(false);
-  }, [slug, courseId, moduleId]);
+      return { ...a, [id]: value };
+    });
+  };
+
+  const goTo = (id: string) => document.querySelector<HTMLElement>(`[data-quiz-q="${id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+  /** `auto` = the countdown reached zero: send whatever there is, required or not. */
+  const submit = useCallback(
+    async (auto = false) => {
+      if (sent.current) return;
+      if (!auto && running) {
+        // Required questions must be answered first; show which, instead of a round trip to fail.
+        const unanswered = running.questions.filter((q) => q.required && !isAnswered(answersRef.current[q.id])).map((q) => q.id);
+        if (unanswered.length > 0) {
+          setMissing(unanswered);
+          setError(`أجب عن ${unanswered.length === 1 ? 'السؤال المطلوب' : `الأسئلة المطلوبة (${unanswered.length})`} قبل الإرسال.`);
+          goTo(unanswered[0] as string);
+          return;
+        }
+      }
+      sent.current = true;
+      setBusy(true);
+      setError(null);
+      const r = await submitQuizAction(slug, courseId, moduleId, answersRef.current);
+      if (r.result) {
+        setResult(r.result);
+      } else {
+        // Window closed or already handed in: show what the server recorded instead of an error loop.
+        const fresh = r.stale ? await startQuizAction(slug, courseId, moduleId) : null;
+        if (fresh?.status) {
+          setStatus(fresh.status);
+          if (fresh.status.attempt?.state === 'submitted') setResult(fresh.status.attempt.result);
+        } else {
+          sent.current = false;
+        }
+        if (r.missing?.length) {
+          setMissing(r.missing);
+          goTo(r.missing[0] as string);
+        }
+        setError(r.error ?? null);
+      }
+      setBusy(false);
+    },
+    [slug, courseId, moduleId, running],
+  );
+
+  // The countdown effect must not restart when `submit` is rebuilt: keep the latest one in a ref.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
 
   // Countdown from the server's own clock: remaining = expires_at - server_now at load, counted locally.
   const expiresAt = running?.expires_at;
@@ -86,12 +136,12 @@ export function DayQuiz({
     const tick = () => {
       const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
       setRemaining(left);
-      if (left === 0) void submit();
+      if (left === 0) void submitRef.current(true);
     };
     tick();
     const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, [expiresAt, serverNow, submit]);
+  }, [expiresAt, serverNow]);
 
   const start = async () => {
     setBusy(true);
@@ -113,7 +163,8 @@ export function DayQuiz({
 
   if (running) {
     const total = running.questions.length;
-    const answered = running.questions.filter((x) => answers[x.id] !== undefined && answers[x.id] !== '').length;
+    const answered = running.questions.filter((x) => isAnswered(answers[x.id])).length;
+    const requiredCount = running.questions.filter((q) => q.required).length;
     const low = remaining !== null && remaining <= 60;
     return (
       <section className="gf" aria-labelledby="quiz-title">
@@ -129,6 +180,11 @@ export function DayQuiz({
         <header className="gf-card gf-header">
           <h2 id="quiz-title">اختبار {dayTitle}</h2>
           <p className="small muted">أجب عن الأسئلة التالية ثم اضغط «إرسال». يُرسل الاختبار تلقائياً عند انتهاء الوقت.</p>
+          {requiredCount > 0 && (
+            <p className="small muted">
+              <span className="gf-req">*</span> تشير إلى سؤال مطلوب.
+            </p>
+          )}
           <WindowNote status={status} />
         </header>
 
@@ -137,55 +193,34 @@ export function DayQuiz({
           style={{ gap: 12 }}
           onSubmit={(e) => {
             e.preventDefault();
-            if (answered < total && !window.confirm(`لم تُجب عن ${total - answered} من الأسئلة. إرسال الإجابات الآن؟`)) return;
+            const optionalBlank = running.questions.filter((q) => !q.required && !isAnswered(answers[q.id])).length;
+            if (optionalBlank > 0 && !window.confirm(`لم تُجب عن ${optionalBlank} من الأسئلة. إرسال الإجابات الآن؟`)) return;
             void submit();
           }}
         >
           {running.questions.map((q, i) => (
-            <fieldset key={q.id} className="gf-card gf-q">
+            <fieldset key={q.id} data-quiz-q={q.id} className={`gf-card gf-q${missing.includes(q.id) ? ' gf-missing' : ''}`}>
               <legend>
                 <span className="gf-num">{i + 1}</span>
-                <span>{q.body}</span>
-              </legend>
-              <span className="gf-kind">{q.type === 'MCQ' ? 'اختيار من متعدد' : 'إجابة نصية'}</span>
-              {q.type === 'MCQ' ? (
-                <>
-                  <div className="gf-options">
-                    {q.options.map((o, oi) => (
-                      <label key={`${q.id}-${oi}`}>
-                        <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === oi} onChange={() => setAnswers((a) => ({ ...a, [q.id]: oi }))} />
-                        <span>{o}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {answers[q.id] !== undefined && (
-                    <button
-                      type="button"
-                      className="gf-clear"
-                      onClick={() =>
-                        setAnswers((a) => {
-                          const { [q.id]: _removed, ...rest } = a;
-                          return rest;
-                        })
-                      }
-                    >
-                      مسح الاختيار
-                    </button>
+                <span>
+                  {q.body}
+                  {q.required && (
+                    <span className="gf-req" title="مطلوب" aria-label="مطلوب">
+                      {' '}
+                      *
+                    </span>
                   )}
-                </>
-              ) : (
-                <label className="stack" style={{ gap: 4 }}>
-                  <span className="visually-hidden">إجابتك</span>
-                  <textarea
-                    className="gf-text"
-                    rows={4}
-                    maxLength={2000}
-                    placeholder="اكتب إجابتك هنا…"
-                    value={String(answers[q.id] ?? '')}
-                    onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
-                  />
-                  <span className="small muted">تُراجَع من المدرب ولا تُحتسب في الدرجة.</span>
-                </label>
+                </span>
+              </legend>
+              <span className="gf-kind">
+                {KIND[q.type]}
+                {(q.type === 'MCQ' || q.type === 'CHECKBOX') && <> · {pointsLabel(q.points)}</>}
+              </span>
+              <QuestionInput q={q} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />
+              {missing.includes(q.id) && (
+                <p className="gf-miss" role="alert">
+                  هذا سؤال مطلوب.
+                </p>
               )}
             </fieldset>
           ))}
@@ -245,6 +280,92 @@ export function DayQuiz({
   );
 }
 
+/** The answer control of one question, by type. */
+function QuestionInput({ q, value, onChange }: { q: RunningQuestion; value: QuizAnswer | undefined; onChange: (v: QuizAnswer | undefined) => void }) {
+  if (q.type === 'MCQ') {
+    return (
+      <>
+        <div className="gf-options">
+          {q.options.map((o, oi) => (
+            <label key={`${q.id}-${oi}`}>
+              <input type="radio" name={`q-${q.id}`} checked={value === oi} onChange={() => onChange(oi)} />
+              <span>{o}</span>
+            </label>
+          ))}
+        </div>
+        {value !== undefined && (
+          <button type="button" className="gf-clear" onClick={() => onChange(undefined)}>
+            مسح الاختيار
+          </button>
+        )}
+      </>
+    );
+  }
+  if (q.type === 'CHECKBOX') {
+    const picked = Array.isArray(value) ? value : [];
+    return (
+      <div className="gf-options">
+        {q.options.map((o, oi) => (
+          <label key={`${q.id}-${oi}`}>
+            <input
+              type="checkbox"
+              checked={picked.includes(oi)}
+              onChange={() => onChange(picked.includes(oi) ? picked.filter((x) => x !== oi) : [...picked, oi].sort((a, b) => a - b))}
+            />
+            <span>{o}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+  if (q.type === 'RATING') {
+    const stars = typeof value === 'number' ? value : 0;
+    return (
+      <div className="gf-stars" role="radiogroup" aria-label="التقييم من ١ إلى ٥">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={stars === n}
+            aria-label={`${n} من 5`}
+            className={n <= stars ? 'on' : ''}
+            onClick={() => onChange(stars === n ? undefined : n)}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (q.type === 'SHORT') {
+    return (
+      <label className="stack" style={{ gap: 4 }}>
+        <span className="visually-hidden">إجابتك</span>
+        <input type="text" className="gf-short" maxLength={300} placeholder="إجابتك" value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value)} />
+        <span className="small muted">تُراجَع من المدرب ولا تُحتسب في الدرجة.</span>
+      </label>
+    );
+  }
+  return (
+    <label className="stack" style={{ gap: 4 }}>
+      <span className="visually-hidden">إجابتك</span>
+      <textarea className="gf-text" rows={4} maxLength={2000} placeholder="اكتب إجابتك هنا…" value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value)} />
+      <span className="small muted">تُراجَع من المدرب ولا تُحتسب في الدرجة.</span>
+    </label>
+  );
+}
+
+/** What the learner answered, as readable text. */
+function answerText(q: QuizResultQuestion): string | null {
+  const a = q.your_answer;
+  if (a === null) return null;
+  if (q.type === 'MCQ') return typeof a === 'number' ? (q.options[a] ?? null) : null;
+  if (q.type === 'CHECKBOX') return Array.isArray(a) ? a.map((i) => q.options[i]).filter(Boolean).join('، ') : null;
+  if (q.type === 'RATING') return typeof a === 'number' ? `${'★'.repeat(a)}${'☆'.repeat(5 - a)} (${a} من 5)` : null;
+  return typeof a === 'string' ? a : null;
+}
+
 function QuizResultView({ result, dayTitle }: { result: QuizResult; dayTitle: string }) {
   const graded = result.max_score > 0;
   return (
@@ -259,11 +380,11 @@ function QuizResultView({ result, dayTitle }: { result: QuizResult; dayTitle: st
             <span>{result.percent}٪</span>
           </div>
         ) : (
-          <p className="notice small">هذا الاختبار أسئلته نصية فقط: أُرسلت إجاباتك للمدرب ولا درجة آلية له.</p>
+          <p className="notice small">هذا الاختبار أسئلته كتابية أو تقييمات فقط: أُرسلت إجاباتك للمدرب ولا درجة آلية له.</p>
         )}
       </header>
       {result.questions.map((q, i) => {
-        const mine = typeof q.your_answer === 'number' ? q.options[q.your_answer] : q.your_answer;
+        const mine = answerText(q);
         return (
           <article key={q.id} className={`gf-card gf-review ${q.is_correct === null ? 'text' : q.is_correct ? 'right' : 'wrong'}`}>
             <p>
@@ -271,27 +392,28 @@ function QuizResultView({ result, dayTitle }: { result: QuizResult; dayTitle: st
                 {i + 1}. {q.body}
               </b>
             </p>
-            {q.type === 'MCQ' ? (
-              <>
-                <p className="small">
-                  إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}{' '}
-                  <span className={`badge ${q.is_correct ? 'ok' : 'draft'}`}>{q.is_correct ? 'صحيحة' : 'غير صحيحة'}</span>
-                </p>
-                {!q.is_correct && (
-                  <p className="small">
-                    الإجابة الصحيحة: <b>{q.correct_answer}</b>
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="small">إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}</p>
-                {q.correct_answer && (
-                  <p className="small">
-                    الإجابة النموذجية: <b>{q.correct_answer}</b>
-                  </p>
-                )}
-              </>
+            <p className="small">
+              إجابتك: {mine ? <span>{mine}</span> : <span className="muted">لم تُجب</span>}{' '}
+              {q.is_correct !== null && (
+                <span className={`badge ${q.is_correct ? 'ok' : 'draft'}`}>
+                  {q.is_correct ? 'صحيحة' : 'غير صحيحة'} · {q.earned}/{q.points}
+                </span>
+              )}
+            </p>
+            {q.is_correct === false && q.type === 'MCQ' && (
+              <p className="small">
+                الإجابة الصحيحة: <b>{q.correct_answer}</b>
+              </p>
+            )}
+            {q.is_correct === false && q.type === 'CHECKBOX' && (
+              <p className="small">
+                الإجابات الصحيحة: <b>{q.correct_options.join('، ')}</b>
+              </p>
+            )}
+            {(q.type === 'SHORT' || q.type === 'TEXT') && q.correct_answer && (
+              <p className="small">
+                الإجابة النموذجية: <b>{q.correct_answer}</b>
+              </p>
             )}
           </article>
         );

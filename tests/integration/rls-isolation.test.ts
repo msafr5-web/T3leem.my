@@ -163,7 +163,7 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     }))!;
     const dayId = (await quiz.courseDays(tenantA, courseId))![0]!.id;
 
-    const row = (code: string, moduleId: string | null) => ({ code, body: `سؤال ${code}`, type: 'MCQ' as const, options: ['أ', 'ب'], correctAnswer: 'أ', difficulty: 'MEDIUM' as const, day: null, moduleId });
+    const row = (code: string, moduleId: string | null) => ({ code, body: `سؤال ${code}`, type: 'MCQ' as const, options: ['أ', 'ب'], correctAnswer: 'أ', correctOptions: [], points: 1, required: false, difficulty: 'MEDIUM' as const, day: null, moduleId });
     await expect(quiz.importQuestions(tenantA, actor, courseId, [row('Q1', dayId), row('Q2', null)], 'append')).resolves.toEqual({ created: 2, updated: 0, removed: 0 });
     await expect(quiz.importQuestions(tenantA, actor, courseId, [row('q1', dayId)], 'replace')).resolves.toEqual({ created: 0, updated: 1, removed: 1 });
     expect((await quiz.listQuestions(tenantA, courseId)).map((q) => q.code)).toEqual(['Q1']);

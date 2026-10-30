@@ -45,6 +45,12 @@ enum ContentType {
 enum QuizQuestionType {
   MCQ
   TEXT
+  // Several right options (all-or-nothing).
+  CHECKBOX
+  // One-line written answer (reviewed, not auto-graded).
+  SHORT
+  // 1-5 stars (collected, not graded).
+  RATING
 }
 
 enum QuizDifficulty {
@@ -394,18 +400,22 @@ model DiscussionPost {
 // Question bank of a course (imported from Excel). moduleId = the day it belongs to;
 // null = shared pool used by every day that has no questions of its own.
 model QuizQuestion {
-  id            String           @id @default(uuid()) @db.Uuid
-  tenantId      String           @map("tenant_id") @db.Uuid
-  courseId      String           @map("course_id") @db.Uuid
-  moduleId      String?          @map("module_id") @db.Uuid
-  code          String
-  body          String
-  type          QuizQuestionType
-  options       Json             @default("[]")
-  correctAnswer String           @map("correct_answer")
-  difficulty    QuizDifficulty   @default(MEDIUM)
-  sortOrder     Int              @default(0) @map("sort_order")
-  createdAt     DateTime         @default(now()) @map("created_at")
+  id             String           @id @default(uuid()) @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  courseId       String           @map("course_id") @db.Uuid
+  moduleId       String?          @map("module_id") @db.Uuid
+  code           String
+  body           String
+  type           QuizQuestionType
+  options        Json             @default("[]")
+  correctAnswer  String           @map("correct_answer")
+  // CHECKBOX only: the texts of every right option.
+  correctOptions Json             @default("[]") @map("correct_options")
+  points         Int              @default(1)
+  required       Boolean          @default(false)
+  difficulty     QuizDifficulty   @default(MEDIUM)
+  sortOrder      Int              @default(0) @map("sort_order")
+  createdAt      DateTime         @default(now()) @map("created_at")
 
   course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   module Module? @relation(fields: [moduleId], references: [id], onDelete: SetNull)

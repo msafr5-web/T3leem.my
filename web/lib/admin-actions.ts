@@ -110,7 +110,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   QUESTION_NOT_FOUND: 'السؤال لم يعد موجوداً.',
   INVALID_QUIZ_WINDOW: 'وقت إغلاق الاختبار يجب أن يكون بعد وقت فتحه.',
   UNKNOWN_DAY: 'أحد الأيام لا يتبع هذه الدورة.',
-  INVALID_QUESTION: 'تحقق من السؤال: النص مطلوب، وللاختيار من متعدد من ٢ إلى ٦ خيارات غير مكررة مع تحديد الإجابة الصحيحة.',
+  INVALID_QUESTION: 'تحقق من السؤال: النص مطلوب، والدرجة من ١ إلى ١٠٠، وأسئلة الاختيار من ٢ إلى ٦ خيارات غير مكررة مع تحديد الإجابة الصحيحة.',
   QUESTION_CODE_TAKEN: 'أُضيف سؤال آخر في اللحظة نفسها. حاول مرة أخرى.',
   body: 'نص السؤال',
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
@@ -556,28 +556,6 @@ export async function saveQuizWindowsAction(slug: string, courseId: string, _pre
   return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz-windows`, 'PUT', { windows }, `/${slug}/dashboard/recorded/${courseId}?saved=quiz#quiz`);
 }
 
-/** Adds (questionId null) or edits one question of a day, typed in the form. */
-export async function saveQuizQuestionAction(slug: string, courseId: string, dayId: string, questionId: string | null, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
-  const type = str(form, 'type') === 'TEXT' ? 'TEXT' : 'MCQ';
-  const options = form.getAll('option').map((o) => String(o).trim());
-  const correctIndex = Number(str(form, 'correct'));
-  const body = {
-    day_id: dayId,
-    body: str(form, 'body'),
-    type,
-    difficulty: str(form, 'difficulty') || 'MEDIUM',
-    options: type === 'MCQ' ? options : [],
-    // The radio names the option by position; the API wants its text.
-    correct_answer: type === 'MCQ' ? (options[correctIndex] ?? '') : str(form, 'model_answer'),
-  };
-  const base = `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions`;
-  return save(slug, questionId ? `${base}/${encodeURIComponent(questionId)}` : base, questionId ? 'PUT' : 'POST', body, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}?saved=1`);
-}
-
-export async function deleteDayQuestionAction(slug: string, courseId: string, dayId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
-  return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}`);
-}
-
 export interface QuizFormResult {
   ok: boolean;
   error?: string;
@@ -589,6 +567,7 @@ export interface QuizFormResult {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_FORM_CHANGES = 200;
+const QUESTION_TYPES = new Set(['MCQ', 'CHECKBOX', 'SHORT', 'TEXT', 'RATING']);
 
 /**
  * Saves the quiz form builder: the questions that were added or edited, then the ones removed,
@@ -624,10 +603,13 @@ export async function saveQuizFormAction(slug: string, courseId: string, raw: st
       const body = {
         day_id: typeof item.day_id === 'string' && UUID.test(item.day_id) ? item.day_id : null,
         body: String(item.body ?? ''),
-        type: item.type === 'TEXT' ? 'TEXT' : 'MCQ',
+        type: QUESTION_TYPES.has(String(item.type)) ? String(item.type) : 'MCQ',
         difficulty: item.difficulty === 'EASY' || item.difficulty === 'HARD' ? item.difficulty : 'MEDIUM',
         options: Array.isArray(item.options) ? item.options.map(String) : [],
         correct_answer: String(item.correct_answer ?? ''),
+        correct_options: Array.isArray(item.correct_options) ? item.correct_options.map(String) : [],
+        points: Number.isInteger(item.points) ? item.points : 1,
+        required: item.required === true,
       };
       try {
         if (id) await api(slug, `${base}/${encodeURIComponent(id)}`, { method: 'PUT', token, body });

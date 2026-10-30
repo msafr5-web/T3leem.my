@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
-import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse, type QuizResult, type QuizStatus } from './api';
+import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse, type QuizAnswer, type QuizResult, type QuizStatus } from './api';
 import { isValidSlug, safeNextPath } from './format';
 import { clearSession, getSession, setSession } from './session';
 
@@ -26,6 +26,9 @@ const MESSAGES: Record<string, string> = {
   QUIZ_NOT_STARTED: 'ابدأ الاختبار أولاً.',
   QUIZ_ALREADY_SUBMITTED: 'سلّمت هذا الاختبار من قبل.',
   QUIZ_EXPIRED: 'انتهى وقت الاختبار قبل وصول إجاباتك.',
+  QUIZ_REQUIRED_MISSING: 'أجب عن الأسئلة المطلوبة قبل الإرسال.',
+  QUIZ_NOT_OPEN: 'لم يحن موعد هذا الاختبار بعد.',
+  QUIZ_CLOSED: 'انتهى موعد هذا الاختبار.',
 };
 
 function describe(err: unknown): string {
@@ -180,6 +183,8 @@ export interface QuizActionState {
   error?: string;
   /** The server closed the window (or it was already submitted): reload the status. */
   stale?: boolean;
+  /** Ids of required questions that were left unanswered. */
+  missing?: string[];
 }
 
 async function quizToken(slug: string, courseId: string): Promise<string | null> {
@@ -201,7 +206,7 @@ export async function startQuizAction(slug: string, courseId: string, moduleId: 
 }
 
 /** Sends the answers (MCQ: chosen option's index; text: the written answer). */
-export async function submitQuizAction(slug: string, courseId: string, moduleId: string, answers: Record<string, string | number>): Promise<QuizActionState> {
+export async function submitQuizAction(slug: string, courseId: string, moduleId: string, answers: Record<string, QuizAnswer>): Promise<QuizActionState> {
   const token = await quizToken(slug, courseId);
   if (!token) return { error: 'أكاديمية غير معروفة.' };
   try {
@@ -209,7 +214,9 @@ export async function submitQuizAction(slug: string, courseId: string, moduleId:
     return { result };
   } catch (err) {
     const stale = err instanceof ApiError && (err.code === 'QUIZ_EXPIRED' || err.code === 'QUIZ_ALREADY_SUBMITTED');
-    return { error: describe(err), stale };
+    const details = err instanceof ApiError ? (err.details as unknown as { missing?: unknown } | undefined) : undefined;
+    const missing = Array.isArray(details?.missing) ? details.missing.filter((id): id is string => typeof id === 'string') : undefined;
+    return { error: describe(err), stale, ...(missing ? { missing } : {}) };
   }
 }
 

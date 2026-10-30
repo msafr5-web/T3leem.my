@@ -252,13 +252,21 @@ export interface QuizSettings {
   duration_minutes: number;
   question_count: number;
 }
+/** MCQ: one right option. CHECKBOX: several. SHORT / TEXT: written answers. RATING: 1-5 stars. */
+export type QuizQuestionType = 'MCQ' | 'CHECKBOX' | 'SHORT' | 'TEXT' | 'RATING';
+/** MCQ: option index. CHECKBOX: option indexes. RATING: 1-5. SHORT / TEXT: the text. */
+export type QuizAnswer = string | number | number[];
+
 export interface AdminQuizQuestion {
   id: string;
   code: string;
   body: string;
-  type: 'MCQ' | 'TEXT';
+  type: QuizQuestionType;
   options: string[];
   correct_answer: string;
+  correct_options: string[];
+  points: number;
+  required: boolean;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
   day_id: string | null;
 }
@@ -282,11 +290,17 @@ export interface QuizAttemptSummary {
 export interface QuizResultQuestion {
   id: string;
   body: string;
-  type: 'MCQ' | 'TEXT';
+  type: QuizQuestionType;
   options: string[];
-  your_answer: string | number | null;
+  points: number;
+  required: boolean;
+  your_answer: QuizAnswer | null;
   correct_answer: string;
+  /** CHECKBOX: the text of every right option. */
+  correct_options: string[];
+  /** null for written answers and ratings (not auto-graded). */
   is_correct: boolean | null;
+  earned: number | null;
 }
 export interface QuizResult {
   score: number;
@@ -306,7 +320,7 @@ export interface QuizStatus {
   server_now: string;
   attempt:
     | null
-    | { state: 'in_progress'; expires_at: string; questions: { id: string; body: string; type: 'MCQ' | 'TEXT'; options: string[] }[] }
+    | { state: 'in_progress'; expires_at: string; questions: { id: string; body: string; type: QuizQuestionType; options: string[]; points: number; required: boolean }[] }
     | { state: 'submitted'; result: QuizResult };
 }
 

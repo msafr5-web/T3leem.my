@@ -1,8 +1,9 @@
 import { randomInt } from 'node:crypto';
 import { HttpError } from '../../../shared/utils/http-error';
 import type { Actor } from '../../provider/provider.types';
-import { QUIZ_LIMITS, buildQuestionWorkbook, parseQuestionSheet, type Difficulty, type QuestionType } from './quiz.excel';
+import { QUIZ_LIMITS, buildQuestionWorkbook, hasOptions, isGraded, parseQuestionSheet, type Difficulty, type QuestionType } from './quiz.excel';
 import type {
+  AnswerValue,
   AttemptQuestion,
   AttemptSummaryRow,
   ImportOutcome,
@@ -32,13 +33,19 @@ export interface QuizBankView {
 export interface QuizResultQuestion {
   id: string;
   body: string;
-  type: 'MCQ' | 'TEXT';
+  type: QuestionType;
   options: string[];
-  yourAnswer: string | number | null;
-  /** MCQ: the right option's text; TEXT: the supervisor's model answer (may be empty). */
+  points: number;
+  required: boolean;
+  yourAnswer: AnswerValue | null;
+  /** MCQ: the right option's text; SHORT / TEXT: the supervisor's model answer (may be empty). */
   correctAnswer: string;
-  /** null for TEXT questions (not auto-graded). */
+  /** CHECKBOX: the text of every right option. */
+  correctOptions: string[];
+  /** null for written answers and ratings (not auto-graded). */
   isCorrect: boolean | null;
+  /** Points won (graded types only). */
+  earned: number | null;
 }
 
 export interface QuizResult {
@@ -61,7 +68,7 @@ export interface QuizStatus {
   serverNow: Date;
   attempt:
     | null
-    | { state: 'in_progress'; expiresAt: Date; questions: Omit<AttemptQuestion, 'correctAnswer'>[] }
+    | { state: 'in_progress'; expiresAt: Date; questions: Omit<AttemptQuestion, 'correctAnswer' | 'correctOptions'>[] }
     | { state: 'submitted'; result: QuizResult };
 }
 
@@ -74,14 +81,57 @@ export interface QuizServiceDeps {
 
 type Who = { id: string; role: string };
 
+/** The auto-submit at zero may fire a moment before the server's deadline; "required" is not enforced then. */
+const AUTO_SUBMIT_SLACK_MS = 5_000;
+
+const pointsOf = (q: AttemptQuestion): number => q.points ?? 1;
+
+/** The learner's answer in its stored form, or undefined when nothing valid was given. */
+function cleanAnswer(q: AttemptQuestion, given: unknown): AnswerValue | undefined {
+  const isIndex = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < q.options.length;
+  switch (q.type) {
+    case 'MCQ':
+      return isIndex(given) ? given : undefined;
+    case 'CHECKBOX': {
+      if (!Array.isArray(given)) return undefined;
+      const picked = [...new Set(given.filter(isIndex))].sort((a, b) => a - b);
+      return picked.length > 0 ? picked : undefined;
+    }
+    case 'RATING':
+      return typeof given === 'number' && Number.isInteger(given) && given >= QUIZ_LIMITS.rating.min && given <= QUIZ_LIMITS.rating.max ? given : undefined;
+    case 'SHORT':
+    case 'TEXT': {
+      if (typeof given !== 'string' || !given.trim()) return undefined;
+      return given.trim().slice(0, q.type === 'SHORT' ? QUIZ_LIMITS.maxShortAnswer : QUIZ_LIMITS.maxBodyLength);
+    }
+  }
+}
+
+/** true / false for graded types, null for written answers and ratings. */
+function isCorrect(q: AttemptQuestion, answer: AnswerValue | undefined): boolean | null {
+  if (q.type === 'MCQ') return typeof answer === 'number' && q.options[answer] === q.correctAnswer;
+  if (q.type === 'CHECKBOX') {
+    const key = q.correctOptions ?? [];
+    if (!Array.isArray(answer)) return false;
+    const chosen = answer.map((i) => q.options[i]);
+    // All-or-nothing: every right option and no wrong one.
+    return key.length > 0 && chosen.length === key.length && key.every((k) => chosen.includes(k));
+  }
+  return null;
+}
+
 /** What the supervisor types into the question form (before validation). */
 export interface QuestionDraft {
   dayId: string | null;
   body: string;
   type: QuestionType;
   options: string[];
-  /** MCQ: the right option's text. TEXT: the model answer (optional). */
+  /** MCQ: the right option's text. SHORT / TEXT: the model answer (optional). */
   correctAnswer: string;
+  /** CHECKBOX: the text of every right option. */
+  correctOptions: string[];
+  points: number;
+  required: boolean;
   difficulty: Difficulty;
 }
 
@@ -168,6 +218,9 @@ export class QuizService {
         type: q.type,
         options: q.options,
         correctAnswer: q.correctAnswer,
+        correctOptions: q.correctOptions,
+        points: q.points,
+        required: q.required,
         difficulty: q.difficulty,
         day: q.moduleId ? (dayNumber.get(q.moduleId) ?? null) : null,
       })),
@@ -185,30 +238,43 @@ export class QuizService {
     const L = QUIZ_LIMITS;
     const body = draft.body.trim();
     if (body.length < 1 || body.length > L.maxBodyLength) throw HttpError.unprocessable('INVALID_QUESTION', `Question text must be 1-${L.maxBodyLength} characters`);
-    const base = { moduleId: draft.dayId, body, type: draft.type, difficulty: draft.difficulty };
+    if (!Number.isInteger(draft.points) || draft.points < L.points.min || draft.points > L.points.max) {
+      throw HttpError.unprocessable('INVALID_QUESTION', `Points must be a whole number from ${L.points.min} to ${L.points.max}`);
+    }
+    const base = { moduleId: draft.dayId, body, type: draft.type, difficulty: draft.difficulty, points: draft.points, required: draft.required };
+    const dayNumber = dayIndex >= 0 ? dayIndex + 1 : null;
 
-    if (draft.type === 'TEXT') {
+    if (draft.type === 'RATING') return { input: { ...base, options: [], correctAnswer: '', correctOptions: [] }, dayNumber };
+    if (draft.type === 'SHORT' || draft.type === 'TEXT') {
       const model = draft.correctAnswer.trim();
-      if (model.length > L.maxBodyLength) throw HttpError.unprocessable('INVALID_QUESTION', 'The model answer is too long');
-      return { input: { ...base, options: [], correctAnswer: model }, dayNumber: dayIndex >= 0 ? dayIndex + 1 : null };
+      if (model.length > (draft.type === 'SHORT' ? L.maxShortAnswer : L.maxBodyLength)) throw HttpError.unprocessable('INVALID_QUESTION', 'The model answer is too long');
+      return { input: { ...base, options: [], correctAnswer: model, correctOptions: [] }, dayNumber };
     }
 
     const options = draft.options.map((o) => o.trim()).filter(Boolean);
     if (options.length < L.options.min || options.length > L.options.max) {
-      throw HttpError.unprocessable('INVALID_QUESTION', `A multiple-choice question needs ${L.options.min}-${L.options.max} options`);
+      throw HttpError.unprocessable('INVALID_QUESTION', `A choice question needs ${L.options.min}-${L.options.max} options`);
     }
     if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw HttpError.unprocessable('INVALID_QUESTION', 'Options must not repeat');
     if (options.some((o) => o.length > L.maxOptionLength)) throw HttpError.unprocessable('INVALID_QUESTION', `An option is longer than ${L.maxOptionLength} characters`);
-    const correct = options.find((o) => o.toLowerCase() === draft.correctAnswer.trim().toLowerCase());
-    if (!correct) throw HttpError.unprocessable('INVALID_QUESTION', 'Choose which option is correct');
-    return { input: { ...base, options, correctAnswer: correct }, dayNumber: dayIndex >= 0 ? dayIndex + 1 : null };
+    const find = (text: string) => options.find((o) => o.toLowerCase() === text.trim().toLowerCase());
+
+    if (draft.type === 'MCQ') {
+      const correct = find(draft.correctAnswer);
+      if (!correct) throw HttpError.unprocessable('INVALID_QUESTION', 'Choose which option is correct');
+      return { input: { ...base, options, correctAnswer: correct, correctOptions: [] }, dayNumber };
+    }
+    const picked = draft.correctOptions.map(find);
+    if (picked.length === 0 || picked.some((o) => !o)) throw HttpError.unprocessable('INVALID_QUESTION', 'Choose every correct option');
+    return { input: { ...base, options, correctAnswer: '', correctOptions: [...new Set(picked as string[])] }, dayNumber };
   }
 
   async createQuestion(tenantId: string, actor: Actor, courseId: string, draft: QuestionDraft): Promise<string> {
     const { input, dayNumber } = await this.validated(tenantId, courseId, draft);
-    // Codes follow the template's convention (Q_D1_001 / Q_ALL_001) and stay unique per course.
+    // Form-made questions get F_D1_001 / F_ALL_001, a prefix the Excel template does not use, so
+    // importing a sheet (which updates questions by Question_ID) cannot overwrite them by accident.
     const taken = new Set((await this.deps.repository.listQuestions(tenantId, courseId)).map((q) => q.code.toLowerCase()));
-    const prefix = dayNumber ? `Q_D${dayNumber}_` : 'Q_ALL_';
+    const prefix = dayNumber ? `F_D${dayNumber}_` : 'F_ALL_';
     let n = 1;
     while (taken.has(`${prefix}${String(n).padStart(3, '0')}`.toLowerCase())) n++;
     const result = await this.deps.repository.createQuestion(tenantId, actor, courseId, `${prefix}${String(n).padStart(3, '0')}`, input);
@@ -293,6 +359,12 @@ export class QuizService {
       await this.finalize(tenantId, user.id, attempt, {});
       throw HttpError.conflict('QUIZ_EXPIRED', 'The quiz time is over');
     }
+    // "Required" questions must be answered before an early submit. Near or after the deadline the
+    // browser's auto-submit sends whatever there is, and that must always be accepted.
+    if (this.now().getTime() < attempt.expiresAt.getTime() - AUTO_SUBMIT_SLACK_MS) {
+      const missing = attempt.questions.filter((q) => q.required && cleanAnswer(q, answers[q.id]) === undefined).map((q) => q.id);
+      if (missing.length > 0) throw HttpError.unprocessable('QUIZ_REQUIRED_MISSING', 'Answer the required questions first', { missing });
+    }
     return this.result(await this.finalize(tenantId, user.id, attempt, answers));
   }
 
@@ -309,7 +381,7 @@ export class QuizService {
     return this.now().getTime() > a.expiresAt.getTime() + GRACE_MS;
   }
 
-  /** Fisher-Yates over a copy: `count` questions in random order, each MCQ's options shuffled too. */
+  /** Fisher-Yates over a copy: `count` questions in random order, each choice question's options shuffled too. */
   private draw(pool: QuizQuestionRow[], count: number): AttemptQuestion[] {
     const shuffle = <T>(items: T[]): T[] => {
       const a = [...items];
@@ -321,24 +393,29 @@ export class QuizService {
     };
     return shuffle(pool)
       .slice(0, Math.min(count, pool.length))
-      .map((q) => ({ id: q.id, body: q.body, type: q.type, options: q.type === 'MCQ' ? shuffle(q.options) : [], correctAnswer: q.correctAnswer }));
+      .map((q) => ({
+        id: q.id,
+        body: q.body,
+        type: q.type,
+        options: hasOptions(q.type) ? shuffle(q.options) : [],
+        correctAnswer: q.correctAnswer,
+        correctOptions: q.correctOptions,
+        points: q.points,
+        required: q.required,
+      }));
   }
 
-  /** Grades MCQs (an answer is the option's index in THIS attempt) and stores the outcome once. */
+  /** Grades the choice questions by points (an answer is the option's index in THIS attempt) and stores the outcome once. */
   private async finalize(tenantId: string, userId: string, attempt: QuizAttemptRow, raw: Record<string, unknown>): Promise<QuizAttemptRow> {
-    const clean: Record<string, string | number> = {};
+    const clean: Record<string, AnswerValue> = {};
     let score = 0;
     let maxScore = 0;
     for (const q of attempt.questions) {
-      const given = raw[q.id];
-      if (q.type === 'MCQ') {
-        maxScore++;
-        if (typeof given === 'number' && Number.isInteger(given) && given >= 0 && given < q.options.length) {
-          clean[q.id] = given;
-          if (q.options[given] === q.correctAnswer) score++;
-        }
-      } else if (typeof given === 'string' && given.trim()) {
-        clean[q.id] = given.trim().slice(0, QUIZ_LIMITS.maxBodyLength);
+      const answer = cleanAnswer(q, raw[q.id]);
+      if (answer !== undefined) clean[q.id] = answer;
+      if (isGraded(q.type)) {
+        maxScore += pointsOf(q);
+        if (isCorrect(q, answer)) score += pointsOf(q);
       }
     }
     const at = this.now();
@@ -361,14 +438,19 @@ export class QuizService {
       submittedAt: a.submittedAt ?? this.now(),
       questions: a.questions.map((q) => {
         const given = a.answers[q.id];
+        const correct = isCorrect(q, given);
         return {
           id: q.id,
           body: q.body,
           type: q.type,
           options: q.options,
+          points: pointsOf(q),
+          required: q.required ?? false,
           yourAnswer: given ?? null,
           correctAnswer: q.correctAnswer,
-          isCorrect: q.type === 'MCQ' ? typeof given === 'number' && q.options[given] === q.correctAnswer : null,
+          correctOptions: q.correctOptions ?? [],
+          isCorrect: correct,
+          earned: correct === null ? null : correct ? pointsOf(q) : 0,
         };
       }),
     };
@@ -377,6 +459,10 @@ export class QuizService {
   private view(a: QuizAttemptRow): NonNullable<QuizStatus['attempt']> {
     if (a.submittedAt) return { state: 'submitted', result: this.result(a) };
     // Correct answers never leave the server while the clock is running.
-    return { state: 'in_progress', expiresAt: a.expiresAt, questions: a.questions.map(({ correctAnswer: _hidden, ...q }) => q) };
+    return { state: 'in_progress', expiresAt: a.expiresAt, questions: a.questions.map((q) => {
+        const { correctAnswer: _hidden, correctOptions: _key, ...visible } = q;
+        return { ...visible, points: pointsOf(q), required: q.required ?? false };
+      }),
+    };
   }
 }

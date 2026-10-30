@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { saveQuizFormAction } from '@/lib/admin-actions';
 import { formatNumber } from '@/lib/format';
-import { LIMITS, blankQuestion, buildPayload, duplicateOf, fingerprint, validateQuestion, type BuilderQuestion, type Difficulty, type QuestionType } from './builder-model';
+import { LIMITS, QUESTION_TYPES, blankQuestion, buildPayload, duplicateOf, fingerprint, hasOptions, isGraded, validateQuestion, type BuilderQuestion, type Difficulty, type QuestionType } from './builder-model';
 
 const SHARED = 'shared';
 const DIFFICULTY: Record<Difficulty, string> = { EASY: 'سهل', MEDIUM: 'متوسط', HARD: 'صعب' };
@@ -88,7 +88,13 @@ export function QuizFormBuilder({ slug, courseId, days, initial, perLearner, dur
 
   const changeType = (q: BuilderQuestion, type: QuestionType) => {
     if (type === q.type) return;
-    patch(q.key, { type, options: q.options.length >= LIMITS.minOptions ? q.options : ['', ''] });
+    patch(q.key, {
+      type,
+      options: q.options.length >= LIMITS.minOptions ? q.options : ['', ''],
+      // Carry the answer key across the two choice types instead of losing it.
+      corrects: type === 'CHECKBOX' && q.type === 'MCQ' && q.correct >= 0 ? [q.correct] : q.corrects,
+      correct: type === 'MCQ' && q.type === 'CHECKBOX' ? (q.corrects[0] ?? -1) : q.correct,
+    });
   };
 
   const addOption = (q: BuilderQuestion) => {
@@ -101,7 +107,8 @@ export function QuizFormBuilder({ slug, courseId, days, initial, perLearner, dur
     if (q.options.length <= LIMITS.minOptions) return;
     // Removing the right answer leaves none selected, so the supervisor must choose again on purpose.
     const correct = i < q.correct ? q.correct - 1 : i === q.correct ? -1 : q.correct;
-    patch(q.key, { options: q.options.filter((_, j) => j !== i), correct });
+    const corrects = q.corrects.filter((c) => c !== i).map((c) => (c > i ? c - 1 : c));
+    patch(q.key, { options: q.options.filter((_, j) => j !== i), correct, corrects });
   };
 
   const optionKey = (q: BuilderQuestion, i: number, e: KeyboardEvent<HTMLInputElement>) => {
@@ -403,33 +410,54 @@ function QuestionCard({
           value={q.body}
           onChange={(e) => onPatch({ body: e.target.value })}
         />
+        {q.required && (
+          <span className="qb-req" title="سؤال مطلوب" aria-label="سؤال مطلوب">
+            *
+          </span>
+        )}
         <select data-field="type" className="qb-type" aria-label={`نوع السؤال ${n}`} value={q.type} onChange={(e) => onType(e.target.value as QuestionType)}>
-          <option value="MCQ">اختيار من متعدد</option>
-          <option value="TEXT">إجابة نصية (فقرة)</option>
+          {QUESTION_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
         </select>
       </div>
 
-      {q.type === 'MCQ' ? (
+      {hasOptions(q.type) ? (
         <div className="qb-options">
-          {q.options.map((o, i) => (
-            <div key={i} className={`qb-opt${q.correct === i ? ' correct' : ''}`}>
-              <input type="radio" name={`correct-${q.key}`} checked={q.correct === i} onChange={() => onPatch({ correct: i })} aria-label={`الخيار ${formatNumber(i + 1)} هو الإجابة الصحيحة`} title="الإجابة الصحيحة" />
-              <input
-                type="text"
-                data-field={`option-${i}`}
-                value={o}
-                maxLength={LIMITS.option}
-                placeholder={`خيار ${formatNumber(i + 1)}`}
-                aria-label={`نص الخيار ${formatNumber(i + 1)}`}
-                onChange={(e) => onPatch({ options: q.options.map((x, j) => (j === i ? e.target.value : x)) })}
-                onKeyDown={(e) => onOptionKey(i, e)}
-              />
-              {q.correct === i && <span className="qb-right-tag">الإجابة الصحيحة</span>}
-              <button type="button" className="qb-x" onClick={() => onRemoveOption(i)} disabled={q.options.length <= LIMITS.minOptions} aria-label={`حذف الخيار ${formatNumber(i + 1)}`}>
-                ✕
-              </button>
-            </div>
-          ))}
+          {q.options.map((o, i) => {
+            const right = q.type === 'MCQ' ? q.correct === i : q.corrects.includes(i);
+            return (
+              <div key={i} className={`qb-opt${right ? ' correct' : ''}`}>
+                {q.type === 'MCQ' ? (
+                  <input type="radio" name={`correct-${q.key}`} checked={right} onChange={() => onPatch({ correct: i })} aria-label={`الخيار ${formatNumber(i + 1)} هو الإجابة الصحيحة`} title="الإجابة الصحيحة" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={right}
+                    onChange={() => onPatch({ corrects: right ? q.corrects.filter((c) => c !== i) : [...q.corrects, i] })}
+                    aria-label={`الخيار ${formatNumber(i + 1)} من الإجابات الصحيحة`}
+                    title="إجابة صحيحة"
+                  />
+                )}
+                <input
+                  type="text"
+                  data-field={`option-${i}`}
+                  value={o}
+                  maxLength={LIMITS.option}
+                  placeholder={`خيار ${formatNumber(i + 1)}`}
+                  aria-label={`نص الخيار ${formatNumber(i + 1)}`}
+                  onChange={(e) => onPatch({ options: q.options.map((x, j) => (j === i ? e.target.value : x)) })}
+                  onKeyDown={(e) => onOptionKey(i, e)}
+                />
+                {right && <span className="qb-right-tag">{q.type === 'MCQ' ? 'الإجابة الصحيحة' : 'صحيحة'}</span>}
+                <button type="button" className="qb-x" onClick={() => onRemoveOption(i)} disabled={q.options.length <= LIMITS.minOptions} aria-label={`حذف الخيار ${formatNumber(i + 1)}`}>
+                  ✕
+                </button>
+              </div>
+            );
+          })}
           {q.options.length < LIMITS.maxOptions && (
             <div className="qb-opt add">
               <span className="qb-ghost-radio" aria-hidden="true" />
@@ -438,15 +466,23 @@ function QuestionCard({
               </button>
             </div>
           )}
+          {q.type === 'CHECKBOX' && <p className="small muted">تُمنح الدرجة كاملة فقط إذا اختار المتدرب كل الإجابات الصحيحة ولم يختر غيرها.</p>}
+        </div>
+      ) : q.type === 'RATING' ? (
+        <div className="qb-text">
+          <div className="qb-stars-fake" aria-hidden="true">
+            {'★★★★★'}
+          </div>
+          <p className="small muted">يقيّم المتدرب من ١ إلى ٥ نجوم. يُحفظ تقييمه لتراه، ولا يدخل في الدرجة.</p>
         </div>
       ) : (
         <div className="qb-text">
           <div className="qb-fake" aria-hidden="true">
-            إجابة المتدرب (فقرة)
+            {q.type === 'SHORT' ? 'إجابة المتدرب (قصيرة)' : 'إجابة المتدرب (فقرة)'}
           </div>
           <label>
             الإجابة النموذجية <span className="hint">(اختيارية، تظهر للمتدرب بعد التسليم ولا تُحتسب في الدرجة)</span>
-            <textarea data-field="model" rows={2} maxLength={LIMITS.body} value={q.modelAnswer} onChange={(e) => onPatch({ modelAnswer: e.target.value })} />
+            <textarea data-field="model" rows={2} maxLength={q.type === 'SHORT' ? LIMITS.short : LIMITS.body} value={q.modelAnswer} onChange={(e) => onPatch({ modelAnswer: e.target.value })} />
           </label>
         </div>
       )}
@@ -458,6 +494,27 @@ function QuestionCard({
       )}
 
       <div className="qb-card-foot">
+        {isGraded(q.type) ? (
+          <label className="qb-inline">
+            الدرجة
+            <input
+              type="number"
+              className="qb-points"
+              min={LIMITS.minPoints}
+              max={LIMITS.maxPoints}
+              step={1}
+              value={Number.isFinite(q.points) ? q.points : ''}
+              aria-label={`درجة السؤال ${n}`}
+              onChange={(e) => onPatch({ points: e.target.value === '' ? Number.NaN : Number(e.target.value) })}
+            />
+          </label>
+        ) : (
+          <span className="small muted">بلا درجة آلية</span>
+        )}
+        <label className="qb-inline qb-required">
+          <input type="checkbox" checked={q.required} onChange={(e) => onPatch({ required: e.target.checked })} />
+          مطلوب
+        </label>
         <label className="qb-inline">
           الصعوبة
           <select value={q.difficulty} onChange={(e) => onPatch({ difficulty: e.target.value as Difficulty })}>
@@ -506,18 +563,26 @@ function Preview({ title, questions }: { title: string; questions: BuilderQuesti
         <section key={q.key} className="qb-card">
           <p className="qb-pq">
             {formatNumber(i + 1)}. {q.body.trim() || <span className="muted">(سؤال بلا نص)</span>}
+            {q.required && <span className="qb-req"> *</span>}
+            {isGraded(q.type) && <span className="badge"> {formatNumber(q.points)} {q.points === 1 ? 'درجة' : 'درجات'}</span>}
           </p>
-          {q.type === 'MCQ' ? (
+          {hasOptions(q.type) ? (
             <div className="qb-options">
               {q.options
                 .filter((o) => o.trim())
                 .map((o, j) => (
                   <label key={j} className="qb-opt">
-                    <input type="radio" name={`pv-${q.key}`} />
+                    <input type={q.type === 'MCQ' ? 'radio' : 'checkbox'} name={`pv-${q.key}`} />
                     <span>{o}</span>
                   </label>
                 ))}
             </div>
+          ) : q.type === 'RATING' ? (
+            <div className="qb-stars-fake" aria-label="تقييم من ١ إلى ٥">
+              {'☆☆☆☆☆'}
+            </div>
+          ) : q.type === 'SHORT' ? (
+            <input type="text" placeholder="اكتب إجابتك هنا…" aria-label={`إجابة السؤال ${formatNumber(i + 1)}`} />
           ) : (
             <textarea rows={3} placeholder="اكتب إجابتك هنا…" aria-label={`إجابة السؤال ${formatNumber(i + 1)}`} />
           )}

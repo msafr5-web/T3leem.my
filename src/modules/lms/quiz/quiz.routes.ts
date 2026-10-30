@@ -20,6 +20,9 @@ const questionJson = (q: QuizQuestionRow) => ({
   type: q.type,
   options: q.options,
   correct_answer: q.correctAnswer,
+  correct_options: q.correctOptions,
+  points: q.points,
+  required: q.required,
   difficulty: q.difficulty,
   day_id: q.moduleId,
 });
@@ -34,9 +37,13 @@ const resultJson = (r: QuizResult) => ({
     body: q.body,
     type: q.type,
     options: q.options,
+    points: q.points,
+    required: q.required,
     your_answer: q.yourAnswer,
     correct_answer: q.correctAnswer,
+    correct_options: q.correctOptions,
     is_correct: q.isCorrect,
+    earned: q.earned,
   })),
 });
 
@@ -56,14 +63,18 @@ const statusJson = (s: QuizStatus) => ({
         : {
             state: 'in_progress',
             expires_at: s.attempt.expiresAt.toISOString(),
-            questions: s.attempt.questions.map((q) => ({ id: q.id, body: q.body, type: q.type, options: q.options })),
+            questions: s.attempt.questions.map((q) => ({ id: q.id, body: q.body, type: q.type, options: q.options, points: q.points ?? 1, required: q.required ?? false })),
           },
 });
 
 const questionRules = [
   body('day_id').optional({ values: 'null' }).isUUID().withMessage('day_id must be a UUID'),
   body('body').isString().trim().isLength({ min: 1, max: QUIZ_LIMITS.maxBodyLength }).withMessage('body is required'),
-  body('type').isIn(['MCQ', 'TEXT']),
+  body('type').isIn(['MCQ', 'CHECKBOX', 'SHORT', 'TEXT', 'RATING']),
+  body('points').optional().isInt({ min: QUIZ_LIMITS.points.min, max: QUIZ_LIMITS.points.max }).withMessage('points must be 1-100'),
+  body('required').optional().isBoolean(),
+  body('correct_options').optional().isArray({ max: QUIZ_LIMITS.options.max }).withMessage('correct_options must be a list'),
+  body('correct_options.*').isString().isLength({ max: QUIZ_LIMITS.maxOptionLength }),
   body('options').optional().isArray({ max: QUIZ_LIMITS.options.max }).withMessage('options must be a list'),
   body('options.*').isString().isLength({ max: QUIZ_LIMITS.maxOptionLength }),
   body('correct_answer').optional({ values: 'null' }).isString().isLength({ max: QUIZ_LIMITS.maxBodyLength }),
@@ -73,9 +84,12 @@ const questionRules = [
 const draftOf = (b: Record<string, unknown>): QuestionDraft => ({
   dayId: typeof b.day_id === 'string' && b.day_id ? b.day_id : null,
   body: String(b.body),
-  type: b.type === 'TEXT' ? 'TEXT' : 'MCQ',
+  type: ['CHECKBOX', 'SHORT', 'TEXT', 'RATING'].includes(String(b.type)) ? (b.type as QuestionDraft['type']) : 'MCQ',
   options: Array.isArray(b.options) ? b.options.map(String) : [],
   correctAnswer: typeof b.correct_answer === 'string' ? b.correct_answer : '',
+  correctOptions: Array.isArray(b.correct_options) ? b.correct_options.map(String) : [],
+  points: b.points === undefined || b.points === null || b.points === '' ? 1 : Number(b.points),
+  required: b.required === true || b.required === 'true',
   difficulty: b.difficulty === 'EASY' || b.difficulty === 'HARD' ? b.difficulty : 'MEDIUM',
 });
 

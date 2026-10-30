@@ -12,6 +12,7 @@ import type {
   QuizSettings,
   QuizWindow,
 } from '../../../src/modules/lms/quiz/quiz.repository';
+import type { ParsedQuestion } from '../../../src/modules/lms/quiz/quiz.excel';
 import { QuizService } from '../../../src/modules/lms/quiz/quiz.service';
 
 export interface QuizFakeOptions {
@@ -63,7 +64,7 @@ export class InMemoryQuizRepository implements QuizRepository {
     tenantId: string,
     _a: unknown,
     courseId: string,
-    rows: { code: string; body: string; type: 'MCQ' | 'TEXT'; options: string[]; correctAnswer: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; moduleId: string | null }[],
+    rows: (ParsedQuestion & { moduleId: string | null })[],
     mode: 'append' | 'replace',
   ): Promise<ImportOutcome | null> {
     if (!this.mine(tenantId, courseId)) return null;

@@ -1,0 +1,950 @@
+diff --git a/web/app/[tenant]/dashboard/recorded/[id]/page.tsx b/web/app/[tenant]/dashboard/recorded/[id]/page.tsx
+index 3ecf36d..af7d9f7 100644
+--- a/web/app/[tenant]/dashboard/recorded/[id]/page.tsx
++++ b/web/app/[tenant]/dashboard/recorded/[id]/page.tsx
+@@ -36,6 +36,11 @@ export default async function RecordedCourseSchedule({
+   ]);
+   const breakMinutes = course.config?.break_minutes ?? 5;
+   const discussionMinutes = course.config?.discussion_minutes ?? 15;
++  const builderHref = `/${slug}/dashboard/recorded/${course.id}/quiz-builder`;
++  const totalQuestions = quiz?.questions.length ?? 0;
++  const coveredDays = quiz?.days.filter((d) => d.question_count > 0).length ?? 0;
++  // Before publishing, the next step is the quiz questions; afterwards, publishing stays the main action.
++  const quizFirst = !course.is_published && totalQuestions === 0;
+ 
+   return (
+     <>
+@@ -49,7 +54,10 @@ export default async function RecordedCourseSchedule({
+           </p>
+         </div>
+         <div className="cta-row">
+-          <Link href={`/${slug}/dashboard/courses/${course.id}`} className="btn btn-primary">
++          <Link href={builderHref} className={`btn ${quizFirst ? 'btn-primary' : 'btn-ghost'}`}>
++            إعداد أسئلة الاختبار
++          </Link>
++          <Link href={`/${slug}/dashboard/courses/${course.id}`} className={`btn ${quizFirst ? 'btn-ghost' : 'btn-primary'}`}>
+             السعر والنشر والترخيص
+           </Link>
+           {course.is_published && (
+@@ -58,7 +66,7 @@ export default async function RecordedCourseSchedule({
+             </Link>
+           )}
+           <a href="#quiz" className="btn btn-ghost">
+-            استيراد الأسئلة
++            استيراد من Excel
+           </a>
+           <a href={`/${slug}/dashboard/recorded/${course.id}/quiz/export${quiz && quiz.questions.length > 0 ? '' : '?template=1'}`} className="btn btn-ghost" download>
+             {quiz && quiz.questions.length > 0 ? 'تصدير الأسئلة' : 'قالب الأسئلة'}
+@@ -76,6 +84,43 @@ export default async function RecordedCourseSchedule({
+         </div>
+       )}
+ 
++      {!course.is_published && (
++        <section className="card publish-check stack" aria-labelledby="before-publish">
++          <h2 id="before-publish" style={{ fontSize: 18 }}>
++            قبل نشر الدورة
++          </h2>
++          <ul>
++            <li>
++              <span className="tick" aria-hidden="true">
++                ✓
++              </span>
++              <span>أُنشئت الدورة وقُسّم الفيديو إلى {formatNumber(course.days.length)} {course.days.length === 1 ? 'يوم' : 'أيام'}.</span>
++            </li>
++            <li>
++              <span className={totalQuestions > 0 ? 'tick' : 'todo'} aria-hidden="true">
++                {totalQuestions > 0 ? '✓' : '!'}
++              </span>
++              <span>
++                {totalQuestions > 0
++                  ? `أسئلة الاختبار: ${formatNumber(totalQuestions)} ${totalQuestions === 1 ? 'سؤال' : 'أسئلة'} تغطي ${formatNumber(coveredDays)} من ${formatNumber(course.days.length)} أيام${quiz && quiz.shared_count > 0 ? ` + ${formatNumber(quiz.shared_count)} مشتركة` : ''}.`
++                  : 'لم تُضف أسئلة الاختبار بعد: بدونها لن يجد المتدربون اختباراً في نهاية الأيام.'}
++              </span>
++            </li>
++            <li>
++              <span className="todo" aria-hidden="true">
++                !
++              </span>
++              <span>حدّد السعر والترخيص ثم انشر الدورة من «السعر والنشر والترخيص».</span>
++            </li>
++          </ul>
++          <div className="cta-row">
++            <Link href={builderHref} className={`btn ${quizFirst ? 'btn-primary' : 'btn-ghost'}`}>
++              {totalQuestions > 0 ? 'تعديل أسئلة الاختبار' : 'ابدأ إعداد أسئلة الاختبار'}
++            </Link>
++          </div>
++        </section>
++      )}
++
+       <section className="card stack" aria-labelledby="schedule">
+         <h2 id="schedule" style={{ fontSize: 18 }}>
+           الجدولة
+diff --git a/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/builder-model.ts b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/builder-model.ts
+new file mode 100644
+index 0000000..d78c86a
+--- /dev/null
++++ b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/builder-model.ts
+@@ -0,0 +1,112 @@
++import type { AdminQuizQuestion } from '@/lib/api';
++
++/**
++ * Pure model of the quiz form builder: question shape, validation and the payload sent to the
++ * server. No React and no I/O, so the same rules can be exercised in isolation. The limits and
++ * checks mirror `QuizService.validated` in the API (the API remains the authority; this is for
++ * instant feedback while the supervisor types).
++ */
++
++export const LIMITS = { body: 2000, option: 300, minOptions: 2, maxOptions: 6 } as const;
++
++export type QuestionType = 'MCQ' | 'TEXT';
++export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
++
++export interface BuilderQuestion {
++  /** Stable client-side key (an id from the server only exists once the question is saved). */
++  key: string;
++  id: string | null;
++  /** The course day this question belongs to; null = shared pool used by days without questions. */
++  dayId: string | null;
++  type: QuestionType;
++  body: string;
++  /** Option texts as typed, including empty rows (MCQ). */
++  options: string[];
++  /** Index into `options` of the correct answer (MCQ). */
++  correct: number;
++  modelAnswer: string;
++  difficulty: Difficulty;
++}
++
++/** One question as the save action receives it. */
++export interface PayloadQuestion {
++  key: string;
++  id: string | null;
++  day_id: string | null;
++  type: QuestionType;
++  body: string;
++  difficulty: Difficulty;
++  options: string[];
++  correct_answer: string;
++}
++
++export interface SavePayload {
++  upserts: PayloadQuestion[];
++  deletes: string[];
++}
++
++let counter = 0;
++export const newKey = (): string => `q${Date.now().toString(36)}${(counter++).toString(36)}`;
++
++export function blankQuestion(dayId: string | null): BuilderQuestion {
++  return { key: newKey(), id: null, dayId, type: 'MCQ', body: '', options: ['', ''], correct: 0, modelAnswer: '', difficulty: 'MEDIUM' };
++}
++
++export function fromServer(q: AdminQuizQuestion): BuilderQuestion {
++  const options = q.type === 'MCQ' ? [...q.options] : ['', ''];
++  return {
++    key: q.id,
++    id: q.id,
++    dayId: q.day_id,
++    type: q.type,
++    body: q.body,
++    options,
++    correct: q.type === 'MCQ' ? Math.max(0, q.options.indexOf(q.correct_answer)) : 0,
++    modelAnswer: q.type === 'TEXT' ? q.correct_answer : '',
++    difficulty: q.difficulty,
++  };
++}
++
++/** A copy that is a brand-new question (no server id), placed right after the original by the caller. */
++export const duplicateOf = (q: BuilderQuestion): BuilderQuestion => ({ ...q, key: newKey(), id: null, options: [...q.options] });
++
++/** Arabic message for the first problem found, or null when the question can be saved. */
++export function validateQuestion(q: BuilderQuestion): string | null {
++  const body = q.body.trim();
++  if (!body) return 'اكتب نص السؤال.';
++  if (body.length > LIMITS.body) return `نص السؤال أطول من ${LIMITS.body} حرفاً.`;
++
++  if (q.type === 'TEXT') {
++    return q.modelAnswer.trim().length > LIMITS.body ? 'الإجابة النموذجية طويلة جداً.' : null;
++  }
++
++  const typed = q.options.map((o) => o.trim());
++  const filled = typed.filter(Boolean);
++  if (filled.length < LIMITS.minOptions) return 'أضف خيارين على الأقل.';
++  if (filled.some((o) => o.length > LIMITS.option)) return `أحد الخيارات أطول من ${LIMITS.option} حرفاً.`;
++  if (new Set(filled.map((o) => o.toLowerCase())).size !== filled.length) return 'الخيارات يجب ألا تتكرر.';
++  if (!typed[q.correct]) return 'حدّد الإجابة الصحيحة بالضغط على الدائرة بجانبها.';
++  return null;
++}
++
++/** What the API gets: empty option rows dropped, the correct answer sent as its text. */
++export function toPayload(q: BuilderQuestion): PayloadQuestion {
++  const base = { key: q.key, id: q.id, day_id: q.dayId, type: q.type, body: q.body.trim(), difficulty: q.difficulty };
++  if (q.type === 'TEXT') return { ...base, options: [], correct_answer: q.modelAnswer.trim() };
++  const options = q.options.map((o) => o.trim()).filter(Boolean);
++  return { ...base, options, correct_answer: (q.options[q.correct] ?? '').trim() };
++}
++
++/** Comparable snapshot of everything the server stores, used to find what changed since the last save. */
++export function fingerprint(q: BuilderQuestion): string {
++  const p = toPayload(q);
++  return JSON.stringify([p.day_id, p.type, p.body, p.difficulty, p.options, p.correct_answer]);
++}
++
++/** Only new or edited questions are sent; untouched ones are not re-saved. */
++export function buildPayload(questions: BuilderQuestion[], saved: ReadonlyMap<string, string>, deletedIds: readonly string[]): SavePayload {
++  return {
++    upserts: questions.filter((q) => saved.get(q.key) !== fingerprint(q)).map(toPayload),
++    deletes: [...deletedIds],
++  };
++}
+diff --git a/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/page.tsx b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/page.tsx
+new file mode 100644
+index 0000000..ec5e363
+--- /dev/null
++++ b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/page.tsx
+@@ -0,0 +1,40 @@
++import type { Metadata } from 'next';
++import { notFound } from 'next/navigation';
++import { ApiError, admin, type AdminQuiz, type RecordedCourseDetail } from '@/lib/api';
++import { requireAdmin } from '@/lib/admin';
++import { fromServer } from './builder-model';
++import { QuizFormBuilder } from './quiz-form-builder';
++
++export const metadata: Metadata = { title: 'فورم أسئلة الاختبار' };
++
++/**
++ * Form for setting a recorded course's end-of-day questions, reachable right after the course is
++ * created and before it is published. Loads the whole bank once; the client edits it in memory and
++ * saves only the changes (see saveQuizFormAction).
++ */
++export default async function QuizBuilderPage({ params }: { params: Promise<{ tenant: string; id: string }> }) {
++  const { tenant: slug, id } = await params;
++  const token = await requireAdmin(slug);
++
++  let course: RecordedCourseDetail;
++  let quiz: AdminQuiz;
++  try {
++    [course, quiz] = await Promise.all([admin.recordedCourse(slug, token, id), admin.quiz(slug, token, id)]);
++  } catch (err) {
++    if (err instanceof ApiError && (err.status === 404 || err.status === 422)) notFound();
++    throw err;
++  }
++
++  return (
++    <QuizFormBuilder
++      slug={slug}
++      courseId={course.id}
++      courseTitle={course.title}
++      days={course.days.map((d) => ({ id: d.id, title: d.title }))}
++      initial={quiz.questions.map(fromServer)}
++      perLearner={quiz.settings.question_count}
++      durationMinutes={quiz.settings.duration_minutes}
++      isPublished={course.is_published}
++    />
++  );
++}
+diff --git a/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/quiz-form-builder.tsx b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/quiz-form-builder.tsx
+new file mode 100644
+index 0000000..9d98eae
+--- /dev/null
++++ b/web/app/[tenant]/dashboard/recorded/[id]/quiz-builder/quiz-form-builder.tsx
+@@ -0,0 +1,529 @@
++'use client';
++
++import Link from 'next/link';
++import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
++import { saveQuizFormAction } from '@/lib/admin-actions';
++import { formatNumber } from '@/lib/format';
++import { LIMITS, blankQuestion, buildPayload, duplicateOf, fingerprint, validateQuestion, type BuilderQuestion, type Difficulty, type QuestionType } from './builder-model';
++
++const SHARED = 'shared';
++const DIFFICULTY: Record<Difficulty, string> = { EASY: 'سهل', MEDIUM: 'متوسط', HARD: 'صعب' };
++
++interface Props {
++  slug: string;
++  courseId: string;
++  courseTitle: string;
++  days: { id: string; title: string }[];
++  initial: BuilderQuestion[];
++  perLearner: number;
++  durationMinutes: number;
++  isPublished: boolean;
++}
++
++type Status = { kind: 'idle' | 'saving' | 'saved' | 'error'; text: string };
++
++const focusField = (key: string, field: string) =>
++  setTimeout(() => {
++    document.querySelector<HTMLElement>(`[data-q="${key}"] [data-field="${field}"]`)?.focus();
++  }, 0);
++
++const scrollToQuestion = (key: string) =>
++  setTimeout(() => {
++    document.querySelector<HTMLElement>(`[data-q="${key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
++  }, 0);
++
++/**
++ * A Google-Forms-style editor for a course's end-of-day quizzes: one card per question, a tab per
++ * course day (like a form's sections), add/duplicate/delete, answer key by clicking the right
++ * option, a learner preview, and one Save that sends only what changed.
++ */
++export function QuizFormBuilder({ slug, courseId, courseTitle, days, initial, perLearner, durationMinutes, isPublished }: Props) {
++  const [questions, setQuestions] = useState<BuilderQuestion[]>(initial);
++  const [savedMap, setSavedMap] = useState<Record<string, string>>(() => Object.fromEntries(initial.map((q) => [q.key, fingerprint(q)])));
++  const [deleted, setDeleted] = useState<string[]>([]);
++  const [tab, setTab] = useState<string>(days[0]?.id ?? SHARED);
++  const [activeKey, setActiveKey] = useState<string | null>(initial.find((q) => (q.dayId ?? SHARED) === (days[0]?.id ?? SHARED))?.key ?? null);
++  const [preview, setPreview] = useState(false);
++  const [showErrors, setShowErrors] = useState(false);
++  const [failedKey, setFailedKey] = useState<string | null>(null);
++  const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
++  const [undo, setUndo] = useState<{ q: BuilderQuestion; index: number } | null>(null);
++
++  const saving = status.kind === 'saving';
++  const savedLookup = useMemo(() => new Map(Object.entries(savedMap)), [savedMap]);
++  const payload = useMemo(() => buildPayload(questions, savedLookup, deleted), [questions, savedLookup, deleted]);
++  const dirty = payload.upserts.length > 0 || payload.deletes.length > 0;
++
++  const dayOf = (q: BuilderQuestion) => q.dayId ?? SHARED;
++  const inTab = useMemo(() => questions.filter((q) => dayOf(q) === tab), [questions, tab]);
++  const counts = useMemo(() => {
++    const m = new Map<string, number>();
++    for (const q of questions) m.set(dayOf(q), (m.get(dayOf(q)) ?? 0) + 1);
++    return m;
++  }, [questions]);
++  const sharedCount = counts.get(SHARED) ?? 0;
++  const uncovered = days.filter((d) => !counts.get(d.id));
++  const tabTitle = tab === SHARED ? 'الأسئلة المشتركة' : (days.find((d) => d.id === tab)?.title ?? '');
++
++  // ---- editing -------------------------------------------------------------------------------
++
++  // Any edit makes an old "saved" or error message stale; the "unsaved changes" label takes over.
++  const touch = () => setStatus((s) => (s.kind === 'saving' || s.kind === 'idle' ? s : { kind: 'idle', text: '' }));
++
++  const patch = (key: string, change: Partial<BuilderQuestion>) => {
++    touch();
++    setQuestions((qs) => qs.map((q) => (q.key === key ? { ...q, ...change } : q)));
++  };
++
++  const addQuestion = () => {
++    touch();
++    const q = blankQuestion(tab === SHARED ? null : tab);
++    setQuestions((qs) => {
++      const at = activeKey ? qs.findIndex((x) => x.key === activeKey && dayOf(x) === tab) : -1;
++      if (at < 0) return [...qs, q];
++      return [...qs.slice(0, at + 1), q, ...qs.slice(at + 1)];
++    });
++    setPreview(false);
++    setActiveKey(q.key);
++    scrollToQuestion(q.key);
++    focusField(q.key, 'body');
++  };
++
++  const changeType = (q: BuilderQuestion, type: QuestionType) => {
++    if (type === q.type) return;
++    patch(q.key, { type, options: q.options.length >= LIMITS.minOptions ? q.options : ['', ''] });
++  };
++
++  const addOption = (q: BuilderQuestion) => {
++    if (q.options.length >= LIMITS.maxOptions) return;
++    patch(q.key, { options: [...q.options, ''] });
++    focusField(q.key, `option-${q.options.length}`);
++  };
++
++  const removeOption = (q: BuilderQuestion, i: number) => {
++    if (q.options.length <= LIMITS.minOptions) return;
++    // Removing the right answer leaves none selected, so the supervisor must choose again on purpose.
++    const correct = i < q.correct ? q.correct - 1 : i === q.correct ? -1 : q.correct;
++    patch(q.key, { options: q.options.filter((_, j) => j !== i), correct });
++  };
++
++  const optionKey = (q: BuilderQuestion, i: number, e: KeyboardEvent<HTMLInputElement>) => {
++    if (e.key === 'Enter') {
++      e.preventDefault();
++      if (i < q.options.length - 1) focusField(q.key, `option-${i + 1}`);
++      else addOption(q);
++    } else if (e.key === 'Backspace' && e.currentTarget.value === '' && q.options.length > LIMITS.minOptions) {
++      e.preventDefault();
++      removeOption(q, i);
++      focusField(q.key, `option-${Math.max(0, i - 1)}`);
++    }
++  };
++
++  const duplicate = (q: BuilderQuestion) => {
++    touch();
++    const copy = duplicateOf(q);
++    setQuestions((qs) => {
++      const at = qs.findIndex((x) => x.key === q.key);
++      return [...qs.slice(0, at + 1), copy, ...qs.slice(at + 1)];
++    });
++    setActiveKey(copy.key);
++    scrollToQuestion(copy.key);
++    focusField(copy.key, 'body');
++  };
++
++  const remove = (q: BuilderQuestion) => {
++    touch();
++    const index = questions.findIndex((x) => x.key === q.key);
++    setQuestions((qs) => qs.filter((x) => x.key !== q.key));
++    if (q.id) setDeleted((d) => [...d, q.id as string]);
++    setUndo({ q, index });
++    setActiveKey(null);
++  };
++
++  const undoRemove = () => {
++    if (!undo) return;
++    touch();
++    const { q, index } = undo;
++    setQuestions((qs) => [...qs.slice(0, index), q, ...qs.slice(index)]);
++    if (q.id) setDeleted((d) => d.filter((id) => id !== q.id));
++    setActiveKey(q.key);
++    setUndo(null);
++  };
++
++  useEffect(() => {
++    if (!undo) return;
++    const t = setTimeout(() => setUndo(null), 8000);
++    return () => clearTimeout(t);
++  }, [undo]);
++
++  // ---- saving --------------------------------------------------------------------------------
++
++  const save = useCallback(async () => {
++    if (saving) return;
++    const invalid = questions.filter((q) => validateQuestion(q));
++    if (invalid.length > 0) {
++      const first = invalid[0] as BuilderQuestion;
++      setShowErrors(true);
++      setPreview(false);
++      setTab(dayOf(first));
++      setActiveKey(first.key);
++      scrollToQuestion(first.key);
++      setStatus({ kind: 'error', text: `يوجد ${formatNumber(invalid.length)} ${invalid.length === 1 ? 'سؤال يحتاج' : 'أسئلة تحتاج'} إلى تصحيح قبل الحفظ.` });
++      return;
++    }
++    if (!dirty) {
++      setStatus({ kind: 'saved', text: 'لا توجد تغييرات جديدة.' });
++      return;
++    }
++    setStatus({ kind: 'saving', text: 'جارٍ الحفظ…' });
++    setFailedKey(null);
++    const res = await saveQuizFormAction(slug, courseId, JSON.stringify(payload)).catch(() => null);
++    if (!res) {
++      setStatus({ kind: 'error', text: 'تعذّر الاتصال بالخادم. تغييراتك ما زالت هنا، حاول مرة أخرى.' });
++      return;
++    }
++    // Questions created before a failure already exist on the server: remember their ids so a retry updates instead of duplicating.
++    const withIds = questions.map((q) => (res.created[q.key] ? { ...q, id: res.created[q.key] as string } : q));
++    setQuestions(withIds);
++    if (res.ok) {
++      setSavedMap(Object.fromEntries(withIds.map((q) => [q.key, fingerprint(q)])));
++      setDeleted([]);
++      setShowErrors(false);
++      setStatus({ kind: 'saved', text: `تم الحفظ ${new Intl.DateTimeFormat('ar-SA', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Riyadh' }).format(new Date())}` });
++      return;
++    }
++    setSavedMap((m) => ({ ...m, ...Object.fromEntries(withIds.filter((q) => res.created[q.key]).map((q) => [q.key, fingerprint(q)])) }));
++    if (res.failedKey) {
++      const failed = withIds.find((q) => q.key === res.failedKey);
++      setFailedKey(res.failedKey);
++      if (failed) {
++        setTab(dayOf(failed));
++        setActiveKey(failed.key);
++        scrollToQuestion(failed.key);
++      }
++    }
++    setStatus({ kind: 'error', text: res.error ?? 'تعذّر الحفظ.' });
++  }, [saving, questions, dirty, payload, slug, courseId]);
++
++  const saveRef = useRef(save);
++  saveRef.current = save;
++  useEffect(() => {
++    const onKey = (e: globalThis.KeyboardEvent) => {
++      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
++        e.preventDefault();
++        void saveRef.current();
++      }
++    };
++    window.addEventListener('keydown', onKey);
++    return () => window.removeEventListener('keydown', onKey);
++  }, []);
++
++  useEffect(() => {
++    if (!dirty) return;
++    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
++    window.addEventListener('beforeunload', warn);
++    return () => window.removeEventListener('beforeunload', warn);
++  }, [dirty]);
++
++  // ---- render --------------------------------------------------------------------------------
++
++  const back = `/${slug}/dashboard/recorded/${courseId}`;
++  const tabs = [...days.map((d) => ({ id: d.id, title: d.title })), { id: SHARED, title: 'أسئلة مشتركة' }];
++
++  return (
++    <div className="qb">
++      <div className="qb-bar">
++        <Link href={back} className="qb-back">
++          ← الدورة
++        </Link>
++        <strong className="qb-bar-title">أسئلة الاختبار</strong>
++        <span className={`qb-status ${status.kind}`} role="status" aria-live="polite">
++          {dirty && status.kind !== 'saving' && status.kind !== 'error' ? 'تغييرات غير محفوظة' : status.text}
++        </span>
++        <button type="button" className="btn btn-ghost" aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
++          {preview ? 'العودة للتحرير' : 'معاينة'}
++        </button>
++        <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={saving}>
++          {saving ? 'جارٍ الحفظ…' : 'حفظ الأسئلة'}
++        </button>
++        <Link href={`/${slug}/dashboard/courses/${courseId}`} className="btn btn-ghost">
++          {isPublished ? 'إعدادات الدورة' : 'التالي: السعر والنشر'}
++        </Link>
++      </div>
++
++      <section className="qb-head" aria-labelledby="qb-title">
++        <p className="qb-eyebrow">اختبار نهاية اليوم</p>
++        <h1 id="qb-title">{courseTitle}</h1>
++        <p className="muted small">
++          في نهاية كل يوم يُسحب لكل متدرب {formatNumber(perLearner)} {perLearner === 1 ? 'سؤال' : 'أسئلة'} عشوائياً من أسئلة ذلك اليوم خلال {formatNumber(durationMinutes)} دقيقة، بمحاولة واحدة. الأيام التي بلا أسئلة تُسحب أسئلتها من «الأسئلة المشتركة».{' '}
++          <Link href={`${back}#quiz`}>الإعدادات والمواعيد والاستيراد من Excel</Link>
++        </p>
++      </section>
++
++      {questions.length > 0 && uncovered.length > 0 && sharedCount === 0 && (
++        <p className="notice sandbox small">
++          لا أسئلة لـ{uncovered.map((d) => d.title).join('، ')} ولا أسئلة مشتركة، فلن يظهر اختبار في هذه الأيام.
++        </p>
++      )}
++
++      <div className="qb-tabs" role="tablist" aria-label="أيام الدورة">
++        {tabs.map((t) => {
++          const n = counts.get(t.id) ?? 0;
++          return (
++            <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls="qb-panel" className={`qb-tab${tab === t.id ? ' on' : ''}`} onClick={() => setTab(t.id)}>
++              {t.title}
++              <span className={`badge ${n > 0 ? 'ok' : t.id === SHARED ? '' : 'draft'}`}>{formatNumber(n)}</span>
++            </button>
++          );
++        })}
++      </div>
++
++      <div className="qb-layout">
++        <div id="qb-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="qb-list">
++          {preview ? (
++            <Preview title={tabTitle} questions={inTab} />
++          ) : (
++            <fieldset className="qb-fieldset" disabled={saving}>
++              <legend className="visually-hidden">أسئلة {tabTitle}</legend>
++              {inTab.length === 0 && (
++                <div className="qb-empty">
++                  <p>
++                    <strong>لا أسئلة في {tabTitle} بعد.</strong>
++                  </p>
++                  <p className="small muted">
++                    {tab !== SHARED && sharedCount > 0 ? `سيحصل المتدربون في هذا اليوم على أسئلة من المجموعة المشتركة (${formatNumber(sharedCount)}).` : 'أضف أول سؤال لهذا اليوم.'}
++                  </p>
++                  <button type="button" className="btn btn-primary" onClick={addQuestion}>
++                    + إضافة سؤال
++                  </button>
++                </div>
++              )}
++              {inTab.map((q, i) => (
++                <QuestionCard
++                  key={q.key}
++                  q={q}
++                  index={i}
++                  active={activeKey === q.key}
++                  failed={failedKey === q.key}
++                  error={showErrors || failedKey === q.key ? validateQuestion(q) : null}
++                  days={days}
++                  onActivate={() => setActiveKey(q.key)}
++                  onPatch={(c) => patch(q.key, c)}
++                  onType={(t) => changeType(q, t)}
++                  onAddOption={() => addOption(q)}
++                  onRemoveOption={(j) => removeOption(q, j)}
++                  onOptionKey={(j, e) => optionKey(q, j, e)}
++                  onDuplicate={() => duplicate(q)}
++                  onDelete={() => remove(q)}
++                />
++              ))}
++            </fieldset>
++          )}
++        </div>
++
++        <div className="qb-tools" role="toolbar" aria-label="أدوات النموذج">
++          <button type="button" className="qb-tool" onClick={addQuestion} title="إضافة سؤال" aria-label="إضافة سؤال">
++            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
++              <circle cx="12" cy="12" r="9" />
++              <path d="M12 8v8M8 12h8" />
++            </svg>
++          </button>
++          <Link href={`${back}#quiz`} className="qb-tool" title="استيراد من Excel" aria-label="استيراد الأسئلة من Excel">
++            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
++              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
++              <path d="M14 3v5h5M9 13l4 4m0-4l-4 4" />
++            </svg>
++          </Link>
++          <button type="button" className="qb-tool" aria-pressed={preview} onClick={() => setPreview((p) => !p)} title="معاينة" aria-label="معاينة كما يراها المتدرب">
++            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
++              <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
++              <circle cx="12" cy="12" r="3" />
++            </svg>
++          </button>
++        </div>
++      </div>
++
++      {undo && (
++        <div className="qb-toast" role="status">
++          حُذف السؤال.{' '}
++          <button type="button" onClick={undoRemove}>
++            تراجع
++          </button>
++        </div>
++      )}
++    </div>
++  );
++}
++
++function QuestionCard({
++  q,
++  index,
++  active,
++  failed,
++  error,
++  days,
++  onActivate,
++  onPatch,
++  onType,
++  onAddOption,
++  onRemoveOption,
++  onOptionKey,
++  onDuplicate,
++  onDelete,
++}: {
++  q: BuilderQuestion;
++  index: number;
++  active: boolean;
++  failed: boolean;
++  error: string | null;
++  days: { id: string; title: string }[];
++  onActivate: () => void;
++  onPatch: (change: Partial<BuilderQuestion>) => void;
++  onType: (t: QuestionType) => void;
++  onAddOption: () => void;
++  onRemoveOption: (i: number) => void;
++  onOptionKey: (i: number, e: KeyboardEvent<HTMLInputElement>) => void;
++  onDuplicate: () => void;
++  onDelete: () => void;
++}) {
++  const n = formatNumber(index + 1);
++  return (
++    <article className={`qb-card${active ? ' active' : ''}${error ? ' invalid' : ''}${failed ? ' failed' : ''}`} data-q={q.key} onFocusCapture={onActivate} onClick={onActivate} aria-label={`السؤال ${n}`}>
++      <div className="qb-card-top">
++        <span className="qb-num" aria-hidden="true">
++          {n}
++        </span>
++        <textarea
++          data-field="body"
++          className="qb-title"
++          rows={1}
++          maxLength={LIMITS.body}
++          placeholder="نص السؤال"
++          aria-label={`نص السؤال ${n}`}
++          aria-invalid={error ? true : undefined}
++          value={q.body}
++          onChange={(e) => onPatch({ body: e.target.value })}
++        />
++        <select data-field="type" className="qb-type" aria-label={`نوع السؤال ${n}`} value={q.type} onChange={(e) => onType(e.target.value as QuestionType)}>
++          <option value="MCQ">اختيار من متعدد</option>
++          <option value="TEXT">إجابة نصية (فقرة)</option>
++        </select>
++      </div>
++
++      {q.type === 'MCQ' ? (
++        <div className="qb-options">
++          {q.options.map((o, i) => (
++            <div key={i} className={`qb-opt${q.correct === i ? ' correct' : ''}`}>
++              <input type="radio" name={`correct-${q.key}`} checked={q.correct === i} onChange={() => onPatch({ correct: i })} aria-label={`الخيار ${formatNumber(i + 1)} هو الإجابة الصحيحة`} title="الإجابة الصحيحة" />
++              <input
++                type="text"
++                data-field={`option-${i}`}
++                value={o}
++                maxLength={LIMITS.option}
++                placeholder={`خيار ${formatNumber(i + 1)}`}
++                aria-label={`نص الخيار ${formatNumber(i + 1)}`}
++                onChange={(e) => onPatch({ options: q.options.map((x, j) => (j === i ? e.target.value : x)) })}
++                onKeyDown={(e) => onOptionKey(i, e)}
++              />
++              {q.correct === i && <span className="qb-right-tag">الإجابة الصحيحة</span>}
++              <button type="button" className="qb-x" onClick={() => onRemoveOption(i)} disabled={q.options.length <= LIMITS.minOptions} aria-label={`حذف الخيار ${formatNumber(i + 1)}`}>
++                ✕
++              </button>
++            </div>
++          ))}
++          {q.options.length < LIMITS.maxOptions && (
++            <div className="qb-opt add">
++              <span className="qb-ghost-radio" aria-hidden="true" />
++              <button type="button" className="qb-add-opt" onClick={onAddOption}>
++                إضافة خيار
++              </button>
++            </div>
++          )}
++        </div>
++      ) : (
++        <div className="qb-text">
++          <div className="qb-fake" aria-hidden="true">
++            إجابة المتدرب (فقرة)
++          </div>
++          <label>
++            الإجابة النموذجية <span className="hint">(اختيارية، تظهر للمتدرب بعد التسليم ولا تُحتسب في الدرجة)</span>
++            <textarea data-field="model" rows={2} maxLength={LIMITS.body} value={q.modelAnswer} onChange={(e) => onPatch({ modelAnswer: e.target.value })} />
++          </label>
++        </div>
++      )}
++
++      {error && (
++        <p className="qb-error" role="alert">
++          {error}
++        </p>
++      )}
++
++      <div className="qb-card-foot">
++        <label className="qb-inline">
++          الصعوبة
++          <select value={q.difficulty} onChange={(e) => onPatch({ difficulty: e.target.value as Difficulty })}>
++            {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
++              <option key={d} value={d}>
++                {DIFFICULTY[d]}
++              </option>
++            ))}
++          </select>
++        </label>
++        <label className="qb-inline">
++          اليوم
++          <select value={q.dayId ?? SHARED} onChange={(e) => onPatch({ dayId: e.target.value === SHARED ? null : e.target.value })}>
++            {days.map((d) => (
++              <option key={d.id} value={d.id}>
++                {d.title}
++              </option>
++            ))}
++            <option value={SHARED}>أسئلة مشتركة</option>
++          </select>
++        </label>
++        <span className="qb-spacer" />
++        <button type="button" className="qb-icon" onClick={onDuplicate} title="نسخ السؤال" aria-label={`نسخ السؤال ${n}`}>
++          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
++            <rect x="9" y="9" width="11" height="11" rx="2" />
++            <path d="M5 15V6a2 2 0 0 1 2-2h9" />
++          </svg>
++        </button>
++        <button type="button" className="qb-icon danger" onClick={onDelete} title="حذف السؤال" aria-label={`حذف السؤال ${n}`}>
++          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
++            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
++          </svg>
++        </button>
++      </div>
++    </article>
++  );
++}
++
++/** The quiz as a learner sees it (answers can be tried, nothing is stored or graded). */
++function Preview({ title, questions }: { title: string; questions: BuilderQuestion[] }) {
++  return (
++    <div className="qb-preview">
++      <p className="notice ok small">معاينة {title}: هكذا يراها المتدرب. لا تُحفظ الإجابات هنا.</p>
++      {questions.length === 0 && <p className="qb-empty">لا أسئلة للمعاينة.</p>}
++      {questions.map((q, i) => (
++        <section key={q.key} className="qb-card">
++          <p className="qb-pq">
++            {formatNumber(i + 1)}. {q.body.trim() || <span className="muted">(سؤال بلا نص)</span>}
++          </p>
++          {q.type === 'MCQ' ? (
++            <div className="qb-options">
++              {q.options
++                .filter((o) => o.trim())
++                .map((o, j) => (
++                  <label key={j} className="qb-opt">
++                    <input type="radio" name={`pv-${q.key}`} />
++                    <span>{o}</span>
++                  </label>
++                ))}
++            </div>
++          ) : (
++            <textarea rows={3} placeholder="اكتب إجابتك هنا…" aria-label={`إجابة السؤال ${formatNumber(i + 1)}`} />
++          )}
++        </section>
++      ))}
++    </div>
++  );
++}
+diff --git a/web/app/globals.css b/web/app/globals.css
+index c634045..e2eb2b5 100644
+--- a/web/app/globals.css
++++ b/web/app/globals.css
+@@ -360,3 +360,84 @@ label.checkbox { display: flex; align-items: center; gap: 8px; }
+ .qf-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+ .qf-list li { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+ .qf-list li.right { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
++
++/* ---------- quiz form builder (Google-Forms-style question editor) ---------- */
++.qb { display: grid; gap: 14px; padding-bottom: 80px; }
++.qb-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
++.qb-bar .btn { padding: 8px 14px; }
++.qb-back { color: var(--muted); text-decoration: none; font-size: 14px; }
++.qb-back:hover { color: var(--brand); }
++.qb-bar-title { margin-inline-end: auto; }
++.qb-status { font-size: 13px; color: var(--muted); }
++.qb-status.saved { color: var(--ok); }
++.qb-status.error { color: var(--danger); font-weight: 600; }
++.qb-head { background: var(--surface); border: 1px solid var(--line); border-top: 10px solid var(--brand); border-radius: var(--radius); padding: 20px 22px; display: grid; gap: 6px; }
++.qb-head h1 { font-size: 26px; margin: 0; }
++.qb-head p { margin: 0; }
++.qb-eyebrow { color: var(--brand); font-weight: 600; font-size: 13px; }
++.qb-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
++.qb-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
++.qb-tab:hover { border-color: var(--brand); }
++.qb-tab.on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
++.qb-tab .badge { padding: 0 6px; }
++.qb-layout { display: grid; grid-template-columns: minmax(0, 1fr) 52px; gap: 12px; align-items: start; }
++.qb-list { min-width: 0; }
++.qb-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 12px; }
++.qb-fieldset:disabled { opacity: 0.7; }
++.qb-card { background: var(--surface); border: 1px solid var(--line); border-inline-start: 6px solid transparent; border-radius: var(--radius); padding: 18px 20px; display: grid; gap: 14px; min-width: 0; }
++.qb-card.active { border-inline-start-color: var(--brand); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); }
++.qb-card.invalid { border-color: var(--danger); }
++.qb-card.failed { background: var(--danger-soft); }
++.qb-card-top { display: grid; grid-template-columns: auto minmax(0, 1fr) 190px; gap: 12px; align-items: start; }
++@media (max-width: 640px) { .qb-card-top { grid-template-columns: auto minmax(0, 1fr); } .qb-type { grid-column: 1 / -1; } }
++.qb-num { min-width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 13px; margin-top: 8px; }
++.qb-title { min-height: 46px; field-sizing: content; resize: none; background: var(--bg); border: 0; border-bottom: 2px solid var(--line); border-radius: 6px 6px 0 0; font-size: 16px; padding: 10px 12px; }
++.qb-title:focus { outline: none; border-bottom-color: var(--brand); }
++.qb-options { display: grid; gap: 6px; }
++.qb-opt { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 2px 6px; border-radius: 8px; }
++.qb-opt.correct { background: var(--ok-soft); }
++.qb-opt input[type='radio'] { accent-color: var(--brand); width: 18px; height: 18px; margin: 0; }
++.qb-opt input[type='text'] { border: 0; border-bottom: 1px solid transparent; border-radius: 0; background: transparent; padding: 8px 4px; }
++.qb-opt input[type='text']:hover { border-bottom-color: var(--line); }
++.qb-opt input[type='text']:focus { outline: none; border-bottom-color: var(--brand); }
++.qb-opt.add { grid-template-columns: auto minmax(0, 1fr); }
++.qb-ghost-radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); display: inline-block; }
++.qb-add-opt { background: none; border: 0; padding: 8px 4px; font: inherit; color: var(--muted); cursor: pointer; text-align: start; }
++.qb-add-opt:hover { color: var(--brand); }
++.qb-right-tag { font-size: 12px; font-weight: 600; color: var(--ok); white-space: nowrap; }
++.qb-x { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
++.qb-x:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
++.qb-x:disabled { opacity: 0.3; cursor: not-allowed; }
++.qb-text { display: grid; gap: 12px; }
++.qb-fake { border-bottom: 1px dashed var(--line); color: var(--muted); padding: 8px 4px; font-size: 14px; max-width: 60%; }
++.qb-error { margin: 0; color: var(--danger); font-size: 14px; font-weight: 600; }
++.qb-card-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 12px; }
++.qb-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
++.qb-inline select { width: auto; padding: 6px 10px; }
++.qb-spacer { flex: 1; }
++.qb-icon { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
++.qb-icon:hover { background: var(--brand-soft); color: var(--brand); }
++.qb-icon.danger:hover { background: var(--danger-soft); color: var(--danger); }
++.qb-empty { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; display: grid; gap: 8px; justify-items: center; }
++.qb-empty p { margin: 0; }
++.qb-tools { position: sticky; top: 76px; display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; }
++.qb-tool { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer; text-decoration: none; }
++.qb-tool:hover, .qb-tool[aria-pressed='true'] { background: var(--brand-soft); color: var(--brand); }
++.qb-preview { display: grid; gap: 12px; }
++.qb-preview .qb-card { border-inline-start-color: var(--line); }
++.qb-pq { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
++.qb-preview .qb-opt { grid-template-columns: auto minmax(0, 1fr); padding: 8px; cursor: pointer; }
++.qb-toast { position: fixed; inset-inline-start: 24px; bottom: 24px; z-index: 20; background: var(--ink); color: var(--bg); border-radius: 8px; padding: 10px 16px; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
++.qb-toast button { background: none; border: 0; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; margin-inline-start: 8px; }
++@media (max-width: 640px) {
++  .qb-layout { grid-template-columns: 1fr; }
++  .qb-tools { position: fixed; inset-inline: 12px; bottom: 12px; top: auto; z-index: 6; display: flex; justify-content: center; gap: 18px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
++  .qb-toast { bottom: 76px; inset-inline-start: 12px; }
++  .qb-right-tag { display: none; }
++  .qb-bar-title { flex-basis: 100%; order: -1; margin: 0; }
++}
++.publish-check { border-inline-start: 6px solid var(--amber); }
++.publish-check ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
++.publish-check li { display: flex; gap: 8px; align-items: baseline; }
++.publish-check .tick { font-weight: 700; color: var(--ok); }
++.publish-check .todo { font-weight: 700; color: var(--amber); }
+diff --git a/web/lib/admin-actions.ts b/web/lib/admin-actions.ts
+index 0e14ca4..c7df34d 100644
+--- a/web/lib/admin-actions.ts
++++ b/web/lib/admin-actions.ts
+@@ -577,3 +577,76 @@ export async function saveQuizQuestionAction(slug: string, courseId: string, day
+ export async function deleteDayQuestionAction(slug: string, courseId: string, dayId: string, questionId: string, _prev: AdminFormState): Promise<AdminFormState> {
+   return save(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions/${encodeURIComponent(questionId)}`, 'DELETE', undefined, `/${slug}/dashboard/recorded/${courseId}/quiz/${dayId}`);
+ }
++
++export interface QuizFormResult {
++  ok: boolean;
++  error?: string;
++  /** Client key -> server id for every question created, even when a later one failed (so a retry never duplicates). */
++  created: Record<string, string>;
++  /** Client key of the question whose save failed. */
++  failedKey?: string;
++}
++
++const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++const MAX_FORM_CHANGES = 200;
++
++/**
++ * Saves the quiz form builder: the questions that were added or edited, then the ones removed,
++ * through the same per-question endpoints (and the same server-side validation) as the single
++ * question form. Stays on the page instead of redirecting, so the supervisor keeps their place.
++ * Sequential on purpose: question codes are numbered by the API, and parallel creates would collide.
++ */
++export async function saveQuizFormAction(slug: string, courseId: string, raw: string): Promise<QuizFormResult> {
++  const token = await adminToken(slug);
++  const created: Record<string, string> = {};
++  const fail = (error: string, failedKey?: string): QuizFormResult => ({ ok: false, error, created, ...(failedKey ? { failedKey } : {}) });
++
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(raw);
++  } catch {
++    return fail('تعذّر قراءة الأسئلة. أعد تحميل الصفحة وحاول مرة أخرى.');
++  }
++  const input = parsed as { upserts?: unknown; deletes?: unknown };
++  if (!Array.isArray(input.upserts) || !Array.isArray(input.deletes) || input.upserts.length + input.deletes.length > MAX_FORM_CHANGES) {
++    return fail(`عدد التغييرات كبير. احفظ على دفعات، أو استورد الأسئلة من ملف Excel (حتى ${MAX_FORM_CHANGES} تغييراً في الحفظ الواحد).`);
++  }
++  const deletes = input.deletes.filter((id): id is string => typeof id === 'string' && UUID.test(id));
++  if (deletes.length !== input.deletes.length) return fail('بيانات غير صالحة.');
++
++  const base = `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions`;
++  try {
++    for (const item of input.upserts as Record<string, unknown>[]) {
++      const key = typeof item.key === 'string' ? item.key : '';
++      const id = typeof item.id === 'string' ? item.id : null;
++      if (!key || (id !== null && !UUID.test(id))) return fail('بيانات غير صالحة.', key || undefined);
++      // The API validates every field again; only the shape the form is allowed to send is forwarded.
++      const body = {
++        day_id: typeof item.day_id === 'string' && UUID.test(item.day_id) ? item.day_id : null,
++        body: String(item.body ?? ''),
++        type: item.type === 'TEXT' ? 'TEXT' : 'MCQ',
++        difficulty: item.difficulty === 'EASY' || item.difficulty === 'HARD' ? item.difficulty : 'MEDIUM',
++        options: Array.isArray(item.options) ? item.options.map(String) : [],
++        correct_answer: String(item.correct_answer ?? ''),
++      };
++      try {
++        if (id) await api(slug, `${base}/${encodeURIComponent(id)}`, { method: 'PUT', token, body });
++        else created[key] = (await api<{ id: string }>(slug, base, { method: 'POST', token, body })).id;
++      } catch (err) {
++        return fail(describeError(err).error ?? 'تعذّر حفظ السؤال.', key);
++      }
++    }
++    for (const id of deletes) {
++      try {
++        await api(slug, `${base}/${encodeURIComponent(id)}`, { method: 'DELETE', token });
++      } catch (err) {
++        // Already gone (e.g. deleted in another tab): the goal is met.
++        if (!(err instanceof ApiError && err.code === 'QUESTION_NOT_FOUND')) return fail(describeError(err).error ?? 'تعذّر حذف السؤال.');
++      }
++    }
++  } catch (err) {
++    return fail(describeError(err).error ?? 'حدث خطأ غير متوقع.');
++  }
++  revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
++  return { ok: true, created };
++}

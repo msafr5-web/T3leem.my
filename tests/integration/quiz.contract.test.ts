@@ -109,14 +109,14 @@ describe('question bank import / export', () => {
     expect(template.status).toBe(200);
     expect(template.headers['content-type']).toContain('spreadsheetml');
     const tpl = await sheetRows(template.body);
-    expect(tpl[0]).toEqual(HEADER);
+    expect(tpl[0]).toEqual([...HEADER, 'Points', 'Required']);
     expect(tpl.length).toBeGreaterThan(1);
 
     await admin(app).upload(`${base}/quiz/import`, await workbook(GOOD));
     const exported = await admin(app).get(`${base}/quiz/export`).buffer(true).parse(binary);
     const rows = await sheetRows(exported.body);
     expect(rows).toHaveLength(5);
-    expect(rows.find((r) => r[0] === 'Q2')).toEqual(['Q2', 'ما ناتج 2+2؟', 'MCQ', '3 | 4 | 5', '4', 'Medium', '1']);
+    expect(rows.find((r) => r[0] === 'Q2')).toEqual(['Q2', 'ما ناتج 2+2؟', 'MCQ', '3 | 4 | 5', '4', 'Medium', '1', '1', 'No']);
 
     const before = [...quizOf(app).repository.questions];
     const back = await admin(app).upload(`${base}/quiz/import`, exported.body as Buffer);
@@ -348,16 +348,17 @@ describe('building questions in the form (no Excel)', () => {
     const day2 = await send(app, 'post', '/quiz/questions', { ...mcq, day_id: DAY2, body: 'لليوم الثاني' });
     expect([a, b, shared, day2].map((r) => r.status)).toEqual([201, 201, 201, 201]);
     const rows = quizOf(app).repository.questions;
-    expect(rows.map((q) => q.code)).toEqual(['Q_D1_001', 'Q_D1_002', 'Q_ALL_001', 'Q_D2_001']);
+    expect(rows.map((q) => q.code)).toEqual(['F_D1_001', 'F_D1_002', 'F_ALL_001', 'F_D2_001']);
     expect(rows[0]).toMatchObject({ options: ['القاهرة', 'الإسكندرية'], correctAnswer: 'القاهرة', difficulty: 'EASY', moduleId: DAY1 });
     expect(rows[2]!.moduleId).toBeNull();
   });
 
   it('keeps codes unique after an import and after a deletion', async () => {
     const app = buildApp();
-    await admin(app).upload(`${base}/quiz/import`, await workbook([['Q_D1_001', 'مستورد', 'MCQ', 'a | b', 'a', '', 1]]));
+    await admin(app).upload(`${base}/quiz/import`, await workbook([['Q_D1_001', 'مستورد', 'MCQ', 'a | b', 'a', '', 1], ['F_D1_001', 'مستورد بالبادئة نفسها', 'MCQ', 'a | b', 'a', '', 1]]));
     await send(app, 'post', '/quiz/questions', mcq);
-    expect(quizOf(app).repository.questions.map((q) => q.code)).toEqual(['Q_D1_001', 'Q_D1_002']);
+    // The form skips a code that an import already took, and never reuses the template's Q_ codes.
+    expect(quizOf(app).repository.questions.map((q) => q.code)).toEqual(['Q_D1_001', 'F_D1_001', 'F_D1_002']);
   });
 
   it('accepts a text question with an optional model answer', async () => {
@@ -386,7 +387,7 @@ describe('building questions in the form (no Excel)', () => {
     const id = quizOf(app).repository.questions[0]!.id;
     const res = await send(app, 'put', `/quiz/questions/${id}`, { ...mcq, body: 'معدّل', options: ['س', 'ص'], correct_answer: 'ص', day_id: DAY2 });
     expect(res.status).toBe(200);
-    expect(quizOf(app).repository.questions[0]).toMatchObject({ code: 'Q_D1_001', body: 'معدّل', correctAnswer: 'ص', moduleId: DAY2 });
+    expect(quizOf(app).repository.questions[0]).toMatchObject({ code: 'F_D1_001', body: 'معدّل', correctAnswer: 'ص', moduleId: DAY2 });
     expect((await send(app, 'put', '/quiz/questions/99999999-9999-4999-8999-999999999999', mcq)).body.error.code).toBe('QUESTION_NOT_FOUND');
     expect((await send(app, 'post', '/quiz/questions', mcq, learnerToken)).status).toBe(403);
     const other = sign({ sub: 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00', tid: TENANT_B, role: 'TENANT_ADMIN' });

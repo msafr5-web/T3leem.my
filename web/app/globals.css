@@ -436,3 +436,18 @@ label.checkbox { display: flex; align-items: center; gap: 8px; }
 .publish-check li { display: flex; gap: 8px; align-items: baseline; }
 .publish-check .tick { font-weight: 700; color: var(--ok); }
 .publish-check .todo { font-weight: 700; color: var(--amber); }
+
+/* Quiz: required marks, star rating, short answer, checkbox/points controls */
+.gf-req { color: var(--danger); font-weight: 700; }
+.gf-missing { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.gf-miss { margin: 0; color: var(--danger); font-size: 13px; }
+.gf-short { width: 100%; }
+.gf-stars { display: flex; gap: 4px; direction: ltr; justify-content: flex-end; }
+.gf-stars button { background: none; border: 0; cursor: pointer; font-size: 32px; line-height: 1; padding: 2px 4px; color: var(--line); }
+.gf-stars button.on { color: #e0a100; }
+.gf-stars button:hover, .gf-stars button:focus-visible { color: #e0a100; }
+.qb-stars-fake { font-size: 30px; letter-spacing: 6px; color: var(--line); direction: ltr; text-align: end; }
+.qb-req { color: var(--danger); font-weight: 700; font-size: 20px; line-height: 1; }
+.qb-points { width: 72px; }
+.qb-required { display: inline-flex; align-items: center; gap: 6px; }
+.qb-opt input[type=checkbox] { accent-color: var(--brand); width: 18px; height: 18px; flex: none; }
