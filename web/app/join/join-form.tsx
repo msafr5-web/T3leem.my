@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { registerProviderAction, resendProviderCodeAction, verifyProviderAction, type JoinState } from '@/lib/actions';
+import { WELCOME_MESSAGE, supportLink } from '@/lib/support';
 
 const INITIAL: JoinState = {};
 type Pending = NonNullable<JoinState['pending']>;
@@ -10,9 +11,7 @@ export function JoinForm() {
   const [step1, startAction, starting] = useActionState<JoinState, FormData>(registerProviderAction, INITIAL);
   const [slug, setSlug] = useState('');
   // React resets an action form once it is submitted; these defaults bring typed values back if the user returns to step 1.
-  const [vals, setVals] = useState({ academy_name: '', city: '', admin_name: '', admin_email: '' });
-  // Kept in state, not read from the field: React resets the form after the first action, which would blank it.
-  const [password, setPassword] = useState('');
+  const [vals, setVals] = useState({ academy_name: '', city: '', admin_name: '', admin_email: '', phone: '' });
   const [pending, setPending] = useState<Pending | null>(null);
   const [seen, setSeen] = useState<JoinState | null>(null);
 
@@ -22,10 +21,10 @@ export function JoinForm() {
     if (step1.pending) setPending(step1.pending);
   }
 
-  // Step 1 stays mounted (only hidden) so the typed password is still there when the code comes in.
+  // Step 1 stays mounted (only hidden), so "تعديل البيانات" brings the form back.
   return (
     <>
-      {pending && <VerifyStep pending={pending} password={password} onRestart={() => setPending(null)} />}
+      {pending && <VerifyStep pending={pending} onRestart={() => setPending(null)} />}
       <form
         action={startAction}
         className="form"
@@ -79,10 +78,10 @@ export function JoinForm() {
             البريد الإلكتروني
             <input id="admin_email" name="admin_email" defaultValue={vals.admin_email} type="email" required dir="ltr" autoComplete="email" />
           </label>
-          <label htmlFor="password">
-            كلمة المرور
-            <input id="password" name="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} maxLength={128} dir="ltr" autoComplete="new-password" />
-            <span className="hint">٨ أحرف على الأقل.</span>
+          <label htmlFor="phone">
+            رقم الجوال (واتساب)
+            <input id="phone" name="phone" type="tel" dir="ltr" autoComplete="tel" inputMode="tel" placeholder="05XXXXXXXX" defaultValue={vals.phone} />
+            <span className="hint">نرسل عليه تفاصيل اشتراكك عبر واتساب.</span>
           </label>
         </div>
       </fieldset>
@@ -108,14 +107,13 @@ export function JoinForm() {
   );
 }
 
-function VerifyStep({ pending, password, onRestart }: { pending: Pending; password: string; onRestart: () => void }) {
-  const [state, formAction, verifying] = useActionState<JoinState, FormData>(async (prev, form) => {
-    form.set('password', password);
-    return verifyProviderAction(pending, prev, form);
-  }, { pending });
+function VerifyStep({ pending, onRestart }: { pending: Pending; onRestart: () => void }) {
+  const [state, formAction, verifying] = useActionState<JoinState, FormData>((prev, form) => verifyProviderAction(pending, prev, form), { pending });
   const [resend, resendAction, resending] = useActionState<JoinState>((prev) => resendProviderCodeAction(pending, prev), { pending });
   // An expired or locked sign-up comes back without `pending`: the only way on is to start again.
   const dead = (state.pending === undefined && state.error !== undefined) || (resend.pending === undefined && resend.error !== undefined);
+
+  if (state.done) return <Received done={state.done} />;
 
   return (
     <div className="form" aria-live="polite">
@@ -138,7 +136,7 @@ function VerifyStep({ pending, password, onRestart }: { pending: Pending; passwo
           </div>
         )}
         <button type="submit" className="btn btn-primary btn-block" disabled={verifying || dead}>
-          {verifying ? 'جارٍ التحقق…' : 'تأكيد وإنشاء الأكاديمية'}
+          {verifying ? 'جارٍ التحقق…' : 'تأكيد البريد وإرسال الطلب'}
         </button>
       </form>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -151,6 +149,23 @@ function VerifyStep({ pending, password, onRestart }: { pending: Pending; passwo
           تعديل البيانات أو البريد
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The request is filed; the platform owner approves it (plan, period, modules) and the admin is told by e-mail. */
+function Received({ done }: { done: NonNullable<JoinState['done']> }) {
+  return (
+    <div className="form" role="status">
+      <div className="notice ok">
+        <strong>تم استلام طلب اشتراكك.</strong>
+        <p style={{ margin: '6px 0 0' }}>
+          تأكّد بريدك <span dir="ltr">{done.email}</span> وسُجّل طلب أكاديمية «{done.name}» (<span dir="ltr">t3leem.my/{done.slug}</span>). ستراجع إدارة المنصة الطلب وتحدّد الباقة ومدة الاشتراك، وتصلك رسالة على بريدك فور الاعتماد، ثم تدخل بالرمز المرسل إلى بريدك.
+        </p>
+      </div>
+      <a className="btn btn-primary btn-block" href={supportLink(`${WELCOME_MESSAGE}\nطلب اشتراك: ${done.name} (t3leem.my/${done.slug})`)} target="_blank" rel="noopener noreferrer">
+        تواصل مع الدعم على واتساب
+      </a>
     </div>
   );
 }

@@ -17,20 +17,23 @@ const as = (token: string, app = buildApp()) => ({
 describe('POST /api/v1/auth/register (PRD §6)', () => {
   const reg = (body: object) => request(buildApp()).post('/api/v1/auth/register').set('x-tenant-slug', 'rukn').send(body);
 
-  it('creates a LEARNER in this academy and signs them in (201)', async () => {
-    const res = await reg({ full_name: 'Reem Aldosari', email: 'reem@new.test', password: 'Str0ngPass!' });
+  it('creates a LEARNER in this academy without a session (201); signing in needs the e-mailed code', async () => {
+    const res = await reg({ full_name: 'Reem Aldosari', email: 'reem@new.test' });
     expect(res.status).toBe(201);
-    expect(res.body.data).toMatchObject({ token_type: 'Bearer', user: { email: 'reem@new.test', role: 'LEARNER' } });
+    expect(res.body.data).toEqual({ email: 'reem@new.test' });
   });
 
-  it('cannot self-assign a role', async () => {
-    const res = await reg({ full_name: 'Sneaky Admin', email: 'x@new.test', password: 'Str0ngPass!', role: 'TENANT_ADMIN' });
-    expect(res.body.data.user.role).toBe('LEARNER');
+  it('ignores a role sent in the body (the account is a LEARNER; no token is issued)', async () => {
+    const res = await reg({ full_name: 'Sneaky Admin', email: 'x@new.test', role: 'TENANT_ADMIN' });
+    expect(res.status).toBe(201);
+    expect(res.body.data).not.toHaveProperty('user');
+    expect(res.body.data).not.toHaveProperty('access_token');
   });
 
-  it('409 for an existing email, 422 for weak passwords', async () => {
-    expect((await reg({ full_name: 'Dup User', email: 'learner@rukn.test', password: 'Str0ngPass!' })).body.error.code).toBe('EMAIL_TAKEN');
-    expect((await reg({ full_name: 'Weak User', email: 'w@new.test', password: '123' })).status).toBe(422);
+  it('409 for an existing email, 422 for a bad name or address', async () => {
+    expect((await reg({ full_name: 'Dup User', email: 'learner@rukn.test' })).body.error.code).toBe('EMAIL_TAKEN');
+    expect((await reg({ full_name: 'ab', email: 'w@new.test' })).status).toBe(422);
+    expect((await reg({ full_name: 'Weak User', email: 'nope' })).status).toBe(422);
   });
 });
 

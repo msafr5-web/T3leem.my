@@ -68,3 +68,13 @@ export function requireAuthContext(req: Request): { tenantId: string; tenant: Re
   }
   return { tenantId: req.tenantId, tenant: req.tenant, user: req.user };
 }
+
+/** The module must be switched on for this academy (the platform owner decides which ones). */
+export const requireFeature =
+  (feature: string) =>
+  (req: Request, _res: Response, next: NextFunction): void => {
+    const f = req.tenant?.features;
+    const on = typeof f === 'object' && f !== null && !Array.isArray(f) && (f as Record<string, unknown>)[feature] === true;
+    if (!on) throw new HttpError(403, 'FEATURE_DISABLED', 'This feature is not enabled for this academy');
+    next();
+  };

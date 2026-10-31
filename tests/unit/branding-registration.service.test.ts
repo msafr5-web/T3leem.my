@@ -85,7 +85,7 @@ describe('BrandingService', () => {
 });
 
 describe('RegistrationService (e-mail code)', () => {
-  const input = { academyName: ' New Academy ', slug: 'New-Academy', city: 'Dammam', adminName: ' Admin ', adminEmail: ' Boss@New.test ', password: 'Str0ngPass!' };
+  const input = { academyName: ' New Academy ', slug: 'New-Academy', city: 'Dammam', adminName: ' Admin ', adminEmail: ' Boss@New.test ', phone: null };
   const setup = (enabled = true) => buildRegistrationFakes({ enabled });
 
   it('start stores a normalized pending sign-up and e-mails the code with the site data; nothing is created yet', async () => {
@@ -94,7 +94,7 @@ describe('RegistrationService (e-mail code)', () => {
     expect(r).toMatchObject({ email: 'boss@new.test', expiresInSec: 900 });
     expect(repository.registered).toHaveLength(0);
     const row = repository.pending.get(r.pendingId)!;
-    expect(row).toMatchObject({ slug: 'new-academy', academyName: 'New Academy', adminName: 'Admin', passwordHash: 'hashed:Str0ngPass!' });
+    expect(row).toMatchObject({ slug: 'new-academy', academyName: 'New Academy', adminName: 'Admin', passwordHash: expect.stringMatching(/^hashed:/) });
     // The code itself is never stored, only its salted hash.
     expect(JSON.stringify(row)).not.toContain(mailer.lastCode);
 
@@ -119,7 +119,7 @@ describe('RegistrationService (e-mail code)', () => {
     const { service, repository, mailer } = setup();
     const { pendingId } = await service.start(input);
     await expect(service.verify(pendingId, mailer.lastCode)).resolves.toEqual({ tenantId: 'new-tenant-id', slug: 'new-academy' });
-    expect(repository.registered).toEqual([{ academyName: 'New Academy', slug: 'new-academy', city: 'Dammam', adminName: 'Admin', adminEmail: 'boss@new.test', passwordHash: 'hashed:Str0ngPass!' }]);
+    expect(repository.registered).toEqual([{ academyName: 'New Academy', slug: 'new-academy', city: 'Dammam', adminName: 'Admin', adminEmail: 'boss@new.test', phone: null, passwordHash: expect.stringMatching(/^hashed:/) }]);
     await expect(service.verify(pendingId, mailer.lastCode)).rejects.toMatchObject({ code: 'CODE_EXPIRED' });
     expect(repository.registered).toHaveLength(1);
   });

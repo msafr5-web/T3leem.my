@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ApiUnavailableError, getTenant, isMissingTenant, me, type Tenant } from '@/lib/api';
 import { logoutAction } from '@/lib/actions';
 import { isValidSlug, safeBrandColor } from '@/lib/format';
+import { SUPPORT_PHONE, supportLink } from '@/lib/support';
 import { getSession } from '@/lib/session';
 import { LogoMark } from '../logo-mark';
 import { ServiceUnavailable } from '../service-unavailable';
@@ -70,7 +71,7 @@ export default async function TenantLayout({ children, params }: { children: Rea
       <main className="container">{children}</main>
       <footer className="site-footer">
         <div className="container">
-          {tenant.name} · تعمل على <Link href="/">T3leem.my</Link>
+          {tenant.name} · تعمل على <Link href="/">T3leem.my</Link> · <a href={supportLink()} target="_blank" rel="noopener noreferrer">دعم المنصة على واتساب <span dir="ltr">{SUPPORT_PHONE}</span></a>
         </div>
       </footer>
     </div>

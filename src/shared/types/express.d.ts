@@ -11,6 +11,10 @@ export interface ResolvedTenant {
   brandSettings: Prisma.JsonValue;
   /** Date from the DB; an ISO string when read back from the Redis cache. */
   logoUpdatedAt: Date | string | null;
+  /** End of the paid period (Date, or an ISO string from the cache); null = no end. */
+  subscriptionEndsAt: Date | string | null;
+  /** Modules the platform owner switched on for this academy. */
+  features: Prisma.JsonValue;
 }
 
 export interface AuthenticatedUser {

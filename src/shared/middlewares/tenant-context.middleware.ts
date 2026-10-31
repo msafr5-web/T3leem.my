@@ -53,6 +53,9 @@ export const createTenantContextMiddleware =
     if (tenant.status !== 'ACTIVE') {
       throw new HttpError(403, 'TENANT_INACTIVE', 'This academy is not active');
     }
+    if (tenant.subscriptionEndsAt && new Date(tenant.subscriptionEndsAt).getTime() < Date.now()) {
+      throw new HttpError(403, 'SUBSCRIPTION_EXPIRED', 'This academy subscription has ended');
+    }
 
     req.tenantId = tenant.id;
     req.tenant = tenant;

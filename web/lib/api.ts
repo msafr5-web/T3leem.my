@@ -481,6 +481,46 @@ export interface PracticeQuestion {
   options: string[];
 }
 
+/** Platform owner console. */
+export interface OwnerFeatures {
+  health: boolean;
+  recorded: boolean;
+}
+
+export interface OwnerTenant {
+  id: string;
+  slug: string;
+  name: string;
+  status: 'PROVISIONING' | 'ACTIVE' | 'SUSPENDED';
+  plan_id: string | null;
+  plan_name: string | null;
+  approved_at: string | null;
+  subscription_ends_at: string | null;
+  features: OwnerFeatures;
+  owner_name: string | null;
+  owner_email: string | null;
+  owner_phone: string | null;
+  created_at: string;
+}
+
+export interface OwnerOverview {
+  total: number;
+  pending: number;
+  active: number;
+  suspended: number;
+  expired: number;
+  tenants: OwnerTenant[];
+}
+
+export interface OwnerPlan {
+  id: string;
+  name: string;
+  max_students: number;
+  max_storage_gb: number;
+  monthly_price: number;
+  tenant_count: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -599,6 +639,12 @@ export const admin = {
   health: (slug: string, token: string) => api<AdminHealth>(slug, '/admin/health', { token }),
   healthQuestions: (slug: string, token: string, qs: string) => api<HealthQuestionPage>(slug, `/admin/health/questions?${qs}`, { token }),
   quizResults: (slug: string, token: string, courseId: string) => api<QuizAttemptSummary[]>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/results`, { token }),
+};
+
+/** Platform owner reads (the owner token; never cached). */
+export const owner = {
+  overview: (token: string) => platformApi<OwnerOverview>('/owner/overview', { token }),
+  plans: (token: string) => platformApi<OwnerPlan[]>('/owner/plans', { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */

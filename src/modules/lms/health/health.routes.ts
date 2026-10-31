@@ -1,7 +1,7 @@
 import express, { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
 import { UserRole } from '@prisma/client';
-import { authenticate, requireAuthContext, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
+import { authenticate, requireAuthContext, requireFeature, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
 import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import { HttpError } from '../../../shared/utils/http-error';
@@ -71,6 +71,7 @@ const draftOf = (b: Record<string, unknown>): QuestionDraft & { code?: string } 
 /** Provider dashboard: sectors, question bank, Excel in/out, fee and access (TENANT_ADMIN). */
 export function buildHealthAdminRouter(service: HealthService, jwt: JwtVerifyOptions): Router {
   const router = Router();
+  router.use('/health', requireFeature('health'));
   const admin = [authenticate(jwt), requireRoles(UserRole.TENANT_ADMIN)];
   const actorOf = (req: Request) => {
     const { tenantId, user } = requireAuthContext(req);
@@ -218,6 +219,7 @@ export function buildHealthAdminRouter(service: HealthService, jwt: JwtVerifyOpt
 /** Learner side: /api/v1/me/health — practice bank for any signed-in user of the tenant. */
 export function buildHealthLearnerRouter(service: HealthService, jwt: JwtVerifyOptions): Router {
   const router = Router();
+  router.use('/health', requireFeature('health'));
   const who = (req: Request) => {
     const { tenantId, user } = requireAuthContext(req);
     return { tenantId, user: { id: user.id, role: user.role } };

@@ -84,56 +84,92 @@ describe('GET /api/v1/courses', () => {
   });
 });
 
-describe('POST /api/v1/auth/login', () => {
-  const login = (body: object, slug = 'rukn', app = buildApp()) =>
-    request(app).post('/api/v1/auth/login').set('x-tenant-slug', slug).send(body);
+describe('e-mail code sign-in (POST /api/v1/auth/otp/*)', () => {
+  type Otp = ReturnType<typeof import('./helpers/owner-fakes').buildOtpFakes>;
+  const otpOf = (app: ReturnType<typeof buildApp>) => app.locals.otp as Otp;
+  const post = (app: ReturnType<typeof buildApp>, path: string, body: object, slug = 'rukn') => request(app).post(`/api/v1/auth/otp/${path}`).set('x-tenant-slug', slug).send(body);
+  const request_ = (app: ReturnType<typeof buildApp>, email: string, slug = 'rukn') => post(app, 'request', { email }, slug);
 
-  it('issues an RS256 token the API itself accepts', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD });
+  it('request e-mails a 6-digit code, verify issues an RS256 token the API itself accepts', async () => {
+    const app = buildApp();
+    const r = await request_(app, LEARNER_EMAIL);
+    expect(r.status).toBe(202);
+    expect(r.headers['cache-control']).toBe('no-store');
+    expect(otpOf(app).mailer.sent).toHaveLength(1);
+    expect(otpOf(app).mailer.sent[0]!.to).toBe(LEARNER_EMAIL);
+    expect(otpOf(app).mailer.lastCode).toMatch(/^\d{6}$/);
+
+    const res = await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code: otpOf(app).mailer.lastCode });
     expect(res.status).toBe(200);
-    expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body.data).toMatchObject({ token_type: 'Bearer', expires_in: 900, user: { id: USER, role: 'LEARNER' } });
-
-    const claims = jwt.verify(res.body.data.access_token, jwtOpts.publicKey, {
-      algorithms: ['RS256'],
-      issuer: jwtOpts.issuer,
-      audience: jwtOpts.audience,
-    }) as jwt.JwtPayload;
+    const claims = jwt.verify(res.body.data.access_token, jwtOpts.publicKey, { algorithms: ['RS256'], issuer: jwtOpts.issuer, audience: jwtOpts.audience }) as jwt.JwtPayload;
     expect(claims).toMatchObject({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
   });
 
-  it('accepts the email case-insensitively', async () => {
-    const res = await login({ email: '  LEARNER@rukn.test ', password: LEARNER_PASSWORD });
-    expect(res.status).toBe(200);
-  });
-
-  it('gives the same 401 for a wrong password and an unknown email (no enumeration)', async () => {
-    const wrong = await login({ email: LEARNER_EMAIL, password: 'nope' });
-    const unknown = await login({ email: 'ghost@rukn.test', password: 'nope' });
-    expect(wrong.status).toBe(401);
-    expect(unknown.status).toBe(401);
-    expect(wrong.body).toEqual(unknown.body);
-  });
-
-  it('the same credentials do not work in another academy', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'masar');
-    expect(res.status).toBe(401);
-  });
-
-  it('422 for an invalid body', async () => {
-    const res = await login({ email: 'not-an-email' });
-    expect(res.status).toBe(422);
-  });
-
-  it('503 when this deployment has no signing key', async () => {
-    const res = await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn', buildApp({ signingKey: null }));
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('LOGIN_UNAVAILABLE');
-  });
-
-  it('a token from login can complete a checkout end-to-end', async () => {
+  it('accepts the e-mail case-insensitively; the code works once', async () => {
     const app = buildApp();
-    const token = (await login({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD }, 'rukn', app)).body.data.access_token;
+    const r = await request_(app, '  LEARNER@rukn.test ');
+    const code = otpOf(app).mailer.lastCode;
+    expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code })).status).toBe(200);
+    expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code })).body.error.code).toBe('OTP_INVALID');
+  });
+
+  it('an unknown address gets the same answer and no e-mail (no account enumeration)', async () => {
+    const app = buildApp();
+    const known = await request_(app, LEARNER_EMAIL);
+    const unknown = await request_(app, 'ghost@rukn.test');
+    expect(unknown.status).toBe(known.status);
+    expect(Object.keys(unknown.body.data)).toEqual(Object.keys(known.body.data));
+    expect(otpOf(app).mailer.sent.map((m) => m.to)).toEqual([LEARNER_EMAIL]);
+    const verify = await post(app, 'verify', { challenge_id: unknown.body.data.challenge_id, code: '123456' });
+    expect(verify.body.error.code).toBe('OTP_INVALID');
+  });
+
+  it('a wrong code is refused; the code does not work in another academy', async () => {
+    const app = buildApp();
+    const r = await request_(app, LEARNER_EMAIL);
+    const code = otpOf(app).mailer.lastCode;
+    const wrong = code === '000000' ? '111111' : '000000';
+    expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code: wrong })).body.error.code).toBe('OTP_INVALID');
+    expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code }, 'masar')).body.error.code).toBe('OTP_INVALID');
+    expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code })).status).toBe(200);
+  });
+
+  it('the same address has no account in another academy (no e-mail sent)', async () => {
+    const app = buildApp();
+    expect((await request_(app, LEARNER_EMAIL, 'masar')).status).toBe(202);
+    expect(otpOf(app).mailer.sent).toHaveLength(0);
+  });
+
+  it('there is no password sign-in any more', async () => {
+    const res = await request(buildApp()).post('/api/v1/auth/login').set('x-tenant-slug', 'rukn').send({ email: LEARNER_EMAIL, password: LEARNER_PASSWORD });
+    expect(res.status).toBe(404);
+  });
+
+  it('422 for an invalid body; 503 without a signing key or without mail', async () => {
+    const app = buildApp();
+    expect((await post(app, 'request', { email: 'not-an-email' })).status).toBe(422);
+    expect((await post(app, 'verify', { challenge_id: 'x', code: '12' })).status).toBe(422);
+    expect((await request_(buildApp({ signingKey: null }), LEARNER_EMAIL)).body.error.code).toBe('LOGIN_UNAVAILABLE');
+    const broken = buildApp();
+    otpOf(broken).mailer.failNext = true;
+    expect((await request_(broken, LEARNER_EMAIL)).body.error.code).toBe('MAIL_UNAVAILABLE');
+  });
+
+  it('register creates the account without a session; signing in then needs the e-mailed code', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/api/v1/auth/register').set('x-tenant-slug', 'rukn').send({ full_name: 'Reem Saleh', email: 'reem@rukn.test' });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toEqual({ email: 'reem@rukn.test' });
+    expect(res.body.data).not.toHaveProperty('access_token');
+    const dup = await request(app).post('/api/v1/auth/register').set('x-tenant-slug', 'rukn').send({ full_name: 'Abdullah A.', email: LEARNER_EMAIL });
+    expect(dup.body.error.code).toBe('EMAIL_TAKEN');
+  });
+
+  it('a token from the code sign-in can complete a checkout end-to-end', async () => {
+    const app = buildApp();
+    const r = await request_(app, LEARNER_EMAIL);
+    const token = (await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code: otpOf(app).mailer.lastCode })).body.data.access_token;
     const res = await request(app)
       .post('/api/v1/enrollments/checkout')
       .set('x-tenant-slug', 'rukn')

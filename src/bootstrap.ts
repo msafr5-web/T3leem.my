@@ -41,6 +41,10 @@ import { BrandingService } from './modules/tenant/branding.service';
 import { DomainService } from './modules/tenant/domain.service';
 import { RegistrationService } from './modules/tenant/registration.service';
 import { SmtpMailer, UnconfiguredMailer } from './shared/services/mailer';
+import { OtpLoginService } from './modules/auth/otp.service';
+import { PrismaOtpRepository } from './modules/auth/auth.repository';
+import { OwnerService } from './modules/platform/owner.service';
+import { PrismaOwnerRepository } from './modules/platform/owner.repository';
 import { TenantResolverService } from './modules/tenant/tenant-resolver.service';
 import { TenantRepository } from './modules/tenant/tenant.repository';
 import { createRateLimiter } from './shared/middlewares/rate-limiter.middleware';
@@ -98,16 +102,27 @@ export function createServerApp(): ServerApp {
   const zatcaQueue: ZatcaQueue = queueProducer ?? new DeferredZatcaQueue();
   if (!redis) logger.warn('REDIS_URL not set: in-memory rate limits, no tenant cache, ZATCA sync deferred');
 
+  const mailer =
+    env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD
+      ? new SmtpMailer({ host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, password: env.SMTP_PASSWORD, from: env.MAIL_FROM })
+      : new UnconfiguredMailer();
+  if (mailer instanceof UnconfiguredMailer) logger.warn('SMTP not configured: sign-in codes and sign-up verification cannot be e-mailed');
+
+  const authRepository = new PrismaAuthRepository();
   const authService = new AuthService({
-    repository: new PrismaAuthRepository(),
+    repository: authRepository,
+    unusablePasswordHash: () => hashPassword(randomBytes(24).toString('hex')),
+  });
+  const otpLogin = new OtpLoginService({
+    repository: new PrismaOtpRepository(),
+    users: authRepository,
+    mailer,
     signer: new JwtTokenSigner(jwtPrivateKey, {
       issuer: env.JWT_ISSUER,
       audience: env.JWT_AUDIENCE,
       ttlSeconds: env.JWT_ACCESS_TTL_SEC,
     }),
-    verifyPassword,
-    hashPassword,
-    dummyHash: hashPassword(randomBytes(16).toString('hex')),
+    platformAdmins: env.PLATFORM_ADMIN_EMAILS,
   });
 
   const checkoutService = new CheckoutService({
@@ -143,7 +158,9 @@ export function createServerApp(): ServerApp {
     signupRateLimiter: createRateLimiter({ redis, points: 20, durationSec: 60 * 60, keyPrefix: 'rl:signup' }),
     jwt: { publicKey: jwtPublicKey, issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE },
     corsOrigins: env.CORS_ORIGINS,
-    authController: new AuthController(authService),
+    authController: new AuthController(authService, otpLogin),
+    otpLogin,
+    ownerService: new OwnerService({ repository: new PrismaOwnerRepository(prisma), mailer, webUrl: env.PUBLIC_WEB_URL, invalidate: (t) => invalidateTenant(t.id) }),
     courseController: new CourseController(catalogService),
     enrollmentController: new EnrollmentController(checkoutService),
     providerController: new ProviderController(providerService, catalogService),
@@ -154,10 +171,8 @@ export function createServerApp(): ServerApp {
       hashPassword,
       enabled: env.PROVIDER_SIGNUP_ENABLED,
       webUrl: env.PUBLIC_WEB_URL,
-      mailer:
-        env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD
-          ? new SmtpMailer({ host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, password: env.SMTP_PASSWORD, from: env.MAIL_FROM })
-          : new UnconfiguredMailer(),
+      mailer,
+      ownerEmails: env.PLATFORM_ADMIN_EMAILS,
     }),
     domainService: new DomainService(tenantRepository, env.BASE_DOMAIN, (name) => dns.resolveTxt(name), invalidateTenant),
     contentService: new ContentService({

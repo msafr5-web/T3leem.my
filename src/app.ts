@@ -13,6 +13,9 @@ import { buildQuizAdminRouter, buildQuizLearnerRouter } from './modules/lms/quiz
 import type { QuizService } from './modules/lms/quiz/quiz.service';
 import { buildHealthAdminRouter, buildHealthLearnerRouter } from './modules/lms/health/health.routes';
 import type { HealthService } from './modules/lms/health/health.service';
+import { buildOwnerRouter } from './modules/platform/owner.routes';
+import type { OwnerService } from './modules/platform/owner.service';
+import type { OtpLoginService } from './modules/auth/otp.service';
 import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/lms/recorded/recorded.routes';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
@@ -52,6 +55,8 @@ export interface AppDependencies {
   recordedCourseService: RecordedCourseService;
   quizService: QuizService;
   healthService: HealthService;
+  otpLogin: OtpLoginService;
+  ownerService: OwnerService;
   learningService: LearningService;
   videoService: VideoService;
   zoomWebhooks: ZoomWebhookService;
@@ -93,6 +98,7 @@ export function createApp(deps: AppDependencies): Express {
   });
 
   // Platform-wide endpoints (no tenant). Mounted BEFORE the tenant-scoped router.
+  app.use('/api/v1/platform/owner', deps.rateLimiter, buildOwnerRouter(deps.otpLogin, deps.ownerService, deps.jwt, deps.loginRateLimiter));
   app.use(
     '/api/v1/platform',
     deps.rateLimiter,

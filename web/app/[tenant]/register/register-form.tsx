@@ -1,27 +1,35 @@
 'use client';
 
-import { useActionState } from 'react';
-import { registerLearnerAction, type JoinState } from '@/lib/actions';
+import { useActionState, useState } from 'react';
+import { registerLearnerAction, type LoginState } from '@/lib/actions';
+import { OtpStep } from '../login/otp-step';
 
+const INITIAL: LoginState = {};
+
+/** Learner sign-up: name and e-mail, then the code e-mailed to that address (it also proves the address is theirs). */
 export function RegisterForm({ slug, next }: { slug: string; next: string }) {
-  const [state, formAction, pending] = useActionState<JoinState, FormData>(registerLearnerAction.bind(null, slug), {});
+  const [state, formAction, pending] = useActionState<LoginState, FormData>(registerLearnerAction.bind(null, slug), INITIAL);
+  const [challenge, setChallenge] = useState<LoginState['challenge'] | null>(null);
+  const [seen, setSeen] = useState<LoginState | null>(null);
+  const [vals, setVals] = useState({ full_name: '', email: '' });
+
+  if (state !== seen) {
+    setSeen(state);
+    if (state.challenge) setChallenge(state.challenge);
+  }
+
+  if (challenge) return <OtpStep slug={slug} challenge={challenge} next={next || `/${slug}/my`} onBack={() => setChallenge(null)} />;
 
   return (
     <form action={formAction} className="form">
-      <input type="hidden" name="next" value={next} />
       <label htmlFor="full_name">
         الاسم الكامل
-        <input id="full_name" name="full_name" type="text" required minLength={3} maxLength={120} autoComplete="name" />
+        <input id="full_name" name="full_name" type="text" required minLength={3} maxLength={120} autoComplete="name" value={vals.full_name} onChange={(e) => setVals((v) => ({ ...v, full_name: e.target.value }))} />
         <span className="hint">يظهر على شهاداتك كما تكتبه هنا.</span>
       </label>
       <label htmlFor="email">
         البريد الإلكتروني
-        <input id="email" name="email" type="email" required dir="ltr" autoComplete="email" />
-      </label>
-      <label htmlFor="password">
-        كلمة المرور
-        <input id="password" name="password" type="password" required minLength={8} maxLength={128} dir="ltr" autoComplete="new-password" />
-        <span className="hint">٨ أحرف على الأقل.</span>
+        <input id="email" name="email" type="email" required dir="ltr" autoComplete="email" value={vals.email} onChange={(e) => setVals((v) => ({ ...v, email: e.target.value }))} />
       </label>
       {state.error && (
         <div className="notice error" role="alert">
@@ -30,8 +38,9 @@ export function RegisterForm({ slug, next }: { slug: string; next: string }) {
         </div>
       )}
       <button type="submit" className="btn btn-primary btn-block" disabled={pending}>
-        {pending ? 'جارٍ إنشاء الحساب…' : 'إنشاء الحساب'}
+        {pending ? 'جارٍ إنشاء الحساب…' : 'إنشاء الحساب وإرسال الرمز'}
       </button>
+      <p className="small muted">سنرسل رمز دخول من ٦ أرقام إلى بريدك، ولا حاجة إلى كلمة مرور.</p>
     </form>
   );
 }

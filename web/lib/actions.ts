@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
 import { ApiError, ApiUnavailableError, api, platformApi, type CheckoutResponse, type LoginResponse, type QuizAnswer, type QuizResult, type QuizStatus } from './api';
 import { isValidSlug, safeNextPath } from './format';
+import { normalizePhone } from './support';
 import { clearSession, getSession, setSession } from './session';
 
 const MESSAGES: Record<string, string> = {
@@ -41,31 +42,75 @@ export interface FormState {
   error?: string;
 }
 
-export async function loginAction(slug: string, _prev: FormState, form: FormData): Promise<FormState> {
+export interface LoginState extends FormState {
+  /** Names of the fields the API rejected (registration). */
+  fields?: string[];
+  /** Step 2: the code was e-mailed for this challenge. */
+  challenge?: { id: string; email: string };
+  resent?: boolean;
+}
+
+const OTP_ERRORS: Record<string, string> = {
+  OTP_INVALID: 'الرمز غير صحيح أو انتهت صلاحيته. تحقق من الرسالة أو اطلب رمزاً جديداً.',
+  TOO_MANY_ATTEMPTS: 'محاولات كثيرة. اطلب رمزاً جديداً بعد قليل.',
+  RESEND_TOO_SOON: 'انتظر دقيقة قبل طلب رمز جديد.',
+  MAIL_UNAVAILABLE: 'تعذّر إرسال الرمز إلى بريدك الآن. حاول بعد قليل أو تواصل مع الدعم.',
+  LOGIN_UNAVAILABLE: 'تسجيل الدخول غير مفعّل على هذا الخادم بعد.',
+  SUBSCRIPTION_EXPIRED: 'انتهى اشتراك هذه الأكاديمية. تواصل مع إدارتها.',
+  TENANT_INACTIVE: 'هذه الأكاديمية غير مفعّلة بعد.',
+};
+
+const otpMessage = (err: unknown): string => (err instanceof ApiError && OTP_ERRORS[err.code] ? OTP_ERRORS[err.code]! : describe(err));
+
+/** Step 1: e-mails a 6-digit code to the address. The API answers the same for unknown addresses. */
+export async function requestLoginCodeAction(slug: string, _prev: LoginState, form: FormData): Promise<LoginState> {
   if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
   const email = String(form.get('email') ?? '').trim();
-  const password = String(form.get('password') ?? '');
-  if (!email || !password) return { error: 'أدخل البريد الإلكتروني وكلمة المرور.' };
+  if (!email) return { error: 'أدخل بريدك الإلكتروني.' };
+  try {
+    const r = await api<{ challenge_id: string }>(slug, '/auth/otp/request', { method: 'POST', body: { email } });
+    return { challenge: { id: r.challenge_id, email } };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') return { error: 'اكتب بريداً إلكترونياً صحيحاً.' };
+    return { error: otpMessage(err) };
+  }
+}
 
+/** Step 2: the code signs the user in; admins land on their dashboard unless sent from a specific page. */
+export async function verifyLoginCodeAction(slug: string, challenge: { id: string; email: string }, next: string, _prev: LoginState, form: FormData): Promise<LoginState> {
+  if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  const code = String(form.get('code') ?? '').replace(/\D/g, '');
+  if (code.length !== 6) return { challenge, error: 'اكتب الرمز المكوّن من ٦ أرقام.' };
   let role: string;
   try {
-    const res = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email, password } });
+    const res = await api<LoginResponse>(slug, '/auth/otp/verify', { method: 'POST', body: { challenge_id: challenge.id, code } });
     await setSession(slug, { token: res.access_token, email: res.user.email, role: res.user.role }, res.expires_in);
     role = res.user.role;
   } catch (err) {
-    return { error: describe(err) };
+    // A wrong code keeps the user on this step; anything else means asking for a new code.
+    return err instanceof ApiError && err.code === 'OTP_INVALID' ? { challenge, error: otpMessage(err) } : { error: otpMessage(err) };
   }
-  // redirect() throws, so it must stay outside the try block. Admins land on their
-  // dashboard unless they were sent to login from a specific page.
-  const next = form.get('next');
+  // redirect() throws, so it must stay outside the try block.
   const fallback = role === 'TENANT_ADMIN' ? `/${slug}/dashboard` : `/${slug}`;
-  redirect(typeof next === 'string' && next ? safeNextPath(slug, next) : fallback);
+  redirect(next ? safeNextPath(slug, next) : fallback);
+}
+
+export async function resendLoginCodeAction(slug: string, challenge: { id: string; email: string }, _prev: LoginState): Promise<LoginState> {
+  if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  try {
+    await api(slug, '/auth/otp/resend', { method: 'POST', body: { challenge_id: challenge.id } });
+    return { challenge, resent: true };
+  } catch (err) {
+    return err instanceof ApiError && err.code === 'RESEND_TOO_SOON' ? { challenge, error: otpMessage(err) } : { error: otpMessage(err) };
+  }
 }
 
 export interface JoinState extends FormState {
   fields?: string[];
   /** Step 2: the code was e-mailed; the sign-up waits for it. */
-  pending?: { id: string; email: string; slug: string };
+  pending?: { id: string; email: string; slug: string; name: string };
+  /** Step 3: the e-mail is confirmed and the academy is waiting for the platform owner's approval. */
+  done?: { slug: string; email: string; name: string };
   /** A new code was sent (shown once). */
   resent?: boolean;
 }
@@ -76,7 +121,7 @@ const JOIN_FIELDS: Record<string, string> = {
   city: 'المدينة',
   admin_name: 'اسم المسؤول',
   admin_email: 'البريد الإلكتروني',
-  password: 'كلمة المرور',
+  phone: 'رقم الجوال',
   accept_terms: 'الموافقة على الشروط',
 };
 
@@ -95,6 +140,9 @@ const JOIN_ERRORS: Record<string, string> = {
 /** Step 1 of the provider sign-up: validates and e-mails a code to the admin address. Nothing is created yet. */
 export async function registerProviderAction(_prev: JoinState, form: FormData): Promise<JoinState> {
   const slug = String(form.get('slug') ?? '').trim().toLowerCase();
+  const rawPhone = String(form.get('phone') ?? '').trim();
+  const phone = rawPhone ? normalizePhone(rawPhone) : null;
+  if (rawPhone && !phone) return { error: 'رقم الجوال غير صحيح. اكتبه مثل 0566477687 أو +966566477687.', fields: ['رقم الجوال'] };
   try {
     const r = await platformApi<{ pending_id: string; email: string }>('/providers', {
       method: 'POST',
@@ -104,11 +152,11 @@ export async function registerProviderAction(_prev: JoinState, form: FormData): 
         city: String(form.get('city') ?? '').trim() || null,
         admin_name: String(form.get('admin_name') ?? '').trim(),
         admin_email: String(form.get('admin_email') ?? '').trim(),
-        password: String(form.get('password') ?? ''),
+        phone,
         accept_terms: form.get('accept_terms') === 'on',
       },
     });
-    return { pending: { id: r.pending_id, email: r.email, slug } };
+    return { pending: { id: r.pending_id, email: r.email, slug, name: String(form.get('academy_name') ?? '').trim() } };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
       return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => JOIN_FIELDS[d.field] ?? d.field))] };
@@ -118,31 +166,22 @@ export async function registerProviderAction(_prev: JoinState, form: FormData): 
   }
 }
 
-/** Step 2: the e-mailed code creates the academy, then signs its admin straight in. */
-export async function verifyProviderAction(pending: { id: string; email: string; slug: string }, _prev: JoinState, form: FormData): Promise<JoinState> {
+/** Step 2: the e-mailed code confirms the address and files the request; the owner approves it before it goes live. */
+export async function verifyProviderAction(pending: NonNullable<JoinState['pending']>, _prev: JoinState, form: FormData): Promise<JoinState> {
   const code = String(form.get('code') ?? '').replace(/\D/g, '');
-  const password = String(form.get('password') ?? '');
   if (code.length !== 6) return { pending, error: 'اكتب الرمز المكوّن من ٦ أرقام.' };
-  let slug: string;
   try {
-    slug = (await platformApi<{ slug: string }>('/providers/verify', { method: 'POST', body: { pending_id: pending.id, code } })).slug;
+    const r = await platformApi<{ slug: string }>('/providers/verify', { method: 'POST', body: { pending_id: pending.id, code } });
+    return { done: { slug: r.slug, email: pending.email, name: pending.name } };
   } catch (err) {
     // A wrong code keeps the user on this step; an expired or locked sign-up sends them back to step 1.
     const retry = err instanceof ApiError && err.code === 'CODE_INVALID';
     const message = err instanceof ApiError && JOIN_ERRORS[err.code] ? JOIN_ERRORS[err.code]! : describe(err);
     return retry ? { pending, error: message } : { error: message };
   }
-  // The academy exists now. If signing in fails for any reason, the login page is the way on (not a retry of the code).
-  try {
-    const login = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email: pending.email, password } });
-    await setSession(slug, { token: login.access_token, email: login.user.email, role: login.user.role }, login.expires_in);
-  } catch {
-    redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/dashboard/settings?welcome=1`)}`);
-  }
-  redirect(`/${pending.slug}/dashboard/settings?welcome=1`);
 }
 
-export async function resendProviderCodeAction(pending: { id: string; email: string; slug: string }, _prev: JoinState): Promise<JoinState> {
+export async function resendProviderCodeAction(pending: NonNullable<JoinState['pending']>, _prev: JoinState): Promise<JoinState> {
   try {
     await platformApi('/providers/resend', { method: 'POST', body: { pending_id: pending.id } });
     return { pending, resent: true };
@@ -152,27 +191,21 @@ export async function resendProviderCodeAction(pending: { id: string; email: str
   }
 }
 
-/** PRD §6 learner self-registration in this academy, then signed straight in. */
-export async function registerLearnerAction(slug: string, _prev: JoinState, form: FormData): Promise<JoinState> {
+/** PRD §6 learner self-registration: creates the account, then e-mails the sign-in code (also proves the address). */
+export async function registerLearnerAction(slug: string, _prev: LoginState, form: FormData): Promise<LoginState> {
   if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
+  const email = String(form.get('email') ?? '').trim();
   try {
-    const res = await api<LoginResponse>(slug, '/auth/register', {
-      method: 'POST',
-      body: {
-        full_name: String(form.get('full_name') ?? '').trim(),
-        email: String(form.get('email') ?? '').trim(),
-        password: String(form.get('password') ?? ''),
-      },
-    });
-    await setSession(slug, { token: res.access_token, email: res.user.email, role: res.user.role }, res.expires_in);
+    await api(slug, '/auth/register', { method: 'POST', body: { full_name: String(form.get('full_name') ?? '').trim(), email } });
+    const r = await api<{ challenge_id: string }>(slug, '/auth/otp/request', { method: 'POST', body: { email } });
+    return { challenge: { id: r.challenge_id, email } };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'EMAIL_TAKEN') return { error: 'يوجد حساب بهذا البريد في هذه الأكاديمية. سجّل الدخول بدلاً من ذلك.' };
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
-      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => ({ full_name: 'الاسم الكامل', email: 'البريد الإلكتروني', password: 'كلمة المرور' })[d.field] ?? d.field))] };
+      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => ({ full_name: 'الاسم الكامل', email: 'البريد الإلكتروني' })[d.field as 'full_name' | 'email'] ?? d.field))] };
     }
-    return { error: describe(err) };
+    return { error: otpMessage(err) };
   }
-  redirect(safeNextPath(slug, form.get('next')) === `/${slug}` ? `/${slug}/my` : safeNextPath(slug, form.get('next')));
 }
 
 /** Marks a lesson done; the API issues the certificate when it's the last one. */

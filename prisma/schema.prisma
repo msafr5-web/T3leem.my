@@ -134,6 +134,14 @@ model Tenant {
   logoMimeType           String?      @map("logo_mime_type")
   logoUpdatedAt          DateTime?    @map("logo_updated_at")
   planId                 String?      @map("plan_id") @db.Uuid
+  // Subscription managed by the platform owner: approval time, end of the paid period (null = no end) and the modules switched on.
+  approvedAt             DateTime?    @map("approved_at")
+  subscriptionEndsAt     DateTime?    @map("subscription_ends_at")
+  features               Json         @default("{\"health\":true,\"recorded\":true}")
+  // Who signed the academy up (the first admin), for the owner console and WhatsApp follow-up.
+  ownerName              String?      @map("owner_name")
+  ownerEmail             String?      @map("owner_email")
+  ownerPhone             String?      @map("owner_phone")
   createdAt              DateTime     @default(now()) @map("created_at")
   updatedAt              DateTime     @updatedAt @map("updated_at")
 
@@ -152,6 +160,7 @@ model SignupVerification {
   academyName  String   @map("academy_name")
   city         String?
   adminName    String   @map("admin_name")
+  phone        String?
   passwordHash String   @map("password_hash")
   codeHash     String   @map("code_hash")
   attempts     Int      @default(0)
@@ -163,6 +172,24 @@ model SignupVerification {
   @@index([email, createdAt])
   @@index([slug])
   @@map("signup_verifications")
+}
+
+// One-time e-mail code that signs a user in. tenant_id null = the platform owner console.
+// Not tenant-scoped by RLS: a challenge is found by its unguessable id and always checked against the request tenant.
+model LoginOtp {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  email      String
+  userId     String?  @map("user_id") @db.Uuid
+  codeHash   String   @map("code_hash")
+  attempts   Int      @default(0)
+  sends      Int      @default(1)
+  lastSentAt DateTime @default(now()) @map("last_sent_at")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@map("login_otps")
 }
 
 model SaasPlan {

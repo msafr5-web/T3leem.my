@@ -62,7 +62,7 @@ export function buildPlatformRouter(
     body('city').optional({ values: 'falsy' }).isString().isLength({ max: 60 }),
     body('admin_name').isString().trim().isLength({ min: 3, max: 120 }),
     body('admin_email').isString().trim().isEmail().withMessage('A valid email is required'),
-    body('password').isString().isLength({ min: 8, max: 128 }).withMessage('password must be at least 8 characters'),
+    body('phone').optional({ values: 'falsy' }).isString().trim().matches(/^\+[1-9][0-9]{8,14}$/).withMessage('phone must be an international number such as +9665XXXXXXXX'),
     body('accept_terms').equals('true').withMessage('The terms must be accepted'),
     validate,
     async (req: Request, res: Response) => {
@@ -74,7 +74,7 @@ export function buildPlatformRouter(
         city: typeof b.city === 'string' && b.city.trim() ? b.city.trim() : null,
         adminName: String(b.admin_name),
         adminEmail: String(b.admin_email),
-        password: String(b.password),
+        phone: typeof b.phone === 'string' && b.phone.trim() ? b.phone.trim() : null,
       });
       res.status(202).json(ok({ pending_id: result.pendingId, email: result.email, expires_in: result.expiresInSec }));
     },

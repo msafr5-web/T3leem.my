@@ -1,3 +1,4 @@
+import { SUPPORT_PHONE, WELCOME_MESSAGE, supportLink } from '@/lib/support';
 import Link from 'next/link';
 import { getProviders, type Provider } from '@/lib/api';
 import { safeBrandColor } from '@/lib/format';
@@ -73,6 +74,7 @@ export default async function PlatformHome() {
             <a href="#how">كيف تعمل</a>
             <a href="#features">المزايا</a>
             <a href="#faq">الأسئلة الشائعة</a>
+            <a href={supportLink(WELCOME_MESSAGE)} target="_blank" rel="noopener noreferrer">الدعم على واتساب</a>
             <Link href="/join" className="btn btn-primary">انضم كمزود خدمة</Link>
           </nav>
         </div>
@@ -222,7 +224,7 @@ export default async function PlatformHome() {
       <footer className="site-footer">
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <span>T3leem.my · منصة التدريب السحابية</span>
-          <span>بيئة تجريبية · لا تتم أي عمليات دفع حقيقية</span>
+          <a href={supportLink(WELCOME_MESSAGE)} target="_blank" rel="noopener noreferrer">واتساب الدعم والاستفسار <span dir="ltr">{SUPPORT_PHONE}</span></a>
         </div>
       </footer>
     </>

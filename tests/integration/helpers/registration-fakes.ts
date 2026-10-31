@@ -5,7 +5,7 @@ import { RegistrationService, type PendingSignup, type RegistrationInput, type R
 /** In-memory RegistrationRepository: pending sign-ups + the tenants created from them. */
 export class InMemoryRegistrationRepository implements RegistrationRepository {
   pending = new Map<string, PendingSignup>();
-  registered: (Omit<RegistrationInput, 'password'> & { passwordHash: string })[] = [];
+  registered: (RegistrationInput & { passwordHash: string })[] = [];
   takenSlugs = new Set<string>(['rukn', 'masar']);
   /** Make `register` throw once (e.g. a lost race). */
   failRegisterWith: Error | null = null;
@@ -38,7 +38,7 @@ export class InMemoryRegistrationRepository implements RegistrationRepository {
     return this.started.filter((e) => e === email).length;
   }
   async purgeExpired() {}
-  async register(input: Omit<RegistrationInput, 'password'> & { passwordHash: string }) {
+  async register(input: RegistrationInput & { passwordHash: string }) {
     if (this.failRegisterWith) {
       const err = this.failRegisterWith;
       this.failRegisterWith = null;
@@ -89,6 +89,7 @@ export function buildRegistrationFakes(opts: { enabled?: boolean; now?: () => Da
     enabled: opts.enabled ?? true,
     mailer,
     webUrl: 'https://t3leem.my',
+    ownerEmails: ['t3leemy@t3leem.my'],
     now,
   });
   return { repository, mailer, service, clock };

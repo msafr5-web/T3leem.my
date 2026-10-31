@@ -1,4 +1,4 @@
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import type { Mailer } from '../../shared/services/mailer';
 import { HttpError } from '../../shared/utils/http-error';
 
@@ -8,7 +8,8 @@ export interface RegistrationInput {
   city: string | null;
   adminName: string;
   adminEmail: string;
-  password: string;
+  /** International format, e.g. +9665XXXXXXXX (kept for the owner's WhatsApp follow-up). */
+  phone: string | null;
 }
 
 export interface PendingSignup {
@@ -18,6 +19,7 @@ export interface PendingSignup {
   academyName: string;
   city: string | null;
   adminName: string;
+  phone: string | null;
   passwordHash: string;
   codeHash: string;
   attempts: number;
@@ -41,7 +43,7 @@ export interface RegistrationRepository {
   countStarted(email: string, since: Date): Promise<number>;
   purgeExpired(before: Date): Promise<void>;
   /** Creates the tenant and its first TENANT_ADMIN atomically. */
-  register(input: Omit<RegistrationInput, 'password'> & { passwordHash: string }): Promise<{ tenantId: string }>;
+  register(input: RegistrationInput & { passwordHash: string }): Promise<{ tenantId: string }>;
 }
 
 /**
@@ -51,7 +53,7 @@ export interface RegistrationRepository {
 const RESERVED_SLUGS = new Set([
   'admin', 'api', 'app', 'auth', 'billing', 'dashboard', 'docs', 'help', 'join', 'login', 'logout', 'mail',
   'platform', 'register', 'root', 'signup', 'static', 'status', 'support', 'system', 'www', 't3leem', 'rukn-admin',
-  '_next', 'favicon', 'robots', 'sitemap', 'verify', 'certificates', 'webhooks',
+  '_next', 'owner', 'favicon', 'robots', 'sitemap', 'verify', 'certificates', 'webhooks',
 ]);
 
 const isUniqueViolation = (err: unknown): boolean =>
@@ -69,6 +71,8 @@ interface Deps {
   mailer: Mailer;
   /** Public web URL, for the links in the e-mail. */
   webUrl: string;
+  /** Platform owner addresses: told about every new sign-up waiting for approval. */
+  ownerEmails?: string[];
   now?: () => Date;
   /** Injectable for tests; the default is a CSPRNG 6-digit code. */
   generateCode?: () => string;
@@ -137,6 +141,32 @@ export class RegistrationService {
     }
   }
 
+  /** Tells the platform owner a new academy is waiting for approval. Best effort: the sign-up is already saved. */
+  private async notifyOwners(p: PendingSignup): Promise<void> {
+    const owners = this.deps.ownerEmails ?? [];
+    if (owners.length === 0) return;
+    const base = this.deps.webUrl.replace(/\/$/, '');
+    const lines = [
+      `طلب اشتراك جديد بانتظار الاعتماد: «${p.academyName}»`,
+      `• الرابط المطلوب: ${base}/${p.slug}`,
+      `• المسؤول: ${p.adminName} (${p.email})`,
+      ...(p.phone ? [`• الجوال: ${p.phone}`] : []),
+      ...(p.city ? [`• المدينة: ${p.city}`] : []),
+      '',
+      `اعتمد الطلب وحدّد الباقة والمدة من لوحة الإدارة: ${base}/owner`,
+    ];
+    try {
+      await this.deps.mailer.send({
+        to: owners.join(','),
+        subject: `طلب اشتراك جديد: ${p.academyName}`,
+        text: lines.join('\n'),
+        html: `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;line-height:1.8">${lines.map((l) => `<div>${escapeHtml(l)}</div>`).join('')}</div>`,
+      });
+    } catch {
+      // ignored on purpose
+    }
+  }
+
   /** Step 1: validate, store the pending sign-up and e-mail the code. Nothing is created yet. */
   async start(input: RegistrationInput): Promise<{ pendingId: string; email: string; expiresInSec: number }> {
     if (!this.deps.enabled) throw HttpError.forbidden('Provider sign-up is closed; contact the platform team');
@@ -153,8 +183,10 @@ export class RegistrationService {
     const code = this.generateCode();
     const expiresAt = new Date(now.getTime() + SIGNUP_CODE.ttlMs);
     const target: MailTarget = { email, adminName: input.adminName.trim(), academyName: input.academyName.trim(), slug, city: input.city };
+    const phone = input.phone && input.phone.trim() ? input.phone.trim() : null;
     // The row id salts the code hash, so the row is created first and the hash is filled in right after.
-    const id = await this.deps.repository.createPending({ ...target, passwordHash: await this.deps.hashPassword(input.password), codeHash: '', expiresAt });
+    // Accounts have no password (sign-in is an e-mailed code); the column still needs a hash of a secret nobody knows.
+    const id = await this.deps.repository.createPending({ ...target, phone, passwordHash: await this.deps.hashPassword(randomBytes(24).toString('hex')), codeHash: '', expiresAt });
     await this.deps.repository.setCode(id, hashCode(code, id).toString('hex'), expiresAt, false);
     try {
       await this.sendCode(target, code);
@@ -196,7 +228,8 @@ export class RegistrationService {
     if (!(await this.deps.repository.deletePending(p.id))) throw HttpError.unprocessable('CODE_EXPIRED', 'The code was already used; start again');
     await this.assertSlugFree(p.slug);
     try {
-      const { tenantId } = await this.deps.repository.register({ academyName: p.academyName, slug: p.slug, city: p.city, adminName: p.adminName, adminEmail: p.email, passwordHash: p.passwordHash });
+      const { tenantId } = await this.deps.repository.register({ academyName: p.academyName, slug: p.slug, city: p.city, adminName: p.adminName, adminEmail: p.email, phone: p.phone, passwordHash: p.passwordHash });
+      await this.notifyOwners(p);
       return { tenantId, slug: p.slug };
     } catch (err) {
       // Lost a race with a concurrent sign-up for the same slug.

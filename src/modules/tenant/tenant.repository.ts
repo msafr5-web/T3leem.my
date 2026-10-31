@@ -15,6 +15,8 @@ const tenantSelect = {
   vatNumber: true,
   brandSettings: true,
   logoUpdatedAt: true,
+  subscriptionEndsAt: true,
+  features: true,
 } as const;
 
 const str = (settings: Prisma.JsonValue, key: string): string | null => {
@@ -199,15 +201,19 @@ export class TenantRepository implements BrandingRepository, RegistrationReposit
     await this.db.signupVerification.deleteMany({ where: { expiresAt: { lt: before } } });
   }
 
-  async register(input: Omit<RegistrationInput, 'password'> & { passwordHash: string }): Promise<{ tenantId: string }> {
+  async register(input: RegistrationInput & { passwordHash: string }): Promise<{ tenantId: string }> {
     return this.db.$transaction(async (tx) => {
       const plan = await tx.saasPlan.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
       const tenant = await tx.tenant.create({
         data: {
           name: input.academyName,
           slug: input.slug,
-          status: 'ACTIVE',
+          // A new academy waits for the platform owner's approval (plan, period, modules) before it goes live.
+          status: 'PROVISIONING',
           planId: plan?.id ?? null,
+          ownerName: input.adminName,
+          ownerEmail: input.adminEmail,
+          ownerPhone: input.phone,
           brandSettings: input.city ? { locale: 'ar', city: input.city } : { locale: 'ar' },
         },
         select: { id: true },

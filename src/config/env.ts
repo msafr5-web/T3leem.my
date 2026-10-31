@@ -63,6 +63,11 @@ const envSchema = z
     SMTP_USER: optionalString,
     SMTP_PASSWORD: optionalString,
     MAIL_FROM: z.string().min(3).default('T3leem.my <t3leemy@t3leem.my>'),
+    // Platform owner console: only these addresses can sign in (comma separated).
+    PLATFORM_ADMIN_EMAILS: z
+      .string()
+      .default('t3leemy@t3leem.my')
+      .transform((v) => v.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)),
     // Self-service provider sign-up (/join). Disable to onboard providers manually only.
     PROVIDER_SIGNUP_ENABLED: z
       .enum(['true', 'false'])

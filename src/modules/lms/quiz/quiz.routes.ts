@@ -1,7 +1,7 @@
 import express, { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
 import { UserRole } from '@prisma/client';
-import { authenticate, requireAuthContext, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
+import { authenticate, requireAuthContext, requireFeature, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
 import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import { HttpError } from '../../../shared/utils/http-error';
@@ -96,6 +96,8 @@ const draftOf = (b: Record<string, unknown>): QuestionDraft => ({
 /** Provider dashboard: question bank, Excel in/out, settings and results (TENANT_ADMIN). */
 export function buildQuizAdminRouter(service: QuizService, jwt: JwtVerifyOptions): Router {
   const router = Router();
+  // Course content is a module the platform owner switches on per academy.
+  router.use('/recorded-courses', requireFeature('recorded'));
   const admin = [authenticate(jwt), requireRoles(UserRole.TENANT_ADMIN)];
   const actorOf = (req: Request) => {
     const { tenantId, user } = requireAuthContext(req);

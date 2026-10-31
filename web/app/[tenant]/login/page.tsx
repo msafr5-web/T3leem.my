@@ -22,21 +22,13 @@ export default async function LoginPage({
   return (
     <div className="narrow stack">
       <h1>تسجيل الدخول</h1>
-      <p className="muted">ادخل بحسابك في هذه الأكاديمية.</p>
+      <p className="muted">اكتب بريدك الإلكتروني فيصلك رمز دخول من ٦ أرقام. الدخول للمالك والمدرب والمتدرب بالطريقة نفسها.</p>
       <div className="card">
         <LoginForm slug={slug} next={target} />
       </div>
       <p className="small">
         ليس لديك حساب؟ <Link href={`/${slug}/register${next ? `?next=${encodeURIComponent(next)}` : ''}`}>أنشئ حساب متدرب</Link>
       </p>
-      <div className="creds" aria-label="حسابات تجريبية">
-        <span className="muted">مدير المزود</span>
-        <span className="ltr">admin@{slug}.test</span>
-        <span className="muted">متدرب</span>
-        <span className="ltr">{slug === 'rukn' ? 'student' : 'learner'}@{slug}.test</span>
-        <span className="muted">كلمة المرور</span>
-        <span className="ltr">Demo@2026</span>
-      </div>
     </div>
   );
 }

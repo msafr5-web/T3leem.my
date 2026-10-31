@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { body, param } from 'express-validator';
 import { UserRole } from '@prisma/client';
-import { authenticate, requireAuthContext, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
+import { authenticate, requireAuthContext, requireFeature, requireRoles, type JwtVerifyOptions } from '../../../shared/middlewares/auth.middleware';
 import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import type { DiscussionPostRow } from './recorded.repository';
@@ -136,6 +136,8 @@ function discussionHandlers(service: RecordedCourseService) {
 /** Provider dashboard: /api/v1/admin/recorded-courses + day discussions (TENANT_ADMIN). */
 export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: JwtVerifyOptions): Router {
   const router = Router();
+  // Course content is a module the platform owner switches on per academy.
+  router.use('/recorded-courses', requireFeature('recorded'));
   const admin = [authenticate(jwt), requireRoles(UserRole.TENANT_ADMIN)];
   const discussion = discussionHandlers(service);
 

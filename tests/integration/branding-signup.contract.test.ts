@@ -58,7 +58,7 @@ describe('academy branding', () => {
 });
 
 describe('POST /api/v1/platform/providers (self-service sign-up with e-mail code)', () => {
-  const valid = { academy_name: 'Dammam Skills', slug: 'dammam-skills', city: 'Dammam', admin_name: 'Faisal Admin', admin_email: 'boss@dammam.test', password: 'Str0ngPass!', accept_terms: true };
+  const valid = { academy_name: 'Dammam Skills', slug: 'dammam-skills', city: 'Dammam', admin_name: 'Faisal Admin', admin_email: 'boss@dammam.test', phone: '+966500000001', accept_terms: true };
   const signup = (body: object, app = buildApp()) => request(app).post('/api/v1/platform/providers').send(body);
   const regOf = (app: ReturnType<typeof buildApp>) => app.locals.registration as ReturnType<typeof import('./helpers/registration-fakes').buildRegistrationFakes>;
 
@@ -103,10 +103,24 @@ describe('POST /api/v1/platform/providers (self-service sign-up with e-mail code
     expect((await signup({ ...valid, slug: '-bad slug-' })).status).toBe(422);
   });
 
-  it('requires accepted terms and a strong-enough password', async () => {
-    const res = await signup({ ...valid, accept_terms: false, password: '123' });
+  it('requires accepted terms and a valid international phone number (the phone is optional)', async () => {
+    const res = await signup({ ...valid, accept_terms: false, phone: '0500000001' });
     expect(res.status).toBe(422);
-    expect(res.body.error.details.map((d: { field: string }) => d.field)).toEqual(expect.arrayContaining(['accept_terms', 'password']));
+    expect(res.body.error.details.map((d: { field: string }) => d.field)).toEqual(expect.arrayContaining(['accept_terms', 'phone']));
+    const { phone: _phone, ...withoutPhone } = valid;
+    expect((await signup(withoutPhone)).status).toBe(202);
+  });
+
+  it('stores the phone, takes no password, and tells the platform owner about the new request', async () => {
+    const app = buildApp();
+    const { pending_id } = (await signup(valid, app)).body.data;
+    await request(app).post('/api/v1/platform/providers/verify').send({ pending_id, code: regOf(app).mailer.lastCode });
+    const row = regOf(app).repository.registered[0]!;
+    expect(row).toMatchObject({ slug: 'dammam-skills', phone: '+966500000001', adminEmail: 'boss@dammam.test' });
+    expect(row.passwordHash).toMatch(/^hashed:/);
+    const ownerMail = regOf(app).mailer.sent.find((m) => m.to.includes('t3leemy@t3leem.my'));
+    expect(ownerMail?.subject).toContain('Dammam Skills');
+    expect(ownerMail?.text).toContain('+966500000001');
   });
 
   it('503 when the e-mail cannot be sent, 403 when sign-up is disabled', async () => {

@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import { createApp } from '../../../src/app';
 import type { TenantPrismaClient } from '../../../src/config/database';
 import { AuthController } from '../../../src/modules/auth/auth.controller';
-import type { AuthRepository, LoginCandidate } from '../../../src/modules/auth/auth.repository';
+import type { AuthRepository } from '../../../src/modules/auth/auth.repository';
 import { AuthService } from '../../../src/modules/auth/auth.service';
 import { JwtTokenSigner } from '../../../src/modules/auth/token-signer';
 import { PaymentDeclinedError } from '../../../src/modules/billing/payment-gateway';
@@ -31,8 +31,8 @@ import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
 import { buildHealthFakes } from './health-fakes';
 import { buildRegistrationFakes } from './registration-fakes';
+import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
-import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
 export const TENANT_A = '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11';
 export const TENANT_B = '0b9f4e6a-2c1d-4e8f-8a7b-6c5d4e3f2a10';
@@ -53,10 +53,10 @@ export const sign = (claims: Record<string, unknown>, opts: jwt.SignOptions = {}
 export const learnerToken = sign({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
 
 const brand = { primaryColor: '#0d6b62' };
-const tenants: Record<string, ResolvedTenant> = {
-  [TENANT_A]: { id: TENANT_A, slug: 'rukn', name: 'Rukn', status: 'ACTIVE', legalName: 'Rukn Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z') },
-  [TENANT_B]: { id: TENANT_B, slug: 'masar', name: 'Masar Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null },
-  [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {}, logoUpdatedAt: null },
+export const tenants: Record<string, ResolvedTenant> = {
+  [TENANT_A]: { id: TENANT_A, slug: 'rukn', name: 'Rukn', status: 'ACTIVE', legalName: 'Rukn Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z'), subscriptionEndsAt: null, features: { health: true, recorded: true } },
+  [TENANT_B]: { id: TENANT_B, slug: 'masar', name: 'Masar Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null, subscriptionEndsAt: null, features: { health: true, recorded: true } },
+  [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {}, logoUpdatedAt: null, subscriptionEndsAt: null, features: { health: true, recorded: true } },
 };
 
 const resolver: TenantResolver = {
@@ -98,8 +98,6 @@ const pmp: CourseDetailRow = {
 };
 
 // Hashing is slow by design; do it once for the whole file.
-const learnerHash = hashPassword(LEARNER_PASSWORD);
-const dummyHash = hashPassword('dummy-password-for-timing');
 
 /** Course whose question bank / quiz the quiz contract tests use; USER is enrolled in it. */
 export const QUIZ_COURSE = '77777777-7777-4777-8777-777777777771';
@@ -130,8 +128,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     findPublished: async (tenantId, id) => (tenantId === TENANT_A && id === COURSE ? pmp : null),
   };
   const authRepo: AuthRepository = {
-    findByEmail: async (tenantId, email): Promise<LoginCandidate | null> =>
-      tenantId === TENANT_A && email === LEARNER_EMAIL ? { id: USER, email, role: 'LEARNER', passwordHash: await learnerHash } : null,
+    findUser: async (tenantId, email) => (tenantId === TENANT_A && email === LEARNER_EMAIL ? { id: USER, email, role: 'LEARNER', fullName: 'Abdullah' } : null),
     createLearner: async (_t, data) => {
       if (data.email === LEARNER_EMAIL) throw Object.assign(new Error('dup'), { code: 'P2002' });
       return { id: 'new-learner-id', email: data.email, role: 'LEARNER' };
@@ -151,17 +148,14 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     vatRatePercent: 15,
     clock: () => new Date('2026-10-22T19:40:00Z'),
   });
-  const auth = new AuthService({
-    repository: authRepo,
-    signer: new JwtTokenSigner(opts.signingKey === null ? undefined : (opts.signingKey ?? privatePem), {
-      issuer: jwtOpts.issuer,
-      audience: jwtOpts.audience,
-      ttlSeconds: 900,
-    }),
-    verifyPassword,
-    dummyHash,
-    hashPassword: async (p) => `hashed:${p}`,
+  const auth = new AuthService({ repository: authRepo, unusablePasswordHash: async () => 'hashed:unusable' });
+  const signer = new JwtTokenSigner(opts.signingKey === null ? undefined : (opts.signingKey ?? privatePem), {
+    issuer: jwtOpts.issuer,
+    audience: jwtOpts.audience,
+    ttlSeconds: 900,
   });
+  const otp = buildOtpFakes({ users: authRepo, signer });
+  const owner = buildOwnerFakes({ mailer: otp.mailer });
   const passThrough: RequestHandler = (_req, _res, next) => next();
 
   // In-memory provider data; only TENANT_A owns anything (mimics RLS + the ownership checks).
@@ -309,7 +303,9 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     loginRateLimiter: passThrough,
     jwt: jwtOpts,
     corsOrigins: [],
-    authController: new AuthController(auth),
+    authController: new AuthController(auth, otp.service),
+    otpLogin: otp.service,
+    ownerService: owner.service,
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
     providerController: new ProviderController(
@@ -345,5 +341,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.quiz = quiz;
   app.locals.health = health;
   app.locals.registration = registration;
+  app.locals.otp = otp;
+  app.locals.owner = owner;
   return app;
 }
