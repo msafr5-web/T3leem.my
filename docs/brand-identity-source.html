@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>دليل الهوية البصرية — T3leem.my</title>
+<style>
+@font-face { font-family: 'XB Sols'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/xb-sols-regular.woff2') format('woff2'); font-weight: 400; }
+@font-face { font-family: 'XB Sols'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/xb-sols-bold.woff2') format('woff2'); font-weight: 700; }
+:root { --sky:#29b6f6; --brand:#0b7ab8; --slate:#404858; --ice:#eaf6fd; --bg:#f3f8fb; --ink:#1f2937; --muted:#5b6676; --line:#d8e2eb; }
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: 'XB Sols', Tahoma, sans-serif; color: var(--ink); font-size: 12.5pt; line-height: 1.65; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 210mm; height: 297mm; padding: 14mm 16mm 11mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; display: flex; flex-direction: column; }
+.page:last-child { page-break-after: auto; }
+.page::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4mm; background: var(--sky); }
+.foot { margin-top: auto; padding-top: 6mm; border-top: 0.3mm solid var(--line); display: flex; justify-content: space-between; color: var(--muted); font-size: 10pt; }
+h1 { font-size: 30pt; font-weight: 700; margin: 0 0 4mm; line-height: 1.3; color: var(--slate); }
+h2 { font-size: 19pt; font-weight: 700; margin: 0 0 2mm; color: var(--slate); }
+h3 { font-size: 13pt; font-weight: 700; margin: 0 0 1.5mm; color: var(--slate); }
+p { margin: 0 0 2.2mm; }
+.muted { color: var(--muted); }
+.kicker { color: var(--brand); font-weight: 700; font-size: 12pt; margin-bottom: 2mm; }
+.rule { height: 1.2mm; width: 28mm; background: var(--sky); border-radius: 1mm; margin: 0 0 4mm; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+.card { border: 0.3mm solid var(--line); border-radius: 3mm; padding: 3.5mm; background: #fff; }
+.tint { background: var(--ice); border-color: #cfe6f5; }
+img { max-width: 100%; display: block; }
+.plate { background: #fff; border: 0.3mm solid var(--line); border-radius: 3mm; display: grid; place-items: center; padding: 3mm; }
+.dark { background: #0d141d; border-color: #263444; }
+
+/* cover */
+.cover { background: linear-gradient(180deg, #fff 0%, var(--ice) 100%); justify-content: space-between; }
+.cover .logo { width: 150mm; margin: 14mm auto 0; }
+.cover h1 { font-size: 44pt; text-align: center; margin-top: 10mm; }
+.cover .sub { text-align: center; font-size: 17pt; color: var(--muted); }
+.cover .meta { display: flex; justify-content: space-between; border-top: 0.3mm solid var(--line); padding-top: 6mm; color: var(--muted); font-size: 11pt; }
+
+/* colours */
+.sw { border-radius: 3mm; overflow: hidden; border: 0.3mm solid var(--line); background: #fff; }
+.sw .chip { height: 19mm; display: flex; align-items: flex-end; padding: 3mm 4mm; font-weight: 700; font-size: 15pt; }
+.sw .info { padding: 2mm 3mm; font-size: 10pt; line-height: 1.5; }
+.sw .info b { font-size: 12.5pt; }
+.code { direction: ltr; unicode-bidi: isolate; font-family: Consolas, 'Courier New', monospace; font-size: 10.5pt; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+th, td { text-align: start; padding: 1.4mm 2.4mm; border-bottom: 0.3mm solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 700; background: var(--bg); }
+.pair { display: inline-flex; align-items: center; justify-content: center; min-width: 30mm; height: 9mm; border-radius: 2mm; font-weight: 700; font-size: 11.5pt; }
+.ok { color: #1f7a46; font-weight: 700; } .bad { color: #a3341f; font-weight: 700; }
+
+/* type */
+.specimen-big { font-size: 44pt; line-height: 1.35; font-weight: 700; color: var(--slate); }
+.glyphs { font-size: 15pt; line-height: 1.7; word-spacing: 1mm; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+
+/* ui */
+.btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 2mm; padding: 1.6mm 5mm; font-weight: 700; font-size: 12pt; border: 0.3mm solid transparent; }
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+.btn-danger { background: #fff; color: #a3341f; border-color: #a3341f; }
+.badge { display: inline-block; padding: 0.4mm 3mm; border-radius: 5mm; background: var(--ice); color: var(--brand); font-size: 11pt; font-weight: 700; }
+.notice { border-radius: 2mm; padding: 2mm 3mm; font-size: 11pt; }
+.notice.info { background: var(--ice); color: #0a5c8a; } .notice.ok { background: #e2f3e8; color: #1f7a46; } .notice.err { background: #fbe8e4; color: #a3341f; }
+.input { border: 0.3mm solid var(--line); border-radius: 2mm; background: var(--bg); padding: 1.8mm 3mm; color: var(--muted); font-size: 11.5pt; }
+.header-mock { border: 0.3mm solid var(--line); border-top: 1.2mm solid var(--sky); border-radius: 3mm; padding: 3mm 5mm; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.header-mock .brand { display: flex; align-items: center; gap: 3mm; font-weight: 700; font-size: 15pt; color: var(--slate); }
+.header-mock img { width: 14mm; border-radius: 2.5mm; }
+.rules li { margin-bottom: 2mm; }
+.dont { position: relative; }
+.dont::after { content: '✕'; position: absolute; top: 2mm; inset-inline-start: 3mm; color: #a3341f; font-weight: 700; font-size: 16pt; }
+.sig { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; margin-top: 6mm; }
+.sig div { border-top: 0.4mm solid var(--slate); padding-top: 2mm; font-size: 11pt; color: var(--muted); min-height: 18mm; }
+.stamp { display: inline-block; border: 0.8mm solid var(--brand); color: var(--brand); border-radius: 3mm; padding: 2mm 6mm; font-weight: 700; font-size: 17pt; transform: rotate(-3deg); }
+</style>
+</head>
+<body>
+
+<!-- 1. cover -->
+<section class="page cover">
+  <div>
+    <div class="kicker" style="text-align:center">T3leem.my · منصة سحابية لأكاديميات التدريب</div>
+    <img class="logo" src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-original.jpg" alt="T3leem.my">
+    <h1>دليل الهوية البصرية</h1>
+    <p class="sub">الشعار · الألوان · الخط الرسمي · عناصر الواجهة · قواعد الاستعمال</p>
+  </div>
+  <div style="text-align:center"><span class="stamp">هوية معتمدة · الإصدار 1.0</span></div>
+  <div class="meta"><span>تاريخ الإصدار: 31 أكتوبر 2026</span><span>الاسم الرسمي: T3leem.my</span><span>t3leem.my</span></div>
+</section>
+
+<!-- 2. essence + logo -->
+<section class="page">
+  <div class="kicker">١ · الشعار</div><h2>مفهوم الشعار</h2><div class="rule"></div>
+  <p>يجمع الشعار ما تقوم عليه المنصة: <b>مبنى مدرسة يعلوه علم</b> يرمز إلى الأكاديمية والإنجاز، <b>كتاب مفتوح</b> يرمز إلى المعرفة، <b>قلم يكتب</b> يرمز إلى التعلّم والتدريب، و<b>مربعات رقمية</b> تتصاعد من القلم لتدل على أن كل ذلك يجري على منصة سحابية. الاسم المكتوب <b class="ltr">t3leem.my</b> بلونين: الأردوازي للجزء الأول والسماوي للامتداد <b class="ltr">.my</b>.</p>
+  <div class="plate" style="margin: 2mm 0 4mm; padding: 4mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-original.jpg" style="width: 105mm" alt=""></div>
+  <h3>صيغ الشعار المعتمدة</h3>
+  <div class="grid2">
+    <div class="card"><div class="plate" style="border:0;padding:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo.jpg" style="height: 32mm; width:auto" alt=""></div><h3 style="margin-top:3mm">الشعار الكامل</h3><p class="muted" style="font-size:12pt">الرمز مع الاسم. للأغلفة والصفحة الرئيسية والمطبوعات. أقل عرض: 40 مم / 160 بكسل.</p></div>
+    <div class="card"><div class="plate" style="border:0;padding:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="height: 32mm; width:auto" alt=""></div><h3 style="margin-top:3mm">الرمز وحده</h3><p class="muted" style="font-size:12pt">للمساحات الصغيرة: الترويسة، أيقونة المتصفح، الجوال، رسائل البريد. أقل عرض: 8 مم / 32 بكسل.</p></div>
+  </div>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>2</span></div>
+</section>
+
+<!-- 3. clear space, don'ts -->
+<section class="page">
+  <div class="kicker">١ · الشعار</div><h2>المساحة الآمنة وقواعد الاستعمال</h2><div class="rule"></div>
+  <div class="grid2" style="align-items:center">
+    <div class="plate" style="padding: 6mm; position: relative"><div style="border: 0.5mm dashed var(--sky); padding: 5mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo.jpg" style="width: 62mm" alt=""></div></div>
+    <div><h3>المساحة الآمنة</h3><p>اترك حول الشعار مساحة بيضاء لا تقل عن <b>عرض حرف «t»</b> من الاسم من جميع الجهات، ولا يدخل فيها نص أو صورة أو حد.</p><h3>الخلفيات</h3><p>الأصل على خلفية بيضاء. على الخلفيات الملوّنة أو الداكنة يوضع الشعار داخل لوحة بيضاء مستديرة الزوايا (كما في الموقع بالوضع الداكن).</p></div>
+  </div>
+  <h3 style="margin-top: 5mm">لا يجوز</h3>
+  <div class="grid3">
+    <div class="card dont"><div class="plate" style="border:0"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="width:22mm;transform: scaleX(1.5) scaleY(0.8)" alt=""></div><p style="font-size:11.5pt;text-align:center">تمديد الشعار أو ضغطه</p></div>
+    <div class="card dont"><div class="plate" style="border:0"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="width:22mm;filter: hue-rotate(110deg) saturate(1.6)" alt=""></div><p style="font-size:11.5pt;text-align:center">تغيير ألوان الشعار</p></div>
+    <div class="card dont"><div class="plate" style="border:0"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="width:22mm;transform: rotate(-18deg)" alt=""></div><p style="font-size:11.5pt;text-align:center">تدوير الشعار أو إمالته</p></div>
+    <div class="card dont" style="background:#d1332f"><div class="plate" style="border:0;background:transparent"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="width:22mm;mix-blend-mode:multiply" alt=""></div><p style="font-size:11.5pt;text-align:center;color:#fff">وضعه مباشرة على لون ساطع</p></div>
+    <div class="card dont"><div class="plate" style="border:0"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem.png" style="width:22mm;filter: blur(1.2px) grayscale(1)" alt=""></div><p style="font-size:11.5pt;text-align:center">تصغيره حتى يفقد الوضوح، أو إضافة ظلال</p></div>
+    <div class="card dont"><div class="plate" style="border:0"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo.jpg" style="width:38mm;margin-bottom:-6mm" alt=""><span style="position:absolute;font-size:16pt;color:#a3341f;margin-top:10mm;margin-inline-start:-36mm;font-weight:700">أي نص فوقه</span></div><p style="font-size:11.5pt;text-align:center">كتابة نص فوق الشعار أو تلاصقه معه</p></div>
+  </div>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>3</span></div>
+</section>
+
+<!-- 4. colours -->
+<section class="page">
+  <div class="kicker">٢ · الألوان</div><h2>لوحة الألوان</h2><div class="rule"></div>
+  <p>الألوان مأخوذة من الشعار نفسه: السماوي من «.my» والعلم والكتاب، والأردوازي من الاسم والقلم والمبنى. أضفنا درجة أغمق من السماوي (أزرق العلامة) للأزرار والروابط لتحقق تبايناً مقروءاً مع النص الأبيض.</p>
+  <div class="grid3" style="margin-bottom: 5mm">
+    <div class="sw"><div class="chip" style="background:#29b6f6;color:#1f2937">سماوي</div><div class="info"><b>Sky</b><br><span class="code">#29B6F6 · RGB 41 182 246</span><br>لمسات التمييز والخط العلوي</div></div>
+    <div class="sw"><div class="chip" style="background:#0b7ab8;color:#fff">أزرق العلامة</div><div class="info"><b>Brand</b><br><span class="code">#0B7AB8 · RGB 11 122 184</span><br>الأزرار والروابط (اللون الرئيسي)</div></div>
+    <div class="sw"><div class="chip" style="background:#404858;color:#fff">أردوازي</div><div class="info"><b>Slate</b><br><span class="code">#404858 · RGB 64 72 88</span><br>العناوين والنصوص الداكنة</div></div>
+  </div>
+  <div class="grid3" style="margin-bottom: 6mm">
+    <div class="sw"><div class="chip" style="background:#eaf6fd;color:#0a5c8a">ثلجي</div><div class="info"><b>Ice</b><br><span class="code">#EAF6FD</span><br>خلفيات التمييز والتنبيهات</div></div>
+    <div class="sw"><div class="chip" style="background:#f3f8fb;color:#1f2937">خلفية الصفحة</div><div class="info"><b>Background</b><br><span class="code">#F3F8FB</span><br>خلفية الصفحات</div></div>
+    <div class="sw"><div class="chip" style="background:#1f2937;color:#fff">نص أساسي</div><div class="info"><b>Ink</b><br><span class="code">#1F2937</span><br>النص الأساسي</div></div>
+  </div>
+  <h3>التباين مع النص (معيار WCAG)</h3>
+  <table>
+    <tr><th>الاستعمال</th><th>النص / الخلفية</th><th>النسبة</th><th>الحكم</th></tr>
+    <tr><td>زر رئيسي</td><td><span class="pair" data-fg="#ffffff" data-bg="#0b7ab8">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>عنوان أردوازي على أبيض</td><td><span class="pair" data-fg="#404858" data-bg="#ffffff" style="border:0.3mm solid var(--line)">عنوان</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص أساسي على خلفية الصفحة</td><td><span class="pair" data-fg="#1f2937" data-bg="#f3f8fb">نص</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص أبيض على السماوي</td><td><span class="pair" data-fg="#ffffff" data-bg="#29b6f6">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص داكن على السماوي</td><td><span class="pair" data-fg="#1f2937" data-bg="#29b6f6">نص داكن</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+  </table>
+  <p class="muted" style="margin-top:3mm;font-size:11.5pt">القاعدة: لا يُكتب نص أبيض على السماوي؛ السماوي للتمييز والخطوط لا للأزرار.</p>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>4</span></div>
+</section>
+
+<!-- 5. typography -->
+<section class="page">
+  <div class="kicker">٣ · الخط الرسمي</div><h2>الخط المعتمد: XB Sols</h2><div class="rule"></div>
+  <div class="card tint" style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:6mm">
+    <div><div class="specimen-big">تعليمي</div><div class="ltr" style="font-size:30pt;font-weight:700;color:var(--slate)">T3leem.my</div></div>
+    <div style="font-size:11.5pt;line-height:1.7;min-width:62mm"><b>XB Sols</b> (عادي وعريض)<br>المصمم: Behnam (irmug.com)<br>الإصدار 4.001<br>الترخيص: GPL v3 · حر ومفتوح المصدر</div>
+  </div>
+  <p style="margin-top:5mm">خط عربي بطابع النسخ الكلاسيكي، يمنح الموقع وقاراً أكاديمياً مناسباً للتعليم والتدريب والشهادات. يُستعمل <b>العريض (700)</b> للعناوين والأزرار والأرقام البارزة، و<b>العادي (400)</b> للنصوص والفقرات. لا يُخلط معه خط عربي آخر.</p>
+  <div class="grid2" style="margin: 3mm 0 5mm">
+    <div class="card"><h3>الحروف والأرقام</h3><div class="glyphs">أ ب ت ث ج ح خ د ذ ر ز<br>س ش ص ض ط ظ ع غ ف ق<br>ك ل م ن هـ و ي لا ء ة<br><span class="ltr">٠ ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩</span></div></div>
+    <div class="card"><h3>اللاتينية</h3><div class="glyphs ltr">ABCDEFGHIJKLM<br>NOPQRSTUVWXYZ<br>abcdefghijklm<br>nopqrstuvwxyz<br>0123456789</div></div>
+  </div>
+  <h3>سلّم النصوص في الموقع</h3>
+  <table>
+    <tr><th>المستوى</th><th>الحجم</th><th>الوزن</th><th>مثال</th></tr>
+    <tr><td>عنوان الصفحة H1</td><td class="code">42px</td><td>عريض 700</td><td style="font-size:20pt;font-weight:700;color:var(--slate)">أكاديمية رقمية</td></tr>
+    <tr><td>عنوان القسم H2</td><td class="code">22px</td><td>عريض 700</td><td style="font-size:16pt;font-weight:700;color:var(--slate)">مزودو الخدمة</td></tr>
+    <tr><td>عنوان فرعي H3</td><td class="code">18px</td><td>عريض 700</td><td style="font-size:14pt;font-weight:700">الباقات والاشتراك</td></tr>
+    <tr><td>النص الأساسي</td><td class="code">18px / 1.8</td><td>عادي 400</td><td>تعلّم وتدرّب في أي وقت.</td></tr>
+    <tr><td>الشروحات والتلميحات</td><td class="code">15px</td><td>عادي 400</td><td class="muted" style="font-size:12pt">نص ثانوي بلون رمادي مزرق</td></tr>
+  </table>
+  <p class="muted" style="margin-top:3mm;font-size:11.5pt">الخط مضمّن في الموقع بصيغة WOFF2 (عربي + لاتيني) مع نسخة الترخيص <span class="code">/fonts/GPL.txt</span>. مصدره: arfonts.net/xb-sols-bold-font.</p>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>5</span></div>
+</section>
+
+<!-- 6. UI -->
+<section class="page">
+  <div class="kicker">٤ · عناصر الواجهة</div><h2>الهوية في الموقع</h2><div class="rule"></div>
+  <h3>الترويسة</h3>
+  <div class="header-mock"><div class="brand"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem-96.png" alt=""><span class="ltr">T3leem.my</span></div><span class="btn btn-primary">انضم كمزود خدمة</span></div>
+  <p class="muted" style="font-size:11.5pt;margin-top:2mm">خط سماوي بسماكة 3px أعلى كل ترويسة، والرمز على لوحة بيضاء. صفحات الأكاديميات تضع شعارها الخاص مكان الرمز.</p>
+  <div class="grid2" style="margin-top:4mm">
+    <div class="card"><h3>الأزرار</h3><div style="display:flex;gap:3mm;flex-wrap:wrap;margin-top:2mm"><span class="btn btn-primary">إنشاء الأكاديمية</span><span class="btn btn-ghost">تصفح</span><span class="btn btn-danger">حذف</span></div><p class="muted" style="font-size:11pt;margin-top:3mm">رئيسي: أزرق العلامة بنص أبيض. ثانوي: أبيض بحد رمادي. حذف: أحمر بحد.</p></div>
+    <div class="card"><h3>الحقول</h3><div class="input" style="margin:2mm 0">البريد الإلكتروني</div><div class="input" style="letter-spacing:4mm;text-align:center;color:var(--ink)">٠٠٠٠٠٠</div><p class="muted" style="font-size:11pt;margin-top:2mm">حد 1px رمادي مزرق، وخلفية الصفحة.</p></div>
+  </div>
+  <div class="grid2" style="margin-top:4mm">
+    <div class="card"><h3>التنبيهات والشارات</h3><div class="notice info" style="margin:2mm 0">تم إرسال الرمز إلى بريدك.</div><div class="notice ok" style="margin-bottom:2mm">تم اعتماد الاشتراك.</div><div class="notice err" style="margin-bottom:2mm">الرمز غير صحيح.</div><span class="badge">١١٠ سؤالاً</span> <span class="badge">فعّالة</span></div>
+    <div class="card"><h3>البطاقة</h3><div class="card" style="margin-top:2mm"><b>أكاديمية ركن</b><br><span class="muted" style="font-size:11.5pt">تدريب احترافي معتمد في الإدارة والتقنية</span><br><span class="badge" style="margin-top:2mm">الرياض</span></div><p class="muted" style="font-size:11pt;margin-top:3mm">زوايا مستديرة 10px، حد رفيع، ولون الأكاديمية يحل محل أزرق العلامة داخل صفحاتها.</p></div>
+  </div>
+  <h3 style="margin-top:5mm">الوضع الداكن</h3>
+  <div class="plate dark" style="justify-items:stretch;padding:4mm 6mm;color:#e6edf5"><div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:3mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem-96.png" style="width:13mm;background:#fff;border-radius:2.5mm" alt=""><b class="ltr">T3leem.my</b></div><span class="btn btn-primary">دخول</span></div></div>
+  <p class="muted" style="font-size:11.5pt;margin-top:2mm">خلفية #0D141D وسطح #141E2A ونص #E6EDF5، ويبقى الشعار على لوحة بيضاء.</p>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>6</span></div>
+</section>
+
+<!-- 7. applications + files -->
+<section class="page">
+  <div class="kicker">٥ · التطبيقات والملفات</div><h2>أين تظهر الهوية</h2><div class="rule"></div>
+  <div class="grid2">
+    <div class="card"><h3>صورة المشاركة</h3><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/og.jpg" style="border-radius:2mm;border:0.3mm solid var(--line);margin-top:2mm" alt=""><p class="muted" style="font-size:11pt;margin-top:2mm">1200×630 عند مشاركة الرابط في واتساب وتويتر.</p></div>
+    <div class="card"><h3>أيقونة المتصفح والجوال</h3><div style="display:flex;gap:5mm;align-items:end;margin-top:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:22mm;border:0.3mm solid var(--line);border-radius:3mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:11mm;border:0.3mm solid var(--line);border-radius:2mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:6mm" alt=""></div><p class="muted" style="font-size:11pt;margin-top:3mm">اللون #0B7AB8 لشريط المتصفح على الجوال.</p></div>
+  </div>
+  <h3 style="margin-top:6mm">رسائل البريد (رموز الدخول والاعتماد)</h3>
+  <div class="card" style="max-width:105mm;margin:1mm auto 3mm"><p style="margin:0 0 2mm">مرحباً عبدالرحمن،</p><p style="margin:0 0 2mm">رمز الدخول إلى أكاديمية ركن:</p><div style="font-size:26pt;letter-spacing:5mm;font-weight:700;background:var(--ice);border-radius:2mm;padding:2mm;text-align:center;direction:ltr;color:var(--brand)">482 915</div><p class="muted" style="font-size:11pt;margin:2mm 0 0">الرمز صالح ١٠ دقائق ويُستعمل مرة واحدة.</p></div>
+  <h3>الملفات المعتمدة</h3>
+  <table>
+    <tr><th>الملف</th><th>الاستعمال</th></tr>
+    <tr><td class="code">web/public/brand/logo-original.jpg</td><td>الأصل 1536×1024 للطباعة والمواد التسويقية</td></tr>
+    <tr><td class="code">web/public/brand/logo.jpg</td><td>الشعار الكامل لصفحات الويب</td></tr>
+    <tr><td class="code">web/public/brand/emblem.png · emblem-96.png</td><td>الرمز وحده</td></tr>
+    <tr><td class="code">web/public/brand/og.jpg</td><td>صورة المشاركة</td></tr>
+    <tr><td class="code">web/app/icon.png · apple-icon.png</td><td>أيقونة المتصفح والجوال</td></tr>
+    <tr><td class="code">web/public/fonts/xb-sols-*.woff2 · GPL.txt</td><td>الخط الرسمي ورخصته</td></tr>
+  </table>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>7</span></div>
+</section>
+
+<!-- 8. approval -->
+<section class="page">
+  <div class="kicker">٦ · الاعتماد</div><h2>اعتماد الهوية البصرية</h2><div class="rule"></div>
+  <p>تُعتمد هذه الهوية، بإصدارها 1.0 بتاريخ 31 أكتوبر 2026، هويةً رسميةً لمنصة <b class="ltr">T3leem.my</b> ولكل صفحاتها ومطبوعاتها ورسائلها، وفق ما يلي:</p>
+  <ol class="rules" style="font-size:14pt">
+    <li><b>الشعار:</b> الصورة المرفقة في هذا الدليل بصيغتيها (الكامل والرمز) هي الشعار الرسمي الوحيد للمنصة.</li>
+    <li><b>الألوان:</b> السماوي <span class="code">#29B6F6</span>، أزرق العلامة <span class="code">#0B7AB8</span>، الأردوازي <span class="code">#404858</span>، الثلجي <span class="code">#EAF6FD</span> مع درجات الخلفية والنص الموضحة.</li>
+    <li><b>الخط:</b> <b>XB Sols</b> بوزنيه العادي والعريض هو الخط الرسمي للموقع والمطبوعات، وهو مرخّص بـ GPL v3 ويجوز استعماله تجارياً.</li>
+    <li><b>الأكاديميات:</b> تحتفظ كل أكاديمية بشعارها ولونها الخاص داخل صفحاتها، وتبقى صفحات المنصة بهوية T3leem.my.</li>
+    <li><b>التغيير:</b> لا يُعدَّل أي عنصر من الهوية إلا بإصدار جديد من هذا الدليل يحمل رقماً وتاريخاً.</li>
+  </ol>
+  <div class="card tint" style="margin-top:6mm"><h3>ملاحظة على ترخيص الخط</h3><p style="margin:0;font-size:12.5pt">تسمح رخصة GPL v3 باستعمال الخط وتوزيعه وتعديله لأغراض شخصية وتجارية، بشرط إبقاء نص الرخصة مع الملفات الموزّعة (موجود في <span class="code">/fonts/GPL.txt</span>) وعدم بيع نسخة مغلقة المصدر من الخط نفسه. استعماله في الموقع والمستندات لا يُلزم بنشر شيفرة المنصة.</p></div>
+  <div class="sig"><div>مالك المنصة<br><br>الاسم:</div><div>التوقيع<br><br></div><div>التاريخ<br><br>٣١ / ١٠ / ٢٠٢٦</div></div>
+  <div style="margin-top: 8mm; text-align:center"><span class="stamp">هوية معتمدة</span></div>
+  <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>8</span></div>
+</section>
+
+<script>
+// WCAG contrast ratios, computed from the real colours so the table can never drift from the palette.
+const lum = (hex) => { const c = [1,3,5].map((i) => parseInt(hex.slice(i, i+2), 16) / 255).map((v) => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+document.querySelectorAll('tr').forEach((tr) => {
+  const p = tr.querySelector('.pair'); if (!p) return;
+  const r = ratio(p.dataset.fg, p.dataset.bg);
+  tr.querySelector('.ratio').textContent = r.toFixed(2) + ' : 1';
+  const v = tr.querySelector('.verdict');
+  v.innerHTML = r >= 7 ? '<span class="ok">AAA ✓</span>' : r >= 4.5 ? '<span class="ok">AA ✓</span>' : r >= 3 ? '<span class="bad">للنصوص الكبيرة فقط</span>' : '<span class="bad">غير مناسب ✕</span>';
+});
+</script>
+</body>
+</html>

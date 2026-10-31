@@ -1,5 +1,11 @@
+/* Official typeface: XB Sols (Regular + Bold), licensed GPL v3 — see /fonts/GPL.txt. Subset to Arabic + Latin. */
+@font-face { font-family: 'XB Sols'; src: url('/fonts/xb-sols-regular.woff2') format('woff2'); font-weight: 400 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'XB Sols'; src: url('/fonts/xb-sols-bold.woff2') format('woff2'); font-weight: 600 800; font-style: normal; font-display: swap; }
+
 /* Layout: one centered column (max 1080px), RTL; academy brand color drives --brand. */
 :root {
+  --font-body: 'XB Sols', 'Segoe UI', Tahoma, system-ui, sans-serif;
+  --font-display: 'XB Sols', 'Segoe UI', Tahoma, system-ui, sans-serif;
   /* T3leem.my identity — colours sampled from the logo: sky blue (the ".my" and the flag) and slate (the wordmark and the pen).
      --brand is the platform default; an academy's own colour overrides it inline. */
   --sky: #29b6f6;
@@ -48,8 +54,8 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body), system-ui, 'Segoe UI', Tahoma, sans-serif;
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 18px;
+  line-height: 1.8;
 }
 h1, h2, h3 { font-family: var(--font-display), var(--font-body), sans-serif; line-height: 1.3; margin: 0; text-wrap: balance; }
 h1 { font-size: clamp(28px, 4.5vw, 42px); font-weight: 700; }
@@ -129,7 +135,7 @@ main { padding-block: 40px 72px; }
 /* forms */
 .form { display: grid; gap: 14px; }
 label { display: grid; gap: 6px; font-size: 14px; font-weight: 500; }
-input[type='email'], input[type='password'] { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+input[type='email'], input[type='password'], input[type='tel'], input[type='search'] { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 .methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 0; padding: 0; margin: 0; }
 .method { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-weight: 500; }
 .method:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); }
@@ -220,7 +226,7 @@ td.num, th.num { font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
 fieldset.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 16px; margin: 0; display: grid; gap: 14px; }
 fieldset.group legend { padding-inline: 6px; font-weight: 600; font-size: 14px; }
-input[type='text'], input[type='number'], input[type='date'], input[type='datetime-local'], input[type='url'], select, textarea {
+input[type='text'], input[type='number'], input[type='tel'], input[type='search'], input[type='date'], input[type='datetime-local'], input[type='url'], select, textarea {
   font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 100%;
 }
 textarea { min-height: 96px; resize: vertical; }
