@@ -14,9 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ar" dir="rtl">
       <head>
-        {/* The official typeface (XB Sols, GPL): preloaded so text does not flash in a fallback font. */}
-        <link rel="preload" href="/fonts/xb-sols-regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-        <link rel="preload" href="/fonts/xb-sols-bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        {/* The official typeface (Aref Ruqaa, OFL): preloaded so text does not flash in a fallback font. */}
+        <link rel="preload" href="/fonts/aref-ruqaa-regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/aref-ruqaa-bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
       </head>
       <body>{children}</body>
     </html>
