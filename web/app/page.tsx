@@ -225,6 +225,7 @@ export default async function PlatformHome() {
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <span>T3leem.my · منصة التدريب السحابية</span>
           <a href={supportLink(WELCOME_MESSAGE)} target="_blank" rel="noopener noreferrer">واتساب الدعم والاستفسار <span dir="ltr">{SUPPORT_PHONE}</span></a>
+          <Link href="/owner">دخول إدارة المنصة</Link>
         </div>
       </footer>
     </>
