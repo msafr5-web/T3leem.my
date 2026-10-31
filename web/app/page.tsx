@@ -101,7 +101,6 @@ export default async function PlatformHome() {
           </Link>
           <nav className="hm-nav" aria-label="أقسام الصفحة">
             <a href="#providers">مزودو الخدمة</a>
-            {healthProviders.length > 0 && <a href="#health">الشهادات الصحية</a>}
             <a href="#how">كيف تعمل</a>
             <a href="#features">المزايا</a>
             <a href="#faq">الأسئلة الشائعة</a>
@@ -148,43 +147,11 @@ export default async function PlatformHome() {
       <div className="container">
         <div className="hm-stats" role="group" aria-label="أرقام المنصة">
           <div><strong>{nf.format(providers.length)}</strong><span>أكاديمية على المنصة</span></div>
-          <div><strong>{nf.format(healthSectors || 6)}</strong><span>قطاعات للشهادات الصحية</span></div>
+          {healthSectors > 0 && <div><strong>{nf.format(healthSectors)}</strong><span>قطاعات للشهادات الصحية</span></div>}
           <div><strong>٦ أرقام</strong><span>رمز الدخول إلى بريدك</span></div>
           <div><strong>١٥٪</strong><span>ضريبة القيمة المضافة في كل فاتورة</span></div>
         </div>
       </div>
-
-      {healthProviders.length > 0 && (
-        <section id="health" className="hm-section" aria-labelledby="health-heading">
-          <div className="container">
-            <div className="hm-health">
-              <div className="hm-health-text">
-                <span className="hm-eyebrow hm-eyebrow-light">جديد</span>
-                <h2 id="health-heading">الشهادات الصحية</h2>
-                <p>
-                  تدرّب على أسئلة اختبار الشهادة الصحية حسب قطاعك: الأغذية والمطاعم، الحلاقة والتجميل، الخدمات والمغاسل، الفنادق، النوادي والترفيه، ومكافحة الآفات. اختبارات عشوائية بدرجات وسجل محاولات.
-                </p>
-                <ul>
-                  <li>أسئلة كل قطاع منفصلة وبترتيب عشوائي</li>
-                  <li>شرح لكل إجابة بعد التسليم</li>
-                  <li>تأكيد الهوية برمز يصل إلى بريدك قبل كل اختبار</li>
-                </ul>
-              </div>
-              <div className="hm-health-cards">
-                {healthProviders.map((p) => (
-                  <Link key={p.slug} href={`/${p.slug}/health`} className="hm-health-card">
-                    <span className="brand-mark">
-                      <LogoMark slug={p.slug} name={p.name} version={p.logo_version} size={40} />
-                      {p.name}
-                    </span>
-                    <span className="small">{nf.format(p.health_sectors)} قطاعات · ابدأ التدريب ←</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
 
       <section id="providers" className="hm-section" aria-labelledby="providers-heading">
         <div className="container">
