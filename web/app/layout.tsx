@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', images: ['/brand/og.jpg'] },
 };
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#0b7ab8' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#0877c9' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

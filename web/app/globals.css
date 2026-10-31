@@ -6,17 +6,17 @@
 :root {
   --font-body: 'XB Sols', 'Segoe UI', Tahoma, system-ui, sans-serif;
   --font-display: 'XB Sols', 'Segoe UI', Tahoma, system-ui, sans-serif;
-  /* T3leem.my identity — colours sampled from the logo: sky blue (the ".my" and the flag) and slate (the wordmark and the pen).
+  /* T3leem.my identity — colours sampled from the logo: logo blue (the ".my", the flag and the book) and navy (the wordmark, the roof and the pen).
      --brand is the platform default; an academy's own colour overrides it inline. */
-  --sky: #29b6f6;
-  --slate: #404858;
-  --ice: #eaf6fd;
-  --bg: #f3f8fb;
+  --sky: #0195f5;
+  --slate: #163051;
+  --ice: #e8f4fe;
+  --bg: #f2f8fd;
   --surface: #ffffff;
-  --ink: #1f2937;
-  --muted: #5b6676;
-  --line: #d8e2eb;
-  --brand: #0b7ab8;
+  --ink: #14213a;
+  --muted: #55657a;
+  --line: #d6e3f0;
+  --brand: #0877c9;
   --brand-ink: #ffffff;
   --brand-soft: color-mix(in srgb, var(--brand) 12%, var(--surface));
   --ok: #1f7a46;
@@ -31,12 +31,12 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d141d;
-    --surface: #141e2a;
+    --bg: #0a111d;
+    --surface: #111b2c;
     --ink: #e6edf5;
     --muted: #93a3b5;
-    --line: #263444;
-    --ice: #10202e;
+    --line: #223349;
+    --ice: #0f2236;
     --brand-soft: color-mix(in srgb, var(--brand) 22%, var(--surface));
     --ok: #5fd08e;
     --ok-soft: #173525;

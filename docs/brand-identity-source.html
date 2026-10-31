@@ -6,7 +6,7 @@
 <style>
 @font-face { font-family: 'XB Sols'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/xb-sols-regular.woff2') format('woff2'); font-weight: 400; }
 @font-face { font-family: 'XB Sols'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/xb-sols-bold.woff2') format('woff2'); font-weight: 700; }
-:root { --sky:#29b6f6; --brand:#0b7ab8; --slate:#404858; --ice:#eaf6fd; --bg:#f3f8fb; --ink:#1f2937; --muted:#5b6676; --line:#d8e2eb; }
+:root { --sky:#0195f5; --brand:#0877c9; --navy:#163051; --ice:#e8f4fe; --bg:#f2f8fd; --ink:#14213a; --muted:#55657a; --line:#d6e3f0; }
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -15,9 +15,9 @@ body { font-family: 'XB Sols', Tahoma, sans-serif; color: var(--ink); font-size:
 .page:last-child { page-break-after: auto; }
 .page::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4mm; background: var(--sky); }
 .foot { margin-top: auto; padding-top: 6mm; border-top: 0.3mm solid var(--line); display: flex; justify-content: space-between; color: var(--muted); font-size: 10pt; }
-h1 { font-size: 30pt; font-weight: 700; margin: 0 0 4mm; line-height: 1.3; color: var(--slate); }
-h2 { font-size: 19pt; font-weight: 700; margin: 0 0 2mm; color: var(--slate); }
-h3 { font-size: 13pt; font-weight: 700; margin: 0 0 1.5mm; color: var(--slate); }
+h1 { font-size: 30pt; font-weight: 700; margin: 0 0 4mm; line-height: 1.3; color: var(--navy); }
+h2 { font-size: 19pt; font-weight: 700; margin: 0 0 2mm; color: var(--navy); }
+h3 { font-size: 13pt; font-weight: 700; margin: 0 0 1.5mm; color: var(--navy); }
 p { margin: 0 0 2.2mm; }
 .muted { color: var(--muted); }
 .kicker { color: var(--brand); font-weight: 700; font-size: 12pt; margin-bottom: 2mm; }
@@ -50,7 +50,7 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 .ok { color: #1f7a46; font-weight: 700; } .bad { color: #a3341f; font-weight: 700; }
 
 /* type */
-.specimen-big { font-size: 44pt; line-height: 1.35; font-weight: 700; color: var(--slate); }
+.specimen-big { font-size: 44pt; line-height: 1.35; font-weight: 700; color: var(--navy); }
 .glyphs { font-size: 15pt; line-height: 1.7; word-spacing: 1mm; }
 .ltr { direction: ltr; unicode-bidi: isolate; }
 
@@ -64,13 +64,13 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 .notice.info { background: var(--ice); color: #0a5c8a; } .notice.ok { background: #e2f3e8; color: #1f7a46; } .notice.err { background: #fbe8e4; color: #a3341f; }
 .input { border: 0.3mm solid var(--line); border-radius: 2mm; background: var(--bg); padding: 1.8mm 3mm; color: var(--muted); font-size: 11.5pt; }
 .header-mock { border: 0.3mm solid var(--line); border-top: 1.2mm solid var(--sky); border-radius: 3mm; padding: 3mm 5mm; display: flex; justify-content: space-between; align-items: center; background: #fff; }
-.header-mock .brand { display: flex; align-items: center; gap: 3mm; font-weight: 700; font-size: 15pt; color: var(--slate); }
+.header-mock .brand { display: flex; align-items: center; gap: 3mm; font-weight: 700; font-size: 15pt; color: var(--navy); }
 .header-mock img { width: 14mm; border-radius: 2.5mm; }
 .rules li { margin-bottom: 2mm; }
 .dont { position: relative; }
 .dont::after { content: '✕'; position: absolute; top: 2mm; inset-inline-start: 3mm; color: #a3341f; font-weight: 700; font-size: 16pt; }
 .sig { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; margin-top: 6mm; }
-.sig div { border-top: 0.4mm solid var(--slate); padding-top: 2mm; font-size: 11pt; color: var(--muted); min-height: 18mm; }
+.sig div { border-top: 0.4mm solid var(--navy); padding-top: 2mm; font-size: 11pt; color: var(--muted); min-height: 18mm; }
 .stamp { display: inline-block; border: 0.8mm solid var(--brand); color: var(--brand); border-radius: 3mm; padding: 2mm 6mm; font-weight: 700; font-size: 17pt; transform: rotate(-3deg); }
 </style>
 </head>
@@ -80,19 +80,19 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 <section class="page cover">
   <div>
     <div class="kicker" style="text-align:center">T3leem.my · منصة سحابية لأكاديميات التدريب</div>
-    <img class="logo" src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-original.jpg" alt="T3leem.my">
+    <img class="logo" src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-lockup-hires.jpg" alt="T3leem.my">
     <h1>دليل الهوية البصرية</h1>
     <p class="sub">الشعار · الألوان · الخط الرسمي · عناصر الواجهة · قواعد الاستعمال</p>
   </div>
   <div style="text-align:center"><span class="stamp">هوية معتمدة · الإصدار 1.0</span></div>
-  <div class="meta"><span>تاريخ الإصدار: 31 أكتوبر 2026</span><span>الاسم الرسمي: T3leem.my</span><span>t3leem.my</span></div>
+  <div class="meta"><span>تاريخ الإصدار: 31 أكتوبر 2026 · نسخة الشعار النهائية</span><span>الاسم الرسمي: T3leem.my</span><span>t3leem.my</span></div>
 </section>
 
 <!-- 2. essence + logo -->
 <section class="page">
   <div class="kicker">١ · الشعار</div><h2>مفهوم الشعار</h2><div class="rule"></div>
-  <p>يجمع الشعار ما تقوم عليه المنصة: <b>مبنى مدرسة يعلوه علم</b> يرمز إلى الأكاديمية والإنجاز، <b>كتاب مفتوح</b> يرمز إلى المعرفة، <b>قلم يكتب</b> يرمز إلى التعلّم والتدريب، و<b>مربعات رقمية</b> تتصاعد من القلم لتدل على أن كل ذلك يجري على منصة سحابية. الاسم المكتوب <b class="ltr">t3leem.my</b> بلونين: الأردوازي للجزء الأول والسماوي للامتداد <b class="ltr">.my</b>.</p>
-  <div class="plate" style="margin: 2mm 0 4mm; padding: 4mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-original.jpg" style="width: 105mm" alt=""></div>
+  <p>يجمع الشعار ما تقوم عليه المنصة: <b>مبنى مدرسة يعلوه علم</b> يرمز إلى الأكاديمية والإنجاز، <b>كتاب مفتوح</b> يرمز إلى المعرفة، <b>قلم يكتب</b> يرمز إلى التعلّم والتدريب، و<b>مربعات رقمية</b> تتصاعد من القلم لتدل على أن كل ذلك يجري على منصة سحابية. الاسم المكتوب <b class="ltr">t3leem.my</b> بلونين: الكحلي للجزء الأول وأزرق الشعار للامتداد <b class="ltr">.my</b>.</p>
+  <div class="plate" style="margin: 2mm 0 4mm; padding: 4mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo-lockup-hires.jpg" style="width: 105mm" alt=""></div>
   <h3>صيغ الشعار المعتمدة</h3>
   <div class="grid2">
     <div class="card"><div class="plate" style="border:0;padding:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/logo.jpg" style="height: 32mm; width:auto" alt=""></div><h3 style="margin-top:3mm">الشعار الكامل</h3><p class="muted" style="font-size:12pt">الرمز مع الاسم. للأغلفة والصفحة الرئيسية والمطبوعات. أقل عرض: 40 مم / 160 بكسل.</p></div>
@@ -123,27 +123,27 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 <!-- 4. colours -->
 <section class="page">
   <div class="kicker">٢ · الألوان</div><h2>لوحة الألوان</h2><div class="rule"></div>
-  <p>الألوان مأخوذة من الشعار نفسه: السماوي من «.my» والعلم والكتاب، والأردوازي من الاسم والقلم والمبنى. أضفنا درجة أغمق من السماوي (أزرق العلامة) للأزرار والروابط لتحقق تبايناً مقروءاً مع النص الأبيض.</p>
+  <p>الألوان مأخوذة من الشعار نفسه: أزرق الشعار من «.my» والعلم والكتاب، والكحلي من الاسم والقلم والمبنى. أضفنا درجة أغمق من أزرق الشعار (أزرق العلامة) للأزرار والروابط لتحقق تبايناً مقروءاً مع النص الأبيض.</p>
   <div class="grid3" style="margin-bottom: 5mm">
-    <div class="sw"><div class="chip" style="background:#29b6f6;color:#1f2937">سماوي</div><div class="info"><b>Sky</b><br><span class="code">#29B6F6 · RGB 41 182 246</span><br>لمسات التمييز والخط العلوي</div></div>
-    <div class="sw"><div class="chip" style="background:#0b7ab8;color:#fff">أزرق العلامة</div><div class="info"><b>Brand</b><br><span class="code">#0B7AB8 · RGB 11 122 184</span><br>الأزرار والروابط (اللون الرئيسي)</div></div>
-    <div class="sw"><div class="chip" style="background:#404858;color:#fff">أردوازي</div><div class="info"><b>Slate</b><br><span class="code">#404858 · RGB 64 72 88</span><br>العناوين والنصوص الداكنة</div></div>
+    <div class="sw"><div class="chip" style="background:#0195f5;color:#14213a">أزرق الشعار</div><div class="info"><b>Logo Blue</b><br><span class="code">#0195F5 · RGB 1 149 245</span><br>لمسات التمييز والخط العلوي</div></div>
+    <div class="sw"><div class="chip" style="background:#0877c9;color:#fff">أزرق العلامة</div><div class="info"><b>Brand</b><br><span class="code">#0877C9 · RGB 8 119 201</span><br>الأزرار والروابط (اللون الرئيسي)</div></div>
+    <div class="sw"><div class="chip" style="background:#163051;color:#fff">كحلي</div><div class="info"><b>Navy</b><br><span class="code">#163051 · RGB 22 48 81</span><br>العناوين والنصوص الداكنة</div></div>
   </div>
   <div class="grid3" style="margin-bottom: 6mm">
-    <div class="sw"><div class="chip" style="background:#eaf6fd;color:#0a5c8a">ثلجي</div><div class="info"><b>Ice</b><br><span class="code">#EAF6FD</span><br>خلفيات التمييز والتنبيهات</div></div>
-    <div class="sw"><div class="chip" style="background:#f3f8fb;color:#1f2937">خلفية الصفحة</div><div class="info"><b>Background</b><br><span class="code">#F3F8FB</span><br>خلفية الصفحات</div></div>
-    <div class="sw"><div class="chip" style="background:#1f2937;color:#fff">نص أساسي</div><div class="info"><b>Ink</b><br><span class="code">#1F2937</span><br>النص الأساسي</div></div>
+    <div class="sw"><div class="chip" style="background:#e8f4fe;color:#0a5c8a">ثلجي</div><div class="info"><b>Ice</b><br><span class="code">#E8F4FE</span><br>خلفيات التمييز والتنبيهات</div></div>
+    <div class="sw"><div class="chip" style="background:#f2f8fd;color:#14213a">خلفية الصفحة</div><div class="info"><b>Background</b><br><span class="code">#F2F8FD</span><br>خلفية الصفحات</div></div>
+    <div class="sw"><div class="chip" style="background:#14213a;color:#fff">نص أساسي</div><div class="info"><b>Ink</b><br><span class="code">#14213A</span><br>النص الأساسي</div></div>
   </div>
   <h3>التباين مع النص (معيار WCAG)</h3>
   <table>
     <tr><th>الاستعمال</th><th>النص / الخلفية</th><th>النسبة</th><th>الحكم</th></tr>
-    <tr><td>زر رئيسي</td><td><span class="pair" data-fg="#ffffff" data-bg="#0b7ab8">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
-    <tr><td>عنوان أردوازي على أبيض</td><td><span class="pair" data-fg="#404858" data-bg="#ffffff" style="border:0.3mm solid var(--line)">عنوان</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
-    <tr><td>نص أساسي على خلفية الصفحة</td><td><span class="pair" data-fg="#1f2937" data-bg="#f3f8fb">نص</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
-    <tr><td>نص أبيض على السماوي</td><td><span class="pair" data-fg="#ffffff" data-bg="#29b6f6">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
-    <tr><td>نص داكن على السماوي</td><td><span class="pair" data-fg="#1f2937" data-bg="#29b6f6">نص داكن</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>زر رئيسي</td><td><span class="pair" data-fg="#ffffff" data-bg="#0877c9">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>عنوان كحلي على أبيض</td><td><span class="pair" data-fg="#163051" data-bg="#ffffff" style="border:0.3mm solid var(--line)">عنوان</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص أساسي على خلفية الصفحة</td><td><span class="pair" data-fg="#14213a" data-bg="#f2f8fd">نص</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص أبيض على أزرق الشعار</td><td><span class="pair" data-fg="#ffffff" data-bg="#0195f5">نص أبيض</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
+    <tr><td>نص داكن على أزرق الشعار</td><td><span class="pair" data-fg="#14213a" data-bg="#0195f5">نص داكن</span></td><td class="ratio code"></td><td class="verdict"></td></tr>
   </table>
-  <p class="muted" style="margin-top:3mm;font-size:11.5pt">القاعدة: لا يُكتب نص أبيض على السماوي؛ السماوي للتمييز والخطوط لا للأزرار.</p>
+  <p class="muted" style="margin-top:3mm;font-size:11.5pt">القاعدة: لا يُكتب نص أبيض على أزرق الشعار؛ أزرق الشعار للتمييز والخطوط لا للأزرار.</p>
   <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>4</span></div>
 </section>
 
@@ -151,7 +151,7 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 <section class="page">
   <div class="kicker">٣ · الخط الرسمي</div><h2>الخط المعتمد: XB Sols</h2><div class="rule"></div>
   <div class="card tint" style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:6mm">
-    <div><div class="specimen-big">تعليمي</div><div class="ltr" style="font-size:30pt;font-weight:700;color:var(--slate)">T3leem.my</div></div>
+    <div><div class="specimen-big">تعليمي</div><div class="ltr" style="font-size:30pt;font-weight:700;color:var(--navy)">T3leem.my</div></div>
     <div style="font-size:11.5pt;line-height:1.7;min-width:62mm"><b>XB Sols</b> (عادي وعريض)<br>المصمم: Behnam (irmug.com)<br>الإصدار 4.001<br>الترخيص: GPL v3 · حر ومفتوح المصدر</div>
   </div>
   <p style="margin-top:5mm">خط عربي بطابع النسخ الكلاسيكي، يمنح الموقع وقاراً أكاديمياً مناسباً للتعليم والتدريب والشهادات. يُستعمل <b>العريض (700)</b> للعناوين والأزرار والأرقام البارزة، و<b>العادي (400)</b> للنصوص والفقرات. لا يُخلط معه خط عربي آخر.</p>
@@ -162,8 +162,8 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
   <h3>سلّم النصوص في الموقع</h3>
   <table>
     <tr><th>المستوى</th><th>الحجم</th><th>الوزن</th><th>مثال</th></tr>
-    <tr><td>عنوان الصفحة H1</td><td class="code">42px</td><td>عريض 700</td><td style="font-size:20pt;font-weight:700;color:var(--slate)">أكاديمية رقمية</td></tr>
-    <tr><td>عنوان القسم H2</td><td class="code">22px</td><td>عريض 700</td><td style="font-size:16pt;font-weight:700;color:var(--slate)">مزودو الخدمة</td></tr>
+    <tr><td>عنوان الصفحة H1</td><td class="code">42px</td><td>عريض 700</td><td style="font-size:20pt;font-weight:700;color:var(--navy)">أكاديمية رقمية</td></tr>
+    <tr><td>عنوان القسم H2</td><td class="code">22px</td><td>عريض 700</td><td style="font-size:16pt;font-weight:700;color:var(--navy)">مزودو الخدمة</td></tr>
     <tr><td>عنوان فرعي H3</td><td class="code">18px</td><td>عريض 700</td><td style="font-size:14pt;font-weight:700">الباقات والاشتراك</td></tr>
     <tr><td>النص الأساسي</td><td class="code">18px / 1.8</td><td>عادي 400</td><td>تعلّم وتدرّب في أي وقت.</td></tr>
     <tr><td>الشروحات والتلميحات</td><td class="code">15px</td><td>عادي 400</td><td class="muted" style="font-size:12pt">نص ثانوي بلون رمادي مزرق</td></tr>
@@ -177,7 +177,7 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
   <div class="kicker">٤ · عناصر الواجهة</div><h2>الهوية في الموقع</h2><div class="rule"></div>
   <h3>الترويسة</h3>
   <div class="header-mock"><div class="brand"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/emblem-96.png" alt=""><span class="ltr">T3leem.my</span></div><span class="btn btn-primary">انضم كمزود خدمة</span></div>
-  <p class="muted" style="font-size:11.5pt;margin-top:2mm">خط سماوي بسماكة 3px أعلى كل ترويسة، والرمز على لوحة بيضاء. صفحات الأكاديميات تضع شعارها الخاص مكان الرمز.</p>
+  <p class="muted" style="font-size:11.5pt;margin-top:2mm">خط أزرق الشعار بسماكة 3px أعلى كل ترويسة، والرمز على لوحة بيضاء. صفحات الأكاديميات تضع شعارها الخاص مكان الرمز.</p>
   <div class="grid2" style="margin-top:4mm">
     <div class="card"><h3>الأزرار</h3><div style="display:flex;gap:3mm;flex-wrap:wrap;margin-top:2mm"><span class="btn btn-primary">إنشاء الأكاديمية</span><span class="btn btn-ghost">تصفح</span><span class="btn btn-danger">حذف</span></div><p class="muted" style="font-size:11pt;margin-top:3mm">رئيسي: أزرق العلامة بنص أبيض. ثانوي: أبيض بحد رمادي. حذف: أحمر بحد.</p></div>
     <div class="card"><h3>الحقول</h3><div class="input" style="margin:2mm 0">البريد الإلكتروني</div><div class="input" style="letter-spacing:4mm;text-align:center;color:var(--ink)">٠٠٠٠٠٠</div><p class="muted" style="font-size:11pt;margin-top:2mm">حد 1px رمادي مزرق، وخلفية الصفحة.</p></div>
@@ -197,15 +197,16 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
   <div class="kicker">٥ · التطبيقات والملفات</div><h2>أين تظهر الهوية</h2><div class="rule"></div>
   <div class="grid2">
     <div class="card"><h3>صورة المشاركة</h3><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/brand/og.jpg" style="border-radius:2mm;border:0.3mm solid var(--line);margin-top:2mm" alt=""><p class="muted" style="font-size:11pt;margin-top:2mm">1200×630 عند مشاركة الرابط في واتساب وتويتر.</p></div>
-    <div class="card"><h3>أيقونة المتصفح والجوال</h3><div style="display:flex;gap:5mm;align-items:end;margin-top:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:22mm;border:0.3mm solid var(--line);border-radius:3mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:11mm;border:0.3mm solid var(--line);border-radius:2mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:6mm" alt=""></div><p class="muted" style="font-size:11pt;margin-top:3mm">اللون #0B7AB8 لشريط المتصفح على الجوال.</p></div>
+    <div class="card"><h3>أيقونة المتصفح والجوال</h3><div style="display:flex;gap:5mm;align-items:end;margin-top:2mm"><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:22mm;border:0.3mm solid var(--line);border-radius:3mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:11mm;border:0.3mm solid var(--line);border-radius:2mm" alt=""><img src="file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/app/icon.png" style="width:6mm" alt=""></div><p class="muted" style="font-size:11pt;margin-top:3mm">اللون #0877C9 لشريط المتصفح على الجوال.</p></div>
   </div>
   <h3 style="margin-top:6mm">رسائل البريد (رموز الدخول والاعتماد)</h3>
   <div class="card" style="max-width:105mm;margin:1mm auto 3mm"><p style="margin:0 0 2mm">مرحباً عبدالرحمن،</p><p style="margin:0 0 2mm">رمز الدخول إلى أكاديمية ركن:</p><div style="font-size:26pt;letter-spacing:5mm;font-weight:700;background:var(--ice);border-radius:2mm;padding:2mm;text-align:center;direction:ltr;color:var(--brand)">482 915</div><p class="muted" style="font-size:11pt;margin:2mm 0 0">الرمز صالح ١٠ دقائق ويُستعمل مرة واحدة.</p></div>
   <h3>الملفات المعتمدة</h3>
   <table>
     <tr><th>الملف</th><th>الاستعمال</th></tr>
-    <tr><td class="code">web/public/brand/logo-original.jpg</td><td>الأصل 1536×1024 للطباعة والمواد التسويقية</td></tr>
-    <tr><td class="code">web/public/brand/logo.jpg</td><td>الشعار الكامل لصفحات الويب</td></tr>
+    <tr><td class="code">web/public/brand/logo-original.jpg</td><td>الأصل المربع 1254×1254 (النسخة الرئيسية)</td></tr>
+    <tr><td class="code">web/public/brand/logo-lockup-hires.jpg</td><td>الشعار الكامل المقصوص بدقة عالية للطباعة (1234×845)</td></tr>
+    <tr><td class="code">web/public/brand/logo.jpg</td><td>الشعار الكامل لصفحات الويب (960 عرضاً)</td></tr>
     <tr><td class="code">web/public/brand/emblem.png · emblem-96.png</td><td>الرمز وحده</td></tr>
     <tr><td class="code">web/public/brand/og.jpg</td><td>صورة المشاركة</td></tr>
     <tr><td class="code">web/app/icon.png · apple-icon.png</td><td>أيقونة المتصفح والجوال</td></tr>
@@ -220,7 +221,7 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
   <p>تُعتمد هذه الهوية، بإصدارها 1.0 بتاريخ 31 أكتوبر 2026، هويةً رسميةً لمنصة <b class="ltr">T3leem.my</b> ولكل صفحاتها ومطبوعاتها ورسائلها، وفق ما يلي:</p>
   <ol class="rules" style="font-size:14pt">
     <li><b>الشعار:</b> الصورة المرفقة في هذا الدليل بصيغتيها (الكامل والرمز) هي الشعار الرسمي الوحيد للمنصة.</li>
-    <li><b>الألوان:</b> السماوي <span class="code">#29B6F6</span>، أزرق العلامة <span class="code">#0B7AB8</span>، الأردوازي <span class="code">#404858</span>، الثلجي <span class="code">#EAF6FD</span> مع درجات الخلفية والنص الموضحة.</li>
+    <li><b>الألوان:</b> أزرق الشعار <span class="code">#0195F5</span>، أزرق العلامة <span class="code">#0877C9</span>، الكحلي <span class="code">#163051</span>، الثلجي <span class="code">#E8F4FE</span> مع درجات الخلفية والنص الموضحة.</li>
     <li><b>الخط:</b> <b>XB Sols</b> بوزنيه العادي والعريض هو الخط الرسمي للموقع والمطبوعات، وهو مرخّص بـ GPL v3 ويجوز استعماله تجارياً.</li>
     <li><b>الأكاديميات:</b> تحتفظ كل أكاديمية بشعارها ولونها الخاص داخل صفحاتها، وتبقى صفحات المنصة بهوية T3leem.my.</li>
     <li><b>التغيير:</b> لا يُعدَّل أي عنصر من الهوية إلا بإصدار جديد من هذا الدليل يحمل رقماً وتاريخاً.</li>
