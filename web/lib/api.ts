@@ -62,6 +62,8 @@ export interface Provider {
   city: string | null;
   primary_color: string | null;
   logo_version: string | null;
+  /** Active health-certificate sectors (0 = the academy has no such section). */
+  health_sectors: number;
 }
 
 export interface AdminBranding {

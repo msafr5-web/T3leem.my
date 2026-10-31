@@ -6,7 +6,7 @@ import type { DomainService } from '../tenant/domain.service';
 import type { RegistrationService } from '../tenant/registration.service';
 
 export interface ProviderDirectorySource {
-  listActive(): Promise<{ slug: string; name: string; brandSettings: unknown; logoUpdatedAt?: Date | null }[]>;
+  listActive(): Promise<{ slug: string; name: string; brandSettings: unknown; logoUpdatedAt?: Date | null; healthSectors?: number }[]>;
 }
 
 const pick = (settings: unknown, key: string): string | null => {
@@ -42,6 +42,7 @@ export function buildPlatformRouter(
           city: pick(p.brandSettings, 'city'),
           primary_color: pick(p.brandSettings, 'primaryColor'),
           logo_version: p.logoUpdatedAt ? String(new Date(p.logoUpdatedAt).getTime()) : null,
+          health_sectors: p.healthSectors ?? 0,
         })),
       ),
     );

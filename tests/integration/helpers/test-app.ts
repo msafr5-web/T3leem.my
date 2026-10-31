@@ -329,7 +329,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     ),
     providerDirectory: {
       listActive: async () => [
-        { slug: 'rukn', name: 'Rukn', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' } },
+        { slug: 'rukn', name: 'Rukn', brandSettings: { tagline: 'Pro training', city: 'Riyadh', primaryColor: '#0d6b62' }, healthSectors: 6 },
         { slug: 'masar', name: 'Masar Training', brandSettings: {} },
       ],
     },

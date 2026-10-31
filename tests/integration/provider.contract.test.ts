@@ -10,8 +10,8 @@ describe('GET /api/v1/platform/providers (no tenant needed)', () => {
     const res = await request(buildApp()).get('/api/v1/platform/providers');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([
-      { slug: 'rukn', name: 'Rukn', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62', logo_version: null },
-      { slug: 'masar', name: 'Masar Training', tagline: null, city: null, primary_color: null, logo_version: null },
+      { slug: 'rukn', name: 'Rukn', tagline: 'Pro training', city: 'Riyadh', primary_color: '#0d6b62', logo_version: null, health_sectors: 6 },
+      { slug: 'masar', name: 'Masar Training', tagline: null, city: null, primary_color: null, logo_version: null, health_sectors: 0 },
     ]);
   });
 });

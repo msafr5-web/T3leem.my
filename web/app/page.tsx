@@ -8,8 +8,8 @@ export const revalidate = 60;
 
 /** Shown if the API is unreachable, so the home page never breaks. */
 const FALLBACK_PROVIDERS: Provider[] = [
-  { slug: 'rukn', name: 'أكاديمية ركن', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62', logo_version: null },
-  { slug: 'masar', name: 'المسار للتدريب المالي', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89', logo_version: null },
+  { slug: 'rukn', name: 'أكاديمية ركن', tagline: 'تدريب احترافي معتمد في الإدارة والتقنية', city: 'الرياض', primary_color: '#0d6b62', logo_version: null, health_sectors: 0 },
+  { slug: 'masar', name: 'المسار للتدريب المالي', tagline: 'برامج المحاسبة والمالية للمهنيين', city: 'جدة', primary_color: '#1d4e89', logo_version: null, health_sectors: 0 },
 ];
 
 const STEPS = [
@@ -69,6 +69,7 @@ export default async function PlatformHome() {
           </span>
           <nav className="header-actions small" aria-label="أقسام الصفحة">
             <a href="#providers">مزودو الخدمة</a>
+            {providers.some((p) => p.health_sectors > 0) && <a href="#health">الشهادات الصحية</a>}
             <a href="#how">كيف تعمل</a>
             <a href="#features">المزايا</a>
             <a href="#faq">الأسئلة الشائعة</a>
@@ -90,6 +91,39 @@ export default async function PlatformHome() {
             <a href="#providers" className="btn btn-ghost">تصفح مزودي الخدمة</a>
           </div>
         </section>
+
+        {providers.some((p) => p.health_sectors > 0) && (
+          <section id="health" className="section" aria-labelledby="health-heading">
+            <div className="section-head">
+              <div className="stack" style={{ gap: 6 }}>
+                <h2 id="health-heading">الشهادات الصحية</h2>
+                <p className="muted">تدرّب على أسئلة اختبار الشهادة الصحية حسب قطاعك: الأغذية، الحلاقة والتجميل، الفنادق، النوادي، وغيرها.</p>
+              </div>
+            </div>
+            <div className="grid">
+              {providers
+                .filter((p) => p.health_sectors > 0)
+                .map((p) => (
+                  <Link
+                    key={p.slug}
+                    href={`/${p.slug}/health`}
+                    className="card card-link"
+                    style={safeBrandColor(p.primary_color) ? ({ ['--brand' as string]: p.primary_color } as React.CSSProperties) : undefined}
+                  >
+                    <span className="brand-mark">
+                      <LogoMark slug={p.slug} name={p.name} version={p.logo_version} size={36} />
+                      {p.name}
+                    </span>
+                    <p className="muted">أسئلة تدريبية بشرح لكل إجابة، وجلسات عشوائية، ومتابعة لتقدمك.</p>
+                    <div className="badges">
+                      <span className="badge">{p.health_sectors} قطاعات</span>
+                      <span className="badge">ابدأ التدريب</span>
+                    </div>
+                  </Link>
+                ))}
+            </div>
+          </section>
+        )}
 
         <section id="providers" className="section" aria-labelledby="providers-heading">
           <div className="section-head">
@@ -113,6 +147,7 @@ export default async function PlatformHome() {
                 {p.tagline && <p className="muted">{p.tagline}</p>}
                 <div className="badges">
                   {p.city && <span className="badge">{p.city}</span>}
+                  {p.health_sectors > 0 && <span className="badge">شهادات صحية</span>}
                   <span className="badge ltr">t3leem.my/{p.slug}</span>
                 </div>
               </Link>

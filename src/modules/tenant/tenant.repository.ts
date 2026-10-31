@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { withTenantTransaction } from '../../config/database';
+import { forTenant, withTenantTransaction } from '../../config/database';
 import type { ResolvedTenant } from '../../shared/types/express';
 import type { Actor } from '../provider/provider.types';
 import type { BrandingProfile, BrandingRepository, LogoMime } from './branding.service';
@@ -45,12 +45,22 @@ export class TenantRepository implements BrandingRepository, RegistrationReposit
   }
 
   /** Public provider directory: active academies only, public fields only. */
-  listActive(): Promise<{ slug: string; name: string; brandSettings: ResolvedTenant['brandSettings']; logoUpdatedAt: Date | null }[]> {
-    return this.db.tenant.findMany({
+  async listActive(): Promise<{ slug: string; name: string; brandSettings: ResolvedTenant['brandSettings']; logoUpdatedAt: Date | null; healthSectors: number }[]> {
+    const tenants = await this.db.tenant.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { createdAt: 'asc' },
-      select: { slug: true, name: true, brandSettings: true, logoUpdatedAt: true },
+      select: { id: true, slug: true, name: true, brandSettings: true, logoUpdatedAt: true },
     });
+    // Health tables are RLS-protected, so count per tenant under its own context (a handful of academies, cached 60 s upstream).
+    return Promise.all(
+      tenants.map(async ({ id, ...t }) => {
+        const [settings, sectors] = await Promise.all([
+          forTenant(id).healthSetting.findUnique({ where: { tenantId: id }, select: { enabled: true } }),
+          forTenant(id).healthSector.count({ where: { tenantId: id, active: true, questions: { some: { active: true } } } }),
+        ]);
+        return { ...t, healthSectors: settings?.enabled === false ? 0 : sectors };
+      }),
+    );
   }
 
   // ----- branding -----
