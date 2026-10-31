@@ -44,9 +44,21 @@ export class AuthController {
     res.status(200).json(ok(tokenJson(result)));
   };
 
+  /** What the sign-up form must ask for in this academy (public, no account needed). */
+  registerPolicy = async (req: Request, res: Response): Promise<void> => {
+    const t = this.tenantOf(req);
+    const p = await this.authService.registrationPolicy(t.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok({ require_phone: p.requirePhone }));
+  };
+
   register = async (req: Request, res: Response): Promise<void> => {
     const t = this.tenantOf(req);
-    const user = await this.authService.register(t.id, { fullName: String(req.body.full_name), email: String(req.body.email) });
+    const user = await this.authService.register(t.id, {
+      fullName: String(req.body.full_name),
+      email: String(req.body.email),
+      phone: typeof req.body.phone === 'string' ? req.body.phone : null,
+    });
     res.setHeader('Cache-Control', 'no-store');
     res.status(201).json(ok({ email: user.email }));
   };

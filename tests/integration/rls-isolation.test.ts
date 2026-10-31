@@ -234,9 +234,9 @@ describeDb('PostgreSQL RLS tenant isolation', () => {
     expect((await db.forTenant(tenantB).healthSession.findFirst({ where: { tenantId: tenantB } }))!.sectorId).toBeNull();
 
     // Settings and entitlements are per tenant too.
-    await repo.saveSettings(tenantA, actor, { enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5 });
-    await expect(repo.getSettings(tenantA)).resolves.toEqual({ enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5 });
-    await expect(repo.getSettings(tenantB)).resolves.toEqual({ enabled: true, trialEndsAt: null, price: null });
+    await repo.saveSettings(tenantA, actor, { enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5, strictMode: true, dailyLimit: 3, questionsPerExam: 7 });
+    await expect(repo.getSettings(tenantA)).resolves.toEqual({ enabled: false, trialEndsAt: new Date('2026-12-01T00:00:00Z'), price: 49.5, strictMode: true, dailyLimit: 3, questionsPerExam: 7 });
+    await expect(repo.getSettings(tenantB)).resolves.toEqual({ enabled: true, trialEndsAt: null, price: null, strictMode: false, dailyLimit: 5, questionsPerExam: 10 });
     await expect(db.prisma.healthSetting.count()).resolves.toBe(0);
   }, 30_000);
 

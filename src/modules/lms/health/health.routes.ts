@@ -7,7 +7,7 @@ import { ok } from '../../../shared/utils/api-response';
 import { HttpError } from '../../../shared/utils/http-error';
 import { HEALTH_LIMITS } from './health.excel';
 import type { HealthQuestionRow, HealthSectorRow } from './health.repository';
-import { HEALTH_PRACTICE, type HealthService, type QuestionDraft } from './health.service';
+import { HEALTH_PRACTICE, type ExamResult, type HealthService, type QuestionDraft } from './health.service';
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
@@ -84,7 +84,14 @@ export function buildHealthAdminRouter(service: HealthService, jwt: JwtVerifyOpt
     noStore(res);
     res.json(
       ok({
-        settings: { enabled: o.settings.enabled, trial_ends_at: o.settings.trialEndsAt?.toISOString() ?? null, price: o.settings.price },
+        settings: {
+          enabled: o.settings.enabled,
+          trial_ends_at: o.settings.trialEndsAt?.toISOString() ?? null,
+          price: o.settings.price,
+          strict_mode: o.settings.strictMode,
+          daily_limit: o.settings.dailyLimit,
+          questions_per_exam: o.settings.questionsPerExam,
+        },
         sectors: o.sectors.map(sectorJson),
         active_subscribers: o.entitled,
         server_now: o.serverNow.toISOString(),
@@ -98,6 +105,9 @@ export function buildHealthAdminRouter(service: HealthService, jwt: JwtVerifyOpt
     body('enabled').isBoolean(),
     body('trial_ends_at').optional({ values: 'null' }).isISO8601().withMessage('trial_ends_at must be a date-time'),
     body('price').optional({ values: 'null' }).isFloat({ min: 0, max: 100_000 }).withMessage('price must be 0-100000'),
+    body('strict_mode').optional().isBoolean(),
+    body('daily_limit').optional().isInt({ min: 1, max: 50 }).withMessage('daily_limit must be 1-50'),
+    body('questions_per_exam').optional().isInt({ min: 1, max: 100 }).withMessage('questions_per_exam must be 1-100'),
     validate,
     async (req: Request, res: Response) => {
       const { tenantId, actor } = actorOf(req);
@@ -106,6 +116,9 @@ export function buildHealthAdminRouter(service: HealthService, jwt: JwtVerifyOpt
         enabled: req.body.enabled === true || req.body.enabled === 'true',
         trialEndsAt: typeof req.body.trial_ends_at === 'string' && req.body.trial_ends_at ? new Date(req.body.trial_ends_at) : null,
         price: price !== null && price > 0 ? price : null,
+        strictMode: req.body.strict_mode === true || req.body.strict_mode === 'true',
+        dailyLimit: req.body.daily_limit === undefined ? 5 : Number(req.body.daily_limit),
+        questionsPerExam: req.body.questions_per_exam === undefined ? 10 : Number(req.body.questions_per_exam),
       });
       res.json(ok({ saved: true }));
     },
@@ -235,6 +248,9 @@ export function buildHealthLearnerRouter(service: HealthService, jwt: JwtVerifyO
         access: s.access,
         trial_ends_at: s.trialEndsAt?.toISOString() ?? null,
         price: s.price,
+        strict_mode: s.strictMode,
+        daily_limit: s.dailyLimit,
+        questions_per_exam: s.questionsPerExam,
         server_now: s.serverNow.toISOString(),
         sectors: s.sectors.map((x) => ({ id: x.id, name: x.name, title: x.title, question_count: x.questionCount })),
       }),
@@ -311,6 +327,65 @@ export function buildHealthLearnerRouter(service: HealthService, jwt: JwtVerifyO
       res.json(ok({ correct: r.correct, correct_option: r.correctOption, explanation: r.explanation }));
     },
   );
+
+  // ---- official exams (strict mode): the e-mailed code, then 10 random questions of one sector ----
+  const quotaJson = (q: { limit: number; used: number; remaining: number; nextAllowedAt: Date | null }) => ({ limit: q.limit, used: q.used, remaining: q.remaining, next_allowed_at: q.nextAllowedAt?.toISOString() ?? null });
+  const viewJson = (e: { id: string; sectorId: string | null; startedAt: Date; questions: { id: string; body: string; options: string[] }[] }) => ({
+    id: e.id,
+    sector_id: e.sectorId,
+    started_at: e.startedAt.toISOString(),
+    questions: e.questions.map((q) => ({ id: q.id, body: q.body, options: q.options })),
+  });
+  const resultJson = (r: ExamResult) => ({
+    id: r.id,
+    sector_id: r.sectorId,
+    score: r.score,
+    total: r.total,
+    percent: r.percent,
+    submitted_at: r.submittedAt.toISOString(),
+    questions: r.questions.map((q) => ({ id: q.id, body: q.body, options: q.options, your_answer: q.yourAnswer, correct_option: q.correctOption, correct: q.correct, explanation: q.explanation })),
+  });
+
+  router.get('/health/exam/status', auth, async (req: Request, res: Response) => {
+    const { tenantId, user } = who(req);
+    const s = await service.examStatus(tenantId, user);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(
+      ok({
+        quota: quotaJson(s.quota),
+        questions_per_exam: s.questionsPerExam,
+        history: s.history.map((e) => ({ id: e.id, sector_id: e.sectorId, score: e.score, total: e.total, started_at: e.startedAt.toISOString(), submitted_at: e.submittedAt?.toISOString() ?? null })),
+      }),
+    );
+  });
+
+  router.post('/health/exam/code', auth, body('sector_id').isUUID(), validate, async (req: Request, res: Response) => {
+    const { tenantId, user } = who(req);
+    const r = await service.examRequestCode(tenantId, requireAuthContext(req).tenant.name, user, String(req.body.sector_id));
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(202).json(ok({ challenge_id: r.challengeId, expires_in: r.expiresInSec }));
+  });
+
+  router.post('/health/exam/start', auth, body('sector_id').isUUID(), body('challenge_id').isUUID(), body('code').isString().trim().matches(/^\d{6}$/), validate, async (req: Request, res: Response) => {
+    const { tenantId, user } = who(req);
+    const e = await service.examStart(tenantId, user, { sectorId: String(req.body.sector_id), challengeId: String(req.body.challenge_id), code: String(req.body.code) });
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(201).json(ok(viewJson(e)));
+  });
+
+  router.get('/health/exam/:id', auth, uuid('id'), validate, async (req: Request<{ id: string }>, res: Response) => {
+    const { tenantId, user } = who(req);
+    const r = await service.examGet(tenantId, user, req.params.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok('exam' in r ? { state: 'in_progress', exam: viewJson(r.exam) } : { state: 'submitted', result: resultJson(r.result) }));
+  });
+
+  router.post('/health/exam/:id/submit', auth, uuid('id'), body('answers').isObject().withMessage('answers must be an object'), validate, async (req: Request<{ id: string }>, res: Response) => {
+    const { tenantId, user } = who(req);
+    const r = await service.examSubmit(tenantId, user, req.params.id, req.body.answers as Record<string, unknown>);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok(resultJson(r)));
+  });
 
   router.post(
     '/health/sessions',

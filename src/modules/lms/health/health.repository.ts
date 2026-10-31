@@ -8,6 +8,30 @@ export interface HealthSettings {
   trialEndsAt: Date | null;
   /** Fee in SAR that applies after the trial (null = free). */
   price: number | null;
+  /** Strict mode: phone-verified sign-up, official exams only, e-mailed code per exam, daily cap. */
+  strictMode: boolean;
+  dailyLimit: number;
+  questionsPerExam: number;
+}
+
+/** A question frozen into an exam: options already shuffled for this attempt. */
+export interface ExamQuestion {
+  id: string;
+  body: string;
+  options: string[];
+  correctOption: string;
+  explanation: string;
+}
+
+export interface HealthExamRow {
+  id: string;
+  sectorId: string | null;
+  questions: ExamQuestion[];
+  answers: Record<string, string>;
+  total: number;
+  score: number | null;
+  startedAt: Date;
+  submittedAt: Date | null;
 }
 
 export interface HealthSectorRow {
@@ -86,6 +110,14 @@ export interface HealthRepository {
   setState(tenantId: string, userId: string, questionId: string, patch: { isFavorite?: boolean; isRead?: boolean }): Promise<void>;
   recordSession(tenantId: string, userId: string, input: { clientSessionId: string; sectorId: string | null; total: number; correct: number }): Promise<void>;
   sessions(tenantId: string, userId: string, limit: number): Promise<{ rows: HealthSessionRow[]; answered: number; correct: number; sessions: number }>;
+
+  /** Start times of this user's exams since `since`, newest first (every started exam counts, finished or not). */
+  examStarts(tenantId: string, userId: string, since: Date): Promise<Date[]>;
+  createExam(tenantId: string, input: { userId: string; sectorId: string; questions: ExamQuestion[] }): Promise<string>;
+  getExam(tenantId: string, userId: string, id: string): Promise<HealthExamRow | null>;
+  /** True only for the request that really submitted it (an exam is graded once). */
+  submitExam(tenantId: string, userId: string, id: string, input: { answers: Record<string, string>; score: number; at: Date }): Promise<boolean>;
+  listExams(tenantId: string, userId: string, limit: number): Promise<HealthExamRow[]>;
 }
 
 const toQuestion = (q: { id: string; sectorId: string; code: string; body: string; options: Prisma.JsonValue; correctIndex: number; explanation: string; active: boolean; sortOrder: number }): HealthQuestionRow => ({
@@ -100,6 +132,17 @@ const toQuestion = (q: { id: string; sectorId: string; code: string; body: strin
   sortOrder: q.sortOrder,
 });
 
+const toExam = (e: { id: string; sectorId: string | null; questions: Prisma.JsonValue; answers: Prisma.JsonValue; total: number; score: number | null; startedAt: Date; submittedAt: Date | null }): HealthExamRow => ({
+  id: e.id,
+  sectorId: e.sectorId,
+  questions: (e.questions as unknown as ExamQuestion[]) ?? [],
+  answers: (e.answers as unknown as Record<string, string>) ?? {},
+  total: e.total,
+  score: e.score,
+  startedAt: e.startedAt,
+  submittedAt: e.submittedAt,
+});
+
 const audit = (tx: Prisma.TransactionClient, tenantId: string, actor: Actor, action: string, entityId: string, metadata: Prisma.InputJsonValue) =>
   tx.auditLog.create({ data: { tenantId, actorId: actor.userId, actorRole: actor.role, action, entityType: 'health', entityId, metadata, ipAddress: actor.ip } });
 
@@ -108,14 +151,16 @@ const isUnique = (err: unknown) => err instanceof Prisma.PrismaClientKnownReques
 export class PrismaHealthRepository implements HealthRepository {
   async getSettings(tenantId: string): Promise<HealthSettings> {
     const row = await forTenant(tenantId).healthSetting.findUnique({ where: { tenantId } });
-    return row ? { enabled: row.enabled, trialEndsAt: row.trialEndsAt, price: row.price === null ? null : Number(row.price) } : { enabled: true, trialEndsAt: null, price: null };
+    return row
+      ? { enabled: row.enabled, trialEndsAt: row.trialEndsAt, price: row.price === null ? null : Number(row.price), strictMode: row.strictMode, dailyLimit: row.dailyLimit, questionsPerExam: row.questionsPerExam }
+      : { enabled: true, trialEndsAt: null, price: null, strictMode: false, dailyLimit: 5, questionsPerExam: 10 };
   }
 
   saveSettings(tenantId: string, actor: Actor, s: HealthSettings): Promise<void> {
     return withTenantTransaction(tenantId, async (tx) => {
-      const data = { enabled: s.enabled, trialEndsAt: s.trialEndsAt, price: s.price };
+      const data = { enabled: s.enabled, trialEndsAt: s.trialEndsAt, price: s.price, strictMode: s.strictMode, dailyLimit: s.dailyLimit, questionsPerExam: s.questionsPerExam };
       await tx.healthSetting.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
-      await audit(tx, tenantId, actor, 'health.settings_changed', tenantId, { enabled: s.enabled, trialEndsAt: s.trialEndsAt?.toISOString() ?? null, price: s.price });
+      await audit(tx, tenantId, actor, 'health.settings_changed', tenantId, { enabled: s.enabled, trialEndsAt: s.trialEndsAt?.toISOString() ?? null, price: s.price, strictMode: s.strictMode, dailyLimit: s.dailyLimit, questionsPerExam: s.questionsPerExam });
     });
   }
 
@@ -322,5 +367,40 @@ export class PrismaHealthRepository implements HealthRepository {
       correct: sum._sum.correct ?? 0,
       sessions: sum._count._all,
     };
+  }
+
+  async examStarts(tenantId: string, userId: string, since: Date): Promise<Date[]> {
+    const rows = await forTenant(tenantId).healthExam.findMany({ where: { tenantId, userId, startedAt: { gte: since } }, orderBy: { startedAt: 'desc' }, select: { startedAt: true } });
+    return rows.map((r) => r.startedAt);
+  }
+
+  async createExam(tenantId: string, input: { userId: string; sectorId: string; questions: ExamQuestion[] }): Promise<string> {
+    const db = forTenant(tenantId);
+    // FK checks bypass RLS: only keep a sector that belongs to this tenant.
+    const sectorId = (await db.healthSector.count({ where: { tenantId, id: input.sectorId } })) > 0 ? input.sectorId : null;
+    const row = await db.healthExam.create({
+      data: { tenantId, userId: input.userId, sectorId, questions: input.questions as unknown as Prisma.InputJsonValue, total: input.questions.length },
+      select: { id: true },
+    });
+    return row.id;
+  }
+
+  async getExam(tenantId: string, userId: string, id: string): Promise<HealthExamRow | null> {
+    const row = await forTenant(tenantId).healthExam.findFirst({ where: { tenantId, userId, id } });
+    return row ? toExam(row) : null;
+  }
+
+  async submitExam(tenantId: string, userId: string, id: string, input: { answers: Record<string, string>; score: number; at: Date }): Promise<boolean> {
+    // The `submittedAt: null` guard makes the first submission win under concurrent requests.
+    const { count } = await forTenant(tenantId).healthExam.updateMany({
+      where: { tenantId, userId, id, submittedAt: null },
+      data: { answers: input.answers as unknown as Prisma.InputJsonValue, score: input.score, submittedAt: input.at },
+    });
+    return count === 1;
+  }
+
+  async listExams(tenantId: string, userId: string, limit: number): Promise<HealthExamRow[]> {
+    const rows = await forTenant(tenantId).healthExam.findMany({ where: { tenantId, userId }, orderBy: { startedAt: 'desc' }, take: limit });
+    return rows.map(toExam);
   }
 }

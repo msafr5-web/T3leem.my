@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { me } from '@/lib/api';
 import { isValidSlug } from '@/lib/format';
 import { getSession } from '@/lib/session';
+import { ExamPortal } from './exam-portal';
 import { HealthStudy } from './health-study';
 
 export const metadata: Metadata = { title: 'الشهادات الصحية' };
@@ -43,6 +44,28 @@ export default async function HealthPage({ params }: { params: Promise<{ tenant:
             </Link>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Strict mode: trainees only sit official exams (staff keep the open preview).
+  if (status.strict_mode && session.role === 'LEARNER') {
+    const exam = await me.examStatus(slug, session.token);
+    return (
+      <div className="stack" style={{ gap: 20 }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h1>الاختبارات الرسمية</h1>
+          <p className="muted">
+            اختر قطاعك فتظهر لك {new Intl.NumberFormat('ar-SA').format(exam.questions_per_exam)} أسئلة عشوائية منه، وتُحتسب درجتك وتُسجَّل محاولتك. بحد أقصى {new Intl.NumberFormat('ar-SA').format(exam.quota.limit)} اختبارات يومياً.
+          </p>
+          {status.access === 'trial' && status.trial_ends_at && (
+            <div className="notice" role="status">
+              فترة تجريبية مجانية حتى {dateFmt.format(new Date(status.trial_ends_at))}
+              {status.price ? `، ثم اشتراك ${new Intl.NumberFormat('ar-SA').format(status.price)} ريال.` : '.'}
+            </div>
+          )}
+        </div>
+        <ExamPortal slug={slug} sectors={status.sectors} status={exam} />
       </div>
     );
   }

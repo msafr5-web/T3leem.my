@@ -22,11 +22,14 @@ export function buildAuthRouter(controller: AuthController, loginLimiter: Reques
   router.post('/otp/resend', loginLimiter, body('challenge_id').isUUID().withMessage('challenge_id must be a UUID'), validate, controller.resendOtp);
   router.post('/otp/verify', loginLimiter, ...otpCodeRules, validate, controller.verifyOtp);
 
+  router.get('/register-policy', controller.registerPolicy);
+
   router.post(
     '/register',
     registerLimiter,
     body('full_name').isString().trim().isLength({ min: 3, max: 120 }).withMessage('full_name must be 3-120 characters'),
     otpEmailRule,
+    body('phone').optional({ values: 'falsy' }).isString().trim().matches(/^\+[1-9][0-9]{8,14}$/).withMessage('phone must be an international number such as +9665XXXXXXXX'),
     validate,
     controller.register,
   );

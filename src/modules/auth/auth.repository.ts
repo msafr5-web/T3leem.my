@@ -3,8 +3,9 @@ import { forTenant, prisma } from '../../config/database';
 import type { LoginUser, OtpChallenge, OtpRepository, UserLookup } from './otp.service';
 
 export interface AuthRepository extends UserLookup {
+  phoneTaken(tenantId: string, phone: string): Promise<boolean>;
   /** Creates a LEARNER account. Throws a P2002 unique violation if the email exists in this academy. */
-  createLearner(tenantId: string, data: { email: string; fullName: string; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }>;
+  createLearner(tenantId: string, data: { email: string; fullName: string; phone: string | null; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }>;
 }
 
 /** Tenant-scoped through RLS: the same email in another academy is a different account. */
@@ -16,7 +17,15 @@ export class PrismaAuthRepository implements AuthRepository {
     });
   }
 
-  createLearner(tenantId: string, data: { email: string; fullName: string; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }> {
+  async phoneTaken(tenantId: string, phone: string): Promise<boolean> {
+    return (await forTenant(tenantId).user.count({ where: { tenantId, phone } })) > 0;
+  }
+
+  findById(tenantId: string, id: string): Promise<LoginUser | null> {
+    return forTenant(tenantId).user.findFirst({ where: { tenantId, id }, select: { id: true, email: true, role: true, fullName: true } });
+  }
+
+  createLearner(tenantId: string, data: { email: string; fullName: string; phone: string | null; passwordHash: string }): Promise<{ id: string; email: string; role: UserRole }> {
     return forTenant(tenantId).user.create({
       data: { tenantId, ...data, role: 'LEARNER' },
       select: { id: true, email: true, role: true },
@@ -26,7 +35,7 @@ export class PrismaAuthRepository implements AuthRepository {
 
 /** One-time sign-in codes (platform-level table; every query names the tenant explicitly). */
 export class PrismaOtpRepository implements OtpRepository {
-  async create(row: { tenantId: string | null; email: string; userId: string | null; expiresAt: Date }): Promise<string> {
+  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }): Promise<string> {
     const created = await prisma.loginOtp.create({ data: { ...row, codeHash: '' }, select: { id: true } });
     return created.id;
   }

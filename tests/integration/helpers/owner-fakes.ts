@@ -9,7 +9,7 @@ export class InMemoryOtpRepository implements OtpRepository {
   created: { tenantId: string | null; email: string; at: Date }[] = [];
   clock: () => Date = () => new Date();
 
-  async create(row: { tenantId: string | null; email: string; userId: string | null; expiresAt: Date }) {
+  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }) {
     const id = randomUUID();
     this.rows.set(id, { id, ...row, codeHash: '', attempts: 0, sends: 1, lastSentAt: new Date(0) });
     this.created.push({ tenantId: row.tenantId, email: row.email, at: this.clock() });

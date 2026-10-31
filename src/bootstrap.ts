@@ -109,9 +109,12 @@ export function createServerApp(): ServerApp {
   if (mailer instanceof UnconfiguredMailer) logger.warn('SMTP not configured: sign-in codes and sign-up verification cannot be e-mailed');
 
   const authRepository = new PrismaAuthRepository();
+  const healthRepository = new PrismaHealthRepository();
   const authService = new AuthService({
     repository: authRepository,
     unusablePasswordHash: () => hashPassword(randomBytes(24).toString('hex')),
+    // The health academy's strict mode asks every new trainee for a phone number.
+    policy: async (tenantId) => ({ requirePhone: (await healthRepository.getSettings(tenantId)).strictMode }),
   });
   const otpLogin = new OtpLoginService({
     repository: new PrismaOtpRepository(),
@@ -184,7 +187,13 @@ export function createServerApp(): ServerApp {
       youtube: new YoutubeMetadataClient(env.YOUTUBE_API_KEY),
     }),
     quizService: new QuizService({ repository: new PrismaQuizRepository() }),
-    healthService: new HealthService({ repository: new PrismaHealthRepository() }),
+    healthService: new HealthService({
+      repository: healthRepository,
+      stepUp: {
+        request: (tenantId, label, userId) => otpLogin.requestStepUp(tenantId, label, userId, 'health_exam'),
+        confirm: (tenantId, userId, challengeId, code) => otpLogin.confirmStepUp(tenantId, userId, 'health_exam', challengeId, code),
+      },
+    }),
     learningService,
     videoService: media.video,
     zoomWebhooks: new ZoomWebhookService({

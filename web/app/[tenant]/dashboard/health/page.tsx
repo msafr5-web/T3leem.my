@@ -105,6 +105,21 @@ export default async function HealthAdminPage({
             الرسوم بعد الفترة التجريبية (ريال) <span className="hint">(اتركها فارغة لتبقى مجانية)</span>
             <input type="number" name="price" min={0} max={100000} step="0.01" defaultValue={settings.price ?? ''} inputMode="decimal" />
           </label>
+          <fieldset className="group" style={{ padding: 10 }}>
+            <legend className="small">وضع الاختبارات الرسمية</legend>
+            <label className="check">
+              <input type="checkbox" name="strict_mode" defaultChecked={settings.strict_mode} />
+              تفعيل الوضع الصارم: تسجيل بالاسم والجوال والبريد (لا يتكرر الجوال ولا البريد)، واختبارات رسمية فقط (دون تدريب أو كشف للإجابات)، ورمز يصل إلى بريد المشترك قبل كل اختبار، وسقف يومي
+            </label>
+            <label>
+              الحد الأقصى للاختبارات اليومية <span className="hint">(بعده يتوقف المشترك حتى مرور ٢٤ ساعة من آخر محاولة)</span>
+              <input type="number" name="daily_limit" min={1} max={50} defaultValue={settings.daily_limit} />
+            </label>
+            <label>
+              عدد أسئلة الاختبار الواحد
+              <input type="number" name="questions_per_exam" min={1} max={100} defaultValue={settings.questions_per_exam} />
+            </label>
+          </fieldset>
         </ActionForm>
         <p className="small muted">بعد انتهاء الفترة التجريبية يُمنع المتدرب الذي لم يُفعَّل اشتراكه. المشتركون الفعّالون الآن: {formatNumber(overview.active_subscribers)}.</p>
         <details>

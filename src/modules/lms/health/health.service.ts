@@ -10,7 +10,7 @@ import {
   type RowError,
 } from './health.excel';
 import starter from './health.starter.json';
-import type { HealthQuestionRow, HealthRepository, HealthSectorRow, HealthSessionRow, HealthSettings, HealthUserStateRow } from './health.repository';
+import type { ExamQuestion, HealthExamRow, HealthQuestionRow, HealthRepository, HealthSectorRow, HealthSessionRow, HealthSettings, HealthUserStateRow } from './health.repository';
 
 export const HEALTH_PRACTICE = { minCount: 1, maxCount: 50, defaultCount: 10, pageSize: 20, maxPageSize: 50 } as const;
 
@@ -18,6 +18,9 @@ export type HealthAccess = 'disabled' | 'open' | 'trial' | 'paid' | 'locked';
 
 export interface HealthStatus {
   access: HealthAccess;
+  strictMode: boolean;
+  dailyLimit: number;
+  questionsPerExam: number;
   trialEndsAt: Date | null;
   price: number | null;
   sectors: HealthSectorRow[];
@@ -53,8 +56,41 @@ export interface ImportOutcome {
   removed: number;
 }
 
+/** E-mailed confirmation code before an official exam (so the person at the keyboard is the account holder). */
+export interface ExamStepUp {
+  request(tenantId: string, tenantLabel: string, userId: string): Promise<{ challengeId: string; expiresInSec: number }>;
+  confirm(tenantId: string, userId: string, challengeId: string, code: string): Promise<void>;
+}
+
+export interface ExamQuota {
+  limit: number;
+  used: number;
+  remaining: number;
+  /** When the cap lifts (24 h after the last attempt); null while attempts remain. */
+  nextAllowedAt: Date | null;
+}
+
+export interface ExamResult {
+  id: string;
+  sectorId: string | null;
+  score: number;
+  total: number;
+  percent: number;
+  submittedAt: Date;
+  questions: { id: string; body: string; options: string[]; yourAnswer: string | null; correctOption: string; correct: boolean; explanation: string }[];
+}
+
+export interface ExamView {
+  id: string;
+  sectorId: string | null;
+  startedAt: Date;
+  /** Present while unanswered / unsubmitted: the questions without their answers. */
+  questions: { id: string; body: string; options: string[] }[];
+}
+
 interface Deps {
   repository: HealthRepository;
+  stepUp?: ExamStepUp;
   now?: () => Date;
 }
 
@@ -98,7 +134,7 @@ export class HealthService {
     ]);
     let access = this.accessOf(settings, expiry);
     if (STAFF.has(user.role) && access === 'locked') access = 'paid';
-    return { access, trialEndsAt: settings.trialEndsAt, price: settings.price, sectors, serverNow: this.now() };
+    return { access, strictMode: settings.strictMode, dailyLimit: settings.dailyLimit, questionsPerExam: settings.questionsPerExam, trialEndsAt: settings.trialEndsAt, price: settings.price, sectors, serverNow: this.now() };
   }
 
   private async assertAccess(tenantId: string, user: { id: string; role: UserRole }): Promise<void> {
@@ -107,17 +143,28 @@ export class HealthService {
     if (access === 'locked') throw HttpError.paymentRequired('HEALTH_TRIAL_ENDED', 'The free trial has ended; subscribe to continue');
   }
 
+  /**
+   * Practice, review and favourites are for open academies. In strict mode learners only sit official exams
+   * (browsing the bank would hand out the answers), so these doors close for them; staff still preview.
+   */
+  private async assertPractice(tenantId: string, user: { id: string; role: UserRole }): Promise<void> {
+    const status = await this.status(tenantId, user);
+    if (status.access === 'disabled') throw new HttpError(403, 'HEALTH_DISABLED', 'The health certificates section is not available');
+    if (status.access === 'locked') throw HttpError.paymentRequired('HEALTH_TRIAL_ENDED', 'The free trial has ended; subscribe to continue');
+    if (status.strictMode && !STAFF.has(user.role)) throw new HttpError(403, 'HEALTH_EXAM_ONLY', 'This academy offers official exams only');
+  }
+
   // ---------- learner ----------
 
   async browse(tenantId: string, user: { id: string; role: UserRole }, q: { sectorId?: string; search?: string; limit?: number; offset?: number }) {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     const limit = Math.min(Math.max(q.limit ?? HEALTH_PRACTICE.pageSize, 1), HEALTH_PRACTICE.maxPageSize);
     return this.deps.repository.listQuestions(tenantId, { sectorId: q.sectorId, search: q.search?.trim() || undefined, onlyActive: true, limit, offset: Math.max(q.offset ?? 0, 0) });
   }
 
   /** Random questions for a practice run: options shuffled, the right one not revealed. */
   async practice(tenantId: string, user: { id: string; role: UserRole }, input: { sectorId?: string; count: number; favoritesOnly: boolean }): Promise<PracticeQuestion[]> {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     const count = Math.min(Math.max(Math.trunc(input.count) || HEALTH_PRACTICE.defaultCount, HEALTH_PRACTICE.minCount), HEALTH_PRACTICE.maxCount);
     let ids: string[] | undefined;
     if (input.favoritesOnly) {
@@ -133,7 +180,7 @@ export class HealthService {
 
   /** Grades one answer on the server. Options are compared by text, so the shuffle doesn't matter. */
   async answer(tenantId: string, user: { id: string; role: UserRole }, questionId: string, option: string): Promise<AnswerOutcome> {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     const q = await this.deps.repository.getQuestion(tenantId, questionId, true);
     if (!q) throw HttpError.notFound('QUESTION_NOT_FOUND', 'Question not found');
     const correctOption = q.options[q.correctIndex] ?? '';
@@ -143,13 +190,13 @@ export class HealthService {
   }
 
   async setState(tenantId: string, user: { id: string; role: UserRole }, questionId: string, patch: { favorite?: boolean; read?: boolean }): Promise<void> {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     if (!(await this.deps.repository.getQuestion(tenantId, questionId, true))) throw HttpError.notFound('QUESTION_NOT_FOUND', 'Question not found');
     await this.deps.repository.setState(tenantId, user.id, questionId, { isFavorite: patch.favorite, isRead: patch.read });
   }
 
   async recordSession(tenantId: string, user: { id: string; role: UserRole }, input: { clientSessionId: string; sectorId: string | null; total: number; correct: number }): Promise<void> {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     if (input.correct > input.total) throw HttpError.unprocessable('INVALID_SESSION', 'Correct answers exceed the total');
     await this.deps.repository.recordSession(tenantId, user.id, input);
   }
@@ -158,9 +205,124 @@ export class HealthService {
     tenantId: string,
     user: { id: string; role: UserRole },
   ): Promise<{ states: HealthUserStateRow[]; sessions: HealthSessionRow[]; answered: number; correct: number; sessionCount: number }> {
-    await this.assertAccess(tenantId, user);
+    await this.assertPractice(tenantId, user);
     const [states, history] = await Promise.all([this.deps.repository.userStates(tenantId, user.id), this.deps.repository.sessions(tenantId, user.id, 30)]);
     return { states, sessions: history.rows, answered: history.answered, correct: history.correct, sessionCount: history.sessions };
+  }
+
+  // ---------- official exams (strict mode) ----------
+
+  private async examContext(tenantId: string, user: { id: string; role: UserRole }) {
+    await this.assertAccess(tenantId, user);
+    const settings = await this.deps.repository.getSettings(tenantId);
+    if (!settings.strictMode) throw new HttpError(403, 'HEALTH_EXAMS_OFF', 'Official exams are not enabled for this academy');
+    return settings;
+  }
+
+  /**
+   * The daily cap. Every started exam counts (abandoning one does not give it back). When `limit` exams were
+   * started within one 24-hour span the account is locked until 24 hours after its LAST attempt — not
+   * merely until the oldest attempt ages out — so the cap cannot be dodged by pacing the attempts.
+   */
+  private async quotaOf(tenantId: string, userId: string, limit: number): Promise<ExamQuota> {
+    const DAY = 24 * 3_600_000;
+    const now = this.now();
+    const starts = await this.deps.repository.examStarts(tenantId, userId, new Date(now.getTime() - 2 * DAY)); // newest first
+    const last = starts[0];
+    if (last) {
+      const inLastSpan = starts.filter((d) => d.getTime() > last.getTime() - DAY).length;
+      const liftsAt = new Date(last.getTime() + DAY);
+      if (inLastSpan >= limit && now < liftsAt) return { limit, used: limit, remaining: 0, nextAllowedAt: liftsAt };
+    }
+    const used = starts.filter((d) => d.getTime() > now.getTime() - DAY).length;
+    return { limit, used, remaining: Math.max(limit - used, 0), nextAllowedAt: null };
+  }
+
+  private assertQuota(q: ExamQuota): void {
+    if (q.remaining <= 0) throw new HttpError(429, 'EXAM_LIMIT_REACHED', 'The daily exam limit is reached; try again after 24 hours from the last attempt', { next_allowed_at: q.nextAllowedAt?.toISOString() ?? null });
+  }
+
+  async examStatus(tenantId: string, user: { id: string; role: UserRole }): Promise<{ quota: ExamQuota; history: HealthExamRow[]; questionsPerExam: number }> {
+    const settings = await this.examContext(tenantId, user);
+    const [quota, history] = await Promise.all([this.quotaOf(tenantId, user.id, settings.dailyLimit), this.deps.repository.listExams(tenantId, user.id, 30)]);
+    return { quota, history, questionsPerExam: settings.questionsPerExam };
+  }
+
+  private async sectorPool(tenantId: string, sectorId: string): Promise<HealthQuestionRow[]> {
+    const sector = (await this.deps.repository.listSectors(tenantId, true)).find((s) => s.id === sectorId);
+    if (!sector) throw HttpError.notFound('SECTOR_NOT_FOUND', 'Sector not found');
+    const pool = await this.deps.repository.pool(tenantId, { sectorId });
+    if (pool.length === 0) throw HttpError.unprocessable('NO_QUESTIONS', 'There are no questions in this sector yet');
+    return pool;
+  }
+
+  /** Step 1: checks the cap first (a locked account gets no e-mail), then e-mails the confirmation code. */
+  async examRequestCode(tenantId: string, tenantName: string, user: { id: string; role: UserRole }, sectorId: string): Promise<{ challengeId: string; expiresInSec: number }> {
+    if (!this.deps.stepUp) throw new HttpError(503, 'MAIL_UNAVAILABLE', 'E-mail confirmation is not available');
+    const settings = await this.examContext(tenantId, user);
+    this.assertQuota(await this.quotaOf(tenantId, user.id, settings.dailyLimit));
+    await this.sectorPool(tenantId, sectorId);
+    return this.deps.stepUp.request(tenantId, tenantName, user.id);
+  }
+
+  /** Step 2: the right code starts the exam: random questions of THIS sector only, frozen with shuffled options. */
+  async examStart(tenantId: string, user: { id: string; role: UserRole }, input: { sectorId: string; challengeId: string; code: string }): Promise<ExamView> {
+    if (!this.deps.stepUp) throw new HttpError(503, 'MAIL_UNAVAILABLE', 'E-mail confirmation is not available');
+    const settings = await this.examContext(tenantId, user);
+    this.assertQuota(await this.quotaOf(tenantId, user.id, settings.dailyLimit));
+    const pool = await this.sectorPool(tenantId, input.sectorId);
+    // The code is consumed only after the cheap checks pass, so a refused start does not burn it.
+    await this.deps.stepUp.confirm(tenantId, user.id, input.challengeId, input.code);
+    const drawn: ExamQuestion[] = shuffled(pool)
+      .slice(0, Math.min(settings.questionsPerExam, pool.length))
+      .map((q) => ({ id: q.id, body: q.body, options: shuffled(q.options), correctOption: q.options[q.correctIndex] ?? '', explanation: q.explanation }));
+    const id = await this.deps.repository.createExam(tenantId, { userId: user.id, sectorId: input.sectorId, questions: drawn });
+    return { id, sectorId: input.sectorId, startedAt: this.now(), questions: drawn.map((q) => ({ id: q.id, body: q.body, options: q.options })) };
+  }
+
+  /** An exam in progress (without answers) or its result once submitted. */
+  async examGet(tenantId: string, user: { id: string; role: UserRole }, id: string): Promise<{ exam: ExamView } | { result: ExamResult }> {
+    await this.examContext(tenantId, user);
+    const e = await this.deps.repository.getExam(tenantId, user.id, id);
+    if (!e) throw HttpError.notFound('EXAM_NOT_FOUND', 'Exam not found');
+    if (e.submittedAt) return { result: this.resultOf(e) };
+    return { exam: { id: e.id, sectorId: e.sectorId, startedAt: e.startedAt, questions: e.questions.map((q) => ({ id: q.id, body: q.body, options: q.options })) } };
+  }
+
+  private resultOf(e: HealthExamRow): ExamResult {
+    const score = e.score ?? 0;
+    return {
+      id: e.id,
+      sectorId: e.sectorId,
+      score,
+      total: e.total,
+      percent: e.total > 0 ? Math.round((score / e.total) * 100) : 0,
+      submittedAt: e.submittedAt ?? this.now(),
+      questions: e.questions.map((q) => {
+        const yourAnswer = e.answers[q.id] ?? null;
+        return { id: q.id, body: q.body, options: q.options, yourAnswer, correctOption: q.correctOption, correct: yourAnswer === q.correctOption, explanation: q.explanation };
+      }),
+    };
+  }
+
+  /** Grades on the server, once. Answers are option texts, compared with the frozen right option. */
+  async examSubmit(tenantId: string, user: { id: string; role: UserRole }, id: string, rawAnswers: Record<string, unknown>): Promise<ExamResult> {
+    await this.examContext(tenantId, user);
+    const e = await this.deps.repository.getExam(tenantId, user.id, id);
+    if (!e) throw HttpError.notFound('EXAM_NOT_FOUND', 'Exam not found');
+    if (e.submittedAt) throw HttpError.conflict('EXAM_ALREADY_SUBMITTED', 'This exam was already submitted');
+    const answers: Record<string, string> = {};
+    let score = 0;
+    for (const q of e.questions) {
+      const given = rawAnswers[q.id];
+      if (typeof given === 'string' && q.options.includes(given)) {
+        answers[q.id] = given;
+        if (given === q.correctOption) score++;
+      }
+    }
+    const at = this.now();
+    if (!(await this.deps.repository.submitExam(tenantId, user.id, id, { answers, score, at }))) throw HttpError.conflict('EXAM_ALREADY_SUBMITTED', 'This exam was already submitted');
+    return this.resultOf({ ...e, answers, score, submittedAt: at });
   }
 
   // ---------- admin ----------

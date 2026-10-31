@@ -39,7 +39,7 @@ describe('sectors and questions (admin)', () => {
   it('creates sectors and questions, lists them with counts and hides nothing from the admin', async () => {
     const { app, food } = await seededApp();
     const o = (await as(app, adminToken).get('/admin/health')).body.data;
-    expect(o.settings).toEqual({ enabled: true, trial_ends_at: null, price: null });
+    expect(o.settings).toEqual({ enabled: true, trial_ends_at: null, price: null, strict_mode: false, daily_limit: 5, questions_per_exam: 10 });
     expect(o.sectors.map((s: { name: string; question_count: number }) => [s.name, s.question_count])).toEqual([['الأغذية', 4], ['الحلاقة', 1]]);
 
     const list = (await as(app, adminToken).get(`/admin/health/questions?sector_id=${food}`)).body.data;

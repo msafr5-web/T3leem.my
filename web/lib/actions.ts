@@ -196,13 +196,18 @@ export async function registerLearnerAction(slug: string, _prev: LoginState, for
   if (!isValidSlug(slug)) return { error: 'أكاديمية غير معروفة.' };
   const email = String(form.get('email') ?? '').trim();
   try {
-    await api(slug, '/auth/register', { method: 'POST', body: { full_name: String(form.get('full_name') ?? '').trim(), email } });
+    const rawPhone = String(form.get('phone') ?? '').trim();
+    const phone = rawPhone ? normalizePhone(rawPhone) : null;
+    if (rawPhone && !phone) return { error: 'رقم الجوال غير صحيح. اكتبه مثل 0566477687.', fields: ['رقم الجوال'] };
+    await api(slug, '/auth/register', { method: 'POST', body: { full_name: String(form.get('full_name') ?? '').trim(), email, phone } });
     const r = await api<{ challenge_id: string }>(slug, '/auth/otp/request', { method: 'POST', body: { email } });
     return { challenge: { id: r.challenge_id, email } };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'EMAIL_TAKEN') return { error: 'يوجد حساب بهذا البريد في هذه الأكاديمية. سجّل الدخول بدلاً من ذلك.' };
+    if (err instanceof ApiError && err.code === 'PHONE_TAKEN') return { error: 'رقم الجوال هذا مسجّل لحساب آخر. لكل مشترك حساب واحد، فسجّل الدخول بحسابك.' };
+    if (err instanceof ApiError && err.code === 'PHONE_REQUIRED') return { error: 'رقم الجوال مطلوب للتسجيل في هذه الأكاديمية.', fields: ['رقم الجوال'] };
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
-      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => ({ full_name: 'الاسم الكامل', email: 'البريد الإلكتروني' })[d.field as 'full_name' | 'email'] ?? d.field))] };
+      return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => ({ full_name: 'الاسم الكامل', email: 'البريد الإلكتروني', phone: 'رقم الجوال' })[d.field as 'full_name' | 'email' | 'phone'] ?? d.field))] };
     }
     return { error: otpMessage(err) };
   }

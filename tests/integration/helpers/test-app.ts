@@ -127,10 +127,17 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     listPublished: async (tenantId) => (tenantId === TENANT_A ? [pmp] : []),
     findPublished: async (tenantId, id) => (tenantId === TENANT_A && id === COURSE ? pmp : null),
   };
+  const emails = new Set<string>();
+  const phones = new Set<string>(['+966500000009']);
   const authRepo: AuthRepository = {
+    phoneTaken: async (_t, phone) => phones.has(phone),
     findUser: async (tenantId, email) => (tenantId === TENANT_A && email === LEARNER_EMAIL ? { id: USER, email, role: 'LEARNER', fullName: 'Abdullah' } : null),
+    findById: async (tenantId, id) => (tenantId === TENANT_A && id === USER ? { id: USER, email: LEARNER_EMAIL, role: 'LEARNER', fullName: 'Abdullah' } : null),
     createLearner: async (_t, data) => {
-      if (data.email === LEARNER_EMAIL) throw Object.assign(new Error('dup'), { code: 'P2002' });
+      if (data.email === LEARNER_EMAIL || emails.has(data.email)) throw Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['tenant_id', 'email'] } });
+      if (data.phone && phones.has(data.phone)) throw Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['tenant_id', 'phone'] } });
+      emails.add(data.email);
+      if (data.phone) phones.add(data.phone);
       return { id: 'new-learner-id', email: data.email, role: 'LEARNER' };
     },
   };
@@ -148,7 +155,11 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     vatRatePercent: 15,
     clock: () => new Date('2026-10-22T19:40:00Z'),
   });
-  const auth = new AuthService({ repository: authRepo, unusablePasswordHash: async () => 'hashed:unusable' });
+  const auth = new AuthService({
+    repository: authRepo,
+    unusablePasswordHash: async () => 'hashed:unusable',
+    policy: async () => ({ requirePhone: health.repository.settings.strictMode }),
+  });
   const signer = new JwtTokenSigner(opts.signingKey === null ? undefined : (opts.signingKey ?? privatePem), {
     issuer: jwtOpts.issuer,
     audience: jwtOpts.audience,
@@ -294,7 +305,17 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   const quiz = buildQuizFakes({ tenantA: TENANT_A, courseId: QUIZ_COURSE, days: QUIZ_DAYS, enrolled: [USER] });
 
   const healthClock = { now: new Date() };
-  const health = { ...buildHealthFakes({ tenantA: TENANT_A, now: () => healthClock.now }), clock: healthClock };
+  const health = {
+    ...buildHealthFakes({
+      tenantA: TENANT_A,
+      now: () => healthClock.now,
+      stepUp: {
+        request: (tenantId, label, userId) => otp.service.requestStepUp(tenantId, label, userId, 'health_exam'),
+        confirm: (tenantId, userId, challengeId, code) => otp.service.confirmStepUp(tenantId, userId, 'health_exam', challengeId, code),
+      },
+    }),
+    clock: healthClock,
+  };
 
   const app = createApp({
     tenantResolver: resolver,

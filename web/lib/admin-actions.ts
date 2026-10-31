@@ -650,7 +650,17 @@ export async function saveHealthSettingsAction(slug: string, _prev: AdminFormSta
   const trial = riyadhToIso(str(form, 'trial_ends_at'));
   const price = optionalNumber(form, 'price');
   if (price !== null && (!Number.isFinite(price) || price < 0)) return { error: 'الرسوم يجب أن تكون رقماً صفراً أو أكثر.' };
-  return save(slug, '/admin/health/settings', 'PUT', { enabled: form.get('enabled') === 'on', trial_ends_at: trial || null, price }, HEALTH_PATH(slug));
+  const dailyLimit = Number(str(form, 'daily_limit') || 5);
+  const perExam = Number(str(form, 'questions_per_exam') || 10);
+  if (!Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 50) return { error: 'عدد الاختبارات اليومية من ١ إلى ٥٠.' };
+  if (!Number.isInteger(perExam) || perExam < 1 || perExam > 100) return { error: 'عدد أسئلة الاختبار من ١ إلى ١٠٠.' };
+  return save(
+    slug,
+    '/admin/health/settings',
+    'PUT',
+    { enabled: form.get('enabled') === 'on', trial_ends_at: trial || null, price, strict_mode: form.get('strict_mode') === 'on', daily_limit: dailyLimit, questions_per_exam: perExam },
+    HEALTH_PATH(slug),
+  );
 }
 
 export async function grantHealthAccessAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {

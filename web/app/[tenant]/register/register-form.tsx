@@ -7,11 +7,11 @@ import { OtpStep } from '../login/otp-step';
 const INITIAL: LoginState = {};
 
 /** Learner sign-up: name and e-mail, then the code e-mailed to that address (it also proves the address is theirs). */
-export function RegisterForm({ slug, next }: { slug: string; next: string }) {
+export function RegisterForm({ slug, next, requirePhone }: { slug: string; next: string; requirePhone: boolean }) {
   const [state, formAction, pending] = useActionState<LoginState, FormData>(registerLearnerAction.bind(null, slug), INITIAL);
   const [challenge, setChallenge] = useState<LoginState['challenge'] | null>(null);
   const [seen, setSeen] = useState<LoginState | null>(null);
-  const [vals, setVals] = useState({ full_name: '', email: '' });
+  const [vals, setVals] = useState({ full_name: '', email: '', phone: '' });
 
   if (state !== seen) {
     setSeen(state);
@@ -31,6 +31,13 @@ export function RegisterForm({ slug, next }: { slug: string; next: string }) {
         البريد الإلكتروني
         <input id="email" name="email" type="email" required dir="ltr" autoComplete="email" value={vals.email} onChange={(e) => setVals((v) => ({ ...v, email: e.target.value }))} />
       </label>
+      {requirePhone && (
+        <label htmlFor="phone">
+          رقم الجوال
+          <input id="phone" name="phone" type="tel" required dir="ltr" autoComplete="tel" inputMode="tel" placeholder="05XXXXXXXX" value={vals.phone} onChange={(e) => setVals((v) => ({ ...v, phone: e.target.value }))} />
+          <span className="hint">لا يُقبل رقم أو بريد مسجّل من قبل: لكل مشترك حساب واحد.</span>
+        </label>
+      )}
       {state.error && (
         <div className="notice error" role="alert">
           {state.error}

@@ -16,6 +16,7 @@ export interface OtpChallenge {
   tenantId: string | null;
   email: string;
   userId: string | null;
+  purpose: string;
   codeHash: string;
   attempts: number;
   sends: number;
@@ -24,7 +25,7 @@ export interface OtpChallenge {
 }
 
 export interface OtpRepository {
-  create(row: { tenantId: string | null; email: string; userId: string | null; expiresAt: Date }): Promise<string>;
+  create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }): Promise<string>;
   find(id: string): Promise<OtpChallenge | null>;
   bumpAttempts(id: string): Promise<void>;
   setCode(id: string, codeHash: string, expiresAt: Date, isResend: boolean): Promise<void>;
@@ -43,7 +44,11 @@ export interface LoginUser {
 
 export interface UserLookup {
   findUser(tenantId: string, email: string): Promise<LoginUser | null>;
+  findById(tenantId: string, id: string): Promise<LoginUser | null>;
 }
+
+/** What a one-time code is for: signing in, or confirming a signed-in user before a sensitive step. */
+export type OtpPurpose = 'login' | 'health_exam';
 
 interface Deps {
   repository: OtpRepository;
@@ -80,31 +85,32 @@ export class OtpLoginService {
     if (!this.deps.signer.available) throw new HttpError(503, 'LOGIN_UNAVAILABLE', 'Login is not configured on this server');
   }
 
-  private async mail(email: string, name: string, code: string, label: string): Promise<void> {
+  private async mail(email: string, name: string, code: string, label: string, purpose: string = 'login'): Promise<void> {
     const minutes = OTP.ttlMs / 60_000;
+    const what = purpose === 'health_exam' ? 'رمز تأكيد بدء الاختبار في' : 'رمز الدخول إلى';
     const text = [
       `مرحباً ${name}،`,
       '',
-      `رمز الدخول إلى ${label}: ${code}`,
+      `${what} ${label}: ${code}`,
       `الرمز صالح ${minutes} دقائق ويُستعمل مرة واحدة، ولا تشاركه مع أحد.`,
       '',
       'إن لم تطلب الدخول فتجاهل هذه الرسالة؛ لا يدخل أحد حسابك دون هذا الرمز.',
     ].join('\n');
     const html = `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;line-height:1.8;color:#1b1f1e;max-width:480px">
 <p>مرحباً ${escapeHtml(name)}،</p>
-<p>رمز الدخول إلى ${escapeHtml(label)}:</p>
+<p>${what} ${escapeHtml(label)}:</p>
 <p dir="ltr" style="font-size:32px;letter-spacing:8px;font-weight:700;background:#f1f5f4;border-radius:8px;padding:12px 16px;text-align:center">${escapeHtml(code)}</p>
 <p style="color:#555">الرمز صالح ${minutes} دقائق ويُستعمل مرة واحدة، ولا تشاركه مع أحد.</p>
 <p style="color:#555">إن لم تطلب الدخول فتجاهل هذه الرسالة؛ لا يدخل أحد حسابك دون هذا الرمز.</p></div>`;
     try {
-      await this.deps.mailer.send({ to: email, subject: `رمز الدخول ${code} — ${label}`, text, html });
+      await this.deps.mailer.send({ to: email, subject: `${purpose === 'health_exam' ? 'رمز تأكيد الاختبار' : 'رمز الدخول'} ${code} — ${label}`, text, html });
     } catch (err) {
       if (err instanceof HttpError) throw err;
       throw new HttpError(503, 'MAIL_UNAVAILABLE', 'The login code could not be e-mailed');
     }
   }
 
-  private async issue(tenantId: string | null, email: string, userId: string | null, name: string, label: string): Promise<{ challengeId: string; expiresInSec: number }> {
+  private async issue(tenantId: string | null, email: string, userId: string | null, name: string, label: string, purpose: OtpPurpose = 'login'): Promise<{ challengeId: string; expiresInSec: number }> {
     const now = this.now();
     if ((await this.deps.repository.countRecent(tenantId, email, new Date(now.getTime() - 3_600_000))) >= OTP.maxRequestsPerHour) {
       throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many sign-in requests; try again later');
@@ -112,10 +118,10 @@ export class OtpLoginService {
     await this.deps.repository.purgeExpired(new Date(now.getTime() - 24 * 3_600_000));
     const code = this.generateCode();
     const expiresAt = new Date(now.getTime() + OTP.ttlMs);
-    const id = await this.deps.repository.create({ tenantId, email, userId, expiresAt });
+    const id = await this.deps.repository.create({ tenantId, email, userId, purpose, expiresAt });
     await this.deps.repository.setCode(id, hashCode(code, id).toString('hex'), expiresAt, false);
     try {
-      await this.mail(email, name, code, label);
+      await this.mail(email, name, code, label, purpose);
     } catch (err) {
       await this.deps.repository.delete(id);
       throw err;
@@ -151,7 +157,7 @@ export class OtpLoginService {
     const code = this.generateCode();
     const expiresAt = new Date(now.getTime() + OTP.ttlMs);
     await this.deps.repository.setCode(c.id, hashCode(code, c.id).toString('hex'), expiresAt, true);
-    await this.mail(c.email, c.email, code, label);
+    await this.mail(c.email, c.email, code, label, c.purpose);
     return same;
   }
 
@@ -159,7 +165,7 @@ export class OtpLoginService {
   async verify(scope: string | null, challengeId: string, code: string): Promise<LoginResult> {
     this.assertAvailable();
     const c = await this.deps.repository.find(challengeId);
-    if (!c || c.tenantId !== scope || c.expiresAt <= this.now() || !c.userId) throw INVALID();
+    if (!c || c.tenantId !== scope || c.purpose !== 'login' || c.expiresAt <= this.now() || !c.userId) throw INVALID();
     if (c.attempts >= OTP.maxAttempts) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong codes; request a new one');
 
     const expected = Buffer.from(c.codeHash, 'hex');
@@ -186,5 +192,27 @@ export class OtpLoginService {
       expiresIn: this.deps.signer.ttlSeconds,
       user: { id: user.id, email: user.email, role: user.role },
     };
+  }
+
+  /** E-mails a confirmation code to a signed-in user (e.g. before an official exam). Not a way to sign in. */
+  async requestStepUp(tenantId: string, tenantLabel: string, userId: string, purpose: Exclude<OtpPurpose, 'login'>): Promise<{ challengeId: string; expiresInSec: number }> {
+    this.assertAvailable();
+    const user = await this.deps.users.findById(tenantId, userId);
+    if (!user) throw HttpError.unauthorized();
+    return this.issue(tenantId, user.email, user.id, user.fullName?.trim() || user.email, tenantLabel, purpose);
+  }
+
+  /** Consumes a confirmation code: it must belong to this user, this academy and this purpose. */
+  async confirmStepUp(tenantId: string, userId: string, purpose: Exclude<OtpPurpose, 'login'>, challengeId: string, code: string): Promise<void> {
+    const c = await this.deps.repository.find(challengeId);
+    if (!c || c.tenantId !== tenantId || c.userId !== userId || c.purpose !== purpose || c.expiresAt <= this.now()) throw INVALID();
+    if (c.attempts >= OTP.maxAttempts) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong codes; request a new one');
+    const expected = Buffer.from(c.codeHash, 'hex');
+    const given = hashCode(code.trim(), c.id);
+    if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+      await this.deps.repository.bumpAttempts(c.id);
+      throw INVALID();
+    }
+    if (!(await this.deps.repository.delete(c.id))) throw INVALID();
   }
 }

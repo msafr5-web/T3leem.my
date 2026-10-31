@@ -425,6 +425,9 @@ export interface HealthSectorSummary {
 
 export interface HealthStatus {
   access: HealthAccess;
+  strict_mode: boolean;
+  daily_limit: number;
+  questions_per_exam: number;
   trial_ends_at: string | null;
   price: number | null;
   server_now: string;
@@ -468,10 +471,41 @@ export interface AdminHealthSector {
 }
 
 export interface AdminHealth {
-  settings: { enabled: boolean; trial_ends_at: string | null; price: number | null };
+  settings: { enabled: boolean; trial_ends_at: string | null; price: number | null; strict_mode: boolean; daily_limit: number; questions_per_exam: number };
   sectors: AdminHealthSector[];
   active_subscribers: number;
   server_now: string;
+}
+
+/** Official exams (strict mode). */
+export interface ExamQuota {
+  limit: number;
+  used: number;
+  remaining: number;
+  next_allowed_at: string | null;
+}
+
+export interface ExamStatus {
+  quota: ExamQuota;
+  questions_per_exam: number;
+  history: { id: string; sector_id: string | null; score: number | null; total: number; started_at: string; submitted_at: string | null }[];
+}
+
+export interface ExamPaper {
+  id: string;
+  sector_id: string | null;
+  started_at: string;
+  questions: { id: string; body: string; options: string[] }[];
+}
+
+export interface ExamResult {
+  id: string;
+  sector_id: string | null;
+  score: number;
+  total: number;
+  percent: number;
+  submitted_at: string;
+  questions: { id: string; body: string; options: string[]; your_answer: string | null; correct_option: string; correct: boolean; explanation: string }[];
 }
 
 export interface PracticeQuestion {
@@ -479,6 +513,10 @@ export interface PracticeQuestion {
   sector_id: string;
   body: string;
   options: string[];
+}
+
+export interface RegisterPolicy {
+  require_phone: boolean;
 }
 
 /** Platform owner console. */
@@ -655,6 +693,7 @@ export const me = {
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
   health: (slug: string, token: string) => api<HealthStatus>(slug, '/me/health', { token }),
   healthQuestions: (slug: string, token: string, qs: string) => api<HealthQuestionPage>(slug, `/me/health/questions?${qs}`, { token }),
+  examStatus: (slug: string, token: string) => api<ExamStatus>(slug, '/me/health/exam/status', { token }),
   healthProgress: (slug: string, token: string) => api<HealthProgress>(slug, '/me/health/progress', { token }),
   quiz: (slug: string, token: string, moduleId: string) => api<QuizStatus>(slug, `/me/modules/${encodeURIComponent(moduleId)}/quiz`, { token }),
   playback: (slug: string, token: string, lessonId: string) =>

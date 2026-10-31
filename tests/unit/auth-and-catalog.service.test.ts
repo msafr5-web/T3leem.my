@@ -10,7 +10,9 @@ describe('AuthService', () => {
   const setup = () => {
     const repository = {
       findUser: jest.fn(async () => null),
-      createLearner: jest.fn(async (_t: string, data: { email: string; fullName: string; passwordHash: string }) => {
+      findById: jest.fn(async () => null),
+      phoneTaken: jest.fn(async () => false),
+      createLearner: jest.fn(async (_t: string, data: { email: string; fullName: string; phone: string | null; passwordHash: string }) => {
         if (data.email === 'a@b.test') throw Object.assign(new Error('dup'), { code: 'P2002' });
         if (data.email === 'boom@b.test') throw new Error('db down');
         return { id: 'u2', email: data.email, role: 'LEARNER' as const };
@@ -22,7 +24,7 @@ describe('AuthService', () => {
   it('registers a LEARNER (role never from input) with an unusable password and issues no session', async () => {
     const { service, repository } = setup();
     await expect(service.register(TENANT, { fullName: ' Reem ', email: ' New@B.test ' })).resolves.toEqual({ id: 'u2', email: 'new@b.test' });
-    expect(repository.createLearner).toHaveBeenCalledWith(TENANT, { email: 'new@b.test', fullName: 'Reem', passwordHash: 'hash(random)' });
+    expect(repository.createLearner).toHaveBeenCalledWith(TENANT, { email: 'new@b.test', fullName: 'Reem', phone: null, passwordHash: 'hash(random)' });
   });
 
   it('409 for an existing email, and other errors pass through', async () => {
