@@ -1,3 +1,4 @@
+import { PlatformEmblem } from '@/app/brand-mark';
 import Link from 'next/link';
 
 /**
@@ -11,7 +12,7 @@ export function ServiceUnavailable({ detail }: { detail?: string }) {
       <header className="site-header">
         <div className="container">
           <Link href="/" className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">ت</span>
+            <PlatformEmblem />
             T3leem.my
           </Link>
         </div>

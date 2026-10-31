@@ -1,3 +1,4 @@
+import { PlatformEmblem } from '@/app/brand-mark';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import QRCode from 'qrcode';
@@ -34,7 +35,7 @@ export default async function VerifyCertificate({ params }: { params: Params }) 
       <header className="site-header no-print">
         <div className="container">
           <Link href="/" className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">ت</span>
+            <PlatformEmblem />
             T3leem.my
           </Link>
           <Link href="/verify" className="btn btn-ghost">

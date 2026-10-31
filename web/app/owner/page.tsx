@@ -1,3 +1,4 @@
+import { PlatformEmblem } from '@/app/brand-mark';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ApiError, owner, type OwnerFeatures, type OwnerPlan, type OwnerTenant } from '@/lib/api';
@@ -72,7 +73,7 @@ export default async function OwnerPage() {
       <header className="site-header">
         <div className="container">
           <Link href="/" className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">ت</span>
+            <PlatformEmblem />
             T3leem.my · الإدارة
           </Link>
           {session && (

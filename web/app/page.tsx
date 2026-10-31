@@ -1,3 +1,4 @@
+import { PlatformEmblem, PlatformLogo } from '@/app/brand-mark';
 import { SUPPORT_PHONE, WELCOME_MESSAGE, supportLink } from '@/lib/support';
 import Link from 'next/link';
 import { getProviders, type Provider } from '@/lib/api';
@@ -65,7 +66,7 @@ export default async function PlatformHome() {
       <header className="site-header">
         <div className="container">
           <span className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">ت</span>
+            <PlatformEmblem />
             T3leem.my
           </span>
           <nav className="header-actions small" aria-label="أقسام الصفحة">
@@ -82,6 +83,7 @@ export default async function PlatformHome() {
 
       <main className="container">
         <section className="hero">
+          <PlatformLogo width={300} />
           <span className="eyebrow">منصة سحابية لمقدمي خدمات التدريب</span>
           <h1>أكاديمية رقمية كاملة لكل جهة تدريب</h1>
           <p className="lead">

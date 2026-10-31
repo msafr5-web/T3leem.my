@@ -1,3 +1,4 @@
+import { PlatformEmblem } from '@/app/brand-mark';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -16,7 +17,7 @@ export default function VerifyLookup() {
       <header className="site-header">
         <div className="container">
           <Link href="/" className="brand-mark">
-            <span className="brand-dot" aria-hidden="true">ت</span>
+            <PlatformEmblem />
             T3leem.my
           </Link>
         </div>
