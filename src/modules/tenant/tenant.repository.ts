@@ -4,7 +4,7 @@ import type { ResolvedTenant } from '../../shared/types/express';
 import type { Actor } from '../provider/provider.types';
 import type { BrandingProfile, BrandingRepository, LogoMime } from './branding.service';
 import type { DomainRecord, DomainRepository } from './domain.service';
-import type { RegistrationInput, RegistrationRepository } from './registration.service';
+import type { PendingSignup, RegistrationInput, RegistrationRepository } from './registration.service';
 
 const tenantSelect = {
   id: true,
@@ -165,6 +165,38 @@ export class TenantRepository implements BrandingRepository, RegistrationReposit
 
   async slugTaken(slug: string): Promise<boolean> {
     return (await this.db.tenant.count({ where: { slug } })) > 0;
+  }
+
+  async createPending(row: Omit<PendingSignup, 'id' | 'attempts' | 'sends' | 'lastSentAt'>): Promise<string> {
+    const created = await this.db.signupVerification.create({ data: row, select: { id: true } });
+    return created.id;
+  }
+
+  findPending(id: string): Promise<PendingSignup | null> {
+    return this.db.signupVerification.findUnique({ where: { id } });
+  }
+
+  async bumpAttempts(id: string): Promise<void> {
+    await this.db.signupVerification.updateMany({ where: { id }, data: { attempts: { increment: 1 } } });
+  }
+
+  async setCode(id: string, codeHash: string, expiresAt: Date, isResend: boolean): Promise<void> {
+    await this.db.signupVerification.updateMany({
+      where: { id },
+      data: { codeHash, expiresAt, attempts: 0, lastSentAt: new Date(), ...(isResend ? { sends: { increment: 1 } } : {}) },
+    });
+  }
+
+  async deletePending(id: string): Promise<boolean> {
+    return (await this.db.signupVerification.deleteMany({ where: { id } })).count === 1;
+  }
+
+  countStarted(email: string, since: Date): Promise<number> {
+    return this.db.signupVerification.count({ where: { email, createdAt: { gte: since } } });
+  }
+
+  async purgeExpired(before: Date): Promise<void> {
+    await this.db.signupVerification.deleteMany({ where: { expiresAt: { lt: before } } });
   }
 
   async register(input: Omit<RegistrationInput, 'password'> & { passwordHash: string }): Promise<{ tenantId: string }> {

@@ -55,6 +55,14 @@ const envSchema = z
     ZOOM_CLIENT_SECRET: optionalString,
     // YouTube Data API v3 key for recorded courses (title/duration). Unset = oEmbed + page fallback.
     YOUTUBE_API_KEY: optionalString,
+    // Outgoing mail (sign-up verification codes). Unset = sign-up answers 503: a code is never skipped.
+    SMTP_HOST: optionalString,
+    SMTP_PORT: z.coerce.number().int().positive().default(465),
+    // true = TLS from the first byte (port 465); false = STARTTLS is required. Default follows the port.
+    SMTP_SECURE: z.enum(['true', 'false']).optional().transform((v) => (v === undefined ? undefined : v === 'true')),
+    SMTP_USER: optionalString,
+    SMTP_PASSWORD: optionalString,
+    MAIL_FROM: z.string().min(3).default('T3leem.my <t3leemy@t3leem.my>'),
     // Self-service provider sign-up (/join). Disable to onboard providers manually only.
     PROVIDER_SIGNUP_ENABLED: z
       .enum(['true', 'false'])

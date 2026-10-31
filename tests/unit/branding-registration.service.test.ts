@@ -1,5 +1,5 @@
 import { BrandingService, MAX_LOGO_BYTES, sniffImage, type BrandingRepository } from '../../src/modules/tenant/branding.service';
-import { RegistrationService, type RegistrationRepository } from '../../src/modules/tenant/registration.service';
+import { buildRegistrationFakes } from '../integration/helpers/registration-fakes';
 
 const T = 'tenant-1';
 const actor = { userId: 'admin', role: 'TENANT_ADMIN' as const, ip: null };
@@ -84,37 +84,103 @@ describe('BrandingService', () => {
   });
 });
 
-describe('RegistrationService', () => {
+describe('RegistrationService (e-mail code)', () => {
   const input = { academyName: ' New Academy ', slug: 'New-Academy', city: 'Dammam', adminName: ' Admin ', adminEmail: ' Boss@New.test ', password: 'Str0ngPass!' };
-  const setup = (enabled = true) => {
-    const repo = {
-      slugTaken: jest.fn(async (s: string) => s === 'taken'),
-      register: jest.fn(async () => ({ tenantId: 'tid' })),
-    } as unknown as jest.Mocked<RegistrationRepository>;
-    return { service: new RegistrationService(repo, async (p) => `hash(${p})`, enabled), repo };
-  };
+  const setup = (enabled = true) => buildRegistrationFakes({ enabled });
 
-  it('normalizes input, hashes the password and registers', async () => {
-    const { service, repo } = setup();
-    await expect(service.register(input)).resolves.toEqual({ tenantId: 'tid', slug: 'new-academy' });
-    expect(repo.register).toHaveBeenCalledWith({
-      academyName: 'New Academy',
-      slug: 'new-academy',
-      city: 'Dammam',
-      adminName: 'Admin',
-      adminEmail: 'boss@new.test',
-      passwordHash: 'hash(Str0ngPass!)',
-    });
+  it('start stores a normalized pending sign-up and e-mails the code with the site data; nothing is created yet', async () => {
+    const { service, repository, mailer } = setup();
+    const r = await service.start(input);
+    expect(r).toMatchObject({ email: 'boss@new.test', expiresInSec: 900 });
+    expect(repository.registered).toHaveLength(0);
+    const row = repository.pending.get(r.pendingId)!;
+    expect(row).toMatchObject({ slug: 'new-academy', academyName: 'New Academy', adminName: 'Admin', passwordHash: 'hashed:Str0ngPass!' });
+    // The code itself is never stored, only its salted hash.
+    expect(JSON.stringify(row)).not.toContain(mailer.lastCode);
+
+    expect(mailer.sent).toHaveLength(1);
+    const mail = mailer.sent[0]!;
+    expect(mail.to).toBe('boss@new.test');
+    expect(mailer.lastCode).toMatch(/^\d{6}$/);
+    for (const part of ['New Academy', 'https://t3leem.my/new-academy', 'https://t3leem.my/new-academy/dashboard', 'boss@new.test', 'Dammam']) {
+      expect(mail.text).toContain(part);
+      expect(mail.html).toContain(part);
+    }
   });
 
-  it('refuses when sign-up is disabled, for reserved and taken slugs, and on a lost race', async () => {
-    await expect(setup(false).service.register(input)).rejects.toMatchObject({ status: 403 });
-    const { service, repo } = setup();
-    await expect(service.register({ ...input, slug: 'dashboard' })).rejects.toMatchObject({ code: 'SLUG_RESERVED' });
-    await expect(service.register({ ...input, slug: 'taken' })).rejects.toMatchObject({ code: 'SLUG_TAKEN' });
-    repo.register.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: 'P2002' }));
-    await expect(service.register(input)).rejects.toMatchObject({ code: 'SLUG_TAKEN' });
-    repo.register.mockRejectedValueOnce(new Error('db down'));
-    await expect(service.register(input)).rejects.toThrow('db down');
+  it('escapes the academy name in the HTML body', async () => {
+    const { service, mailer } = setup();
+    await service.start({ ...input, academyName: 'A <script>x</script> & Co' });
+    expect(mailer.sent[0]!.html).toContain('A &lt;script&gt;x&lt;/script&gt; &amp; Co');
+    expect(mailer.sent[0]!.html).not.toContain('<script>');
+  });
+
+  it('verify with the right code creates the academy once', async () => {
+    const { service, repository, mailer } = setup();
+    const { pendingId } = await service.start(input);
+    await expect(service.verify(pendingId, mailer.lastCode)).resolves.toEqual({ tenantId: 'new-tenant-id', slug: 'new-academy' });
+    expect(repository.registered).toEqual([{ academyName: 'New Academy', slug: 'new-academy', city: 'Dammam', adminName: 'Admin', adminEmail: 'boss@new.test', passwordHash: 'hashed:Str0ngPass!' }]);
+    await expect(service.verify(pendingId, mailer.lastCode)).rejects.toMatchObject({ code: 'CODE_EXPIRED' });
+    expect(repository.registered).toHaveLength(1);
+  });
+
+  it('a wrong code is refused and counted; five wrong codes lock the sign-up even for the right one', async () => {
+    const { service, mailer, repository } = setup();
+    const { pendingId } = await service.start(input);
+    const wrong = mailer.lastCode === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++) await expect(service.verify(pendingId, wrong)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    await expect(service.verify(pendingId, mailer.lastCode)).rejects.toMatchObject({ status: 429, code: 'TOO_MANY_ATTEMPTS' });
+    expect(repository.registered).toHaveLength(0);
+  });
+
+  it('the code expires after 15 minutes', async () => {
+    const { service, mailer, clock } = setup();
+    const { pendingId } = await service.start(input);
+    clock.now = new Date(clock.now.getTime() + 15 * 60_000 + 1);
+    await expect(service.verify(pendingId, mailer.lastCode)).rejects.toMatchObject({ code: 'CODE_EXPIRED' });
+    await expect(service.verify('00000000-0000-4000-8000-000000000000', '123456')).rejects.toMatchObject({ code: 'CODE_EXPIRED' });
+  });
+
+  it('resend: cooldown, a new code replaces the old one, and at most three sends', async () => {
+    const { service, mailer, clock } = setup();
+    const { pendingId } = await service.start(input);
+    const first = mailer.lastCode;
+    await expect(service.resend(pendingId)).rejects.toMatchObject({ status: 429, code: 'RESEND_TOO_SOON' });
+    clock.now = new Date(clock.now.getTime() + 61_000);
+    await service.resend(pendingId);
+    expect(mailer.sent).toHaveLength(2);
+    if (mailer.lastCode !== first) await expect(service.verify(pendingId, first)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    clock.now = new Date(clock.now.getTime() + 61_000);
+    await service.resend(pendingId);
+    clock.now = new Date(clock.now.getTime() + 61_000);
+    await expect(service.resend(pendingId)).rejects.toMatchObject({ status: 429, code: 'TOO_MANY_ATTEMPTS' });
+  });
+
+  it('refuses when sign-up is disabled, for reserved and taken slugs, and when the e-mail cannot be sent', async () => {
+    await expect(setup(false).service.start(input)).rejects.toMatchObject({ status: 403 });
+    const { service, repository, mailer } = setup();
+    await expect(service.start({ ...input, slug: 'dashboard' })).rejects.toMatchObject({ code: 'SLUG_RESERVED' });
+    await expect(service.start({ ...input, slug: 'rukn' })).rejects.toMatchObject({ code: 'SLUG_TAKEN' });
+    mailer.failNext = true;
+    await expect(service.start(input)).rejects.toMatchObject({ status: 503, code: 'MAIL_UNAVAILABLE' });
+    expect(repository.pending.size).toBe(0); // no orphan row when nothing could be sent
+  });
+
+  it('the slug may be health (it is no longer reserved)', async () => {
+    const { service } = setup();
+    await expect(service.start({ ...input, slug: 'health' })).resolves.toMatchObject({ email: 'boss@new.test' });
+  });
+
+  it('throttles repeated starts for one e-mail', async () => {
+    const { service } = setup();
+    for (let i = 0; i < 5; i++) await service.start({ ...input, slug: `academy-${i}` });
+    await expect(service.start({ ...input, slug: 'academy-9' })).rejects.toMatchObject({ status: 429 });
+  });
+
+  it('a lost slug race at verification time becomes SLUG_TAKEN', async () => {
+    const { service, repository, mailer } = setup();
+    const { pendingId } = await service.start(input);
+    repository.failRegisterWith = Object.assign(new Error('dup'), { code: 'P2002' });
+    await expect(service.verify(pendingId, mailer.lastCode)).rejects.toMatchObject({ code: 'SLUG_TAKEN' });
   });
 });

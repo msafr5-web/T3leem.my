@@ -64,6 +64,10 @@ export async function loginAction(slug: string, _prev: FormState, form: FormData
 
 export interface JoinState extends FormState {
   fields?: string[];
+  /** Step 2: the code was e-mailed; the sign-up waits for it. */
+  pending?: { id: string; email: string; slug: string };
+  /** A new code was sent (shown once). */
+  resent?: boolean;
 }
 
 const JOIN_FIELDS: Record<string, string> = {
@@ -81,28 +85,30 @@ const JOIN_ERRORS: Record<string, string> = {
   SLUG_RESERVED: 'هذا العنوان محجوز للمنصة. اختر عنواناً آخر.',
   FORBIDDEN: 'التسجيل الذاتي للمزودين مغلق حالياً. تواصل مع فريق المنصة.',
   RATE_LIMITED: 'محاولات تسجيل كثيرة من هذا الجهاز. حاول بعد ساعة.',
+  MAIL_UNAVAILABLE: 'تعذّر إرسال رمز التحقق إلى بريدك الآن. حاول بعد قليل أو تواصل مع فريق المنصة.',
+  CODE_INVALID: 'الرمز غير صحيح. تحقق من الرسالة وأعد المحاولة.',
+  CODE_EXPIRED: 'انتهت صلاحية الرمز أو استُخدم من قبل. ابدأ التسجيل من جديد.',
+  TOO_MANY_ATTEMPTS: 'محاولات كثيرة. ابدأ التسجيل من جديد بعد قليل.',
+  RESEND_TOO_SOON: 'انتظر دقيقة قبل طلب رمز جديد.',
 };
 
-/** Self-service provider sign-up: creates the academy, then signs its admin straight in. */
+/** Step 1 of the provider sign-up: validates and e-mails a code to the admin address. Nothing is created yet. */
 export async function registerProviderAction(_prev: JoinState, form: FormData): Promise<JoinState> {
   const slug = String(form.get('slug') ?? '').trim().toLowerCase();
-  const email = String(form.get('admin_email') ?? '').trim();
-  const password = String(form.get('password') ?? '');
   try {
-    await platformApi('/providers', {
+    const r = await platformApi<{ pending_id: string; email: string }>('/providers', {
       method: 'POST',
       body: {
         academy_name: String(form.get('academy_name') ?? '').trim(),
         slug,
         city: String(form.get('city') ?? '').trim() || null,
         admin_name: String(form.get('admin_name') ?? '').trim(),
-        admin_email: email,
-        password,
+        admin_email: String(form.get('admin_email') ?? '').trim(),
+        password: String(form.get('password') ?? ''),
         accept_terms: form.get('accept_terms') === 'on',
       },
     });
-    const login = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email, password } });
-    await setSession(slug, { token: login.access_token, email: login.user.email, role: login.user.role }, login.expires_in);
+    return { pending: { id: r.pending_id, email: r.email, slug } };
   } catch (err) {
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') {
       return { error: 'تحقق من الحقول المميزة.', fields: [...new Set((err.details ?? []).map((d) => JOIN_FIELDS[d.field] ?? d.field))] };
@@ -110,7 +116,40 @@ export async function registerProviderAction(_prev: JoinState, form: FormData): 
     if (err instanceof ApiError && JOIN_ERRORS[err.code]) return { error: JOIN_ERRORS[err.code] };
     return { error: describe(err) };
   }
-  redirect(`/${slug}/dashboard/settings?welcome=1`);
+}
+
+/** Step 2: the e-mailed code creates the academy, then signs its admin straight in. */
+export async function verifyProviderAction(pending: { id: string; email: string; slug: string }, _prev: JoinState, form: FormData): Promise<JoinState> {
+  const code = String(form.get('code') ?? '').replace(/\D/g, '');
+  const password = String(form.get('password') ?? '');
+  if (code.length !== 6) return { pending, error: 'اكتب الرمز المكوّن من ٦ أرقام.' };
+  let slug: string;
+  try {
+    slug = (await platformApi<{ slug: string }>('/providers/verify', { method: 'POST', body: { pending_id: pending.id, code } })).slug;
+  } catch (err) {
+    // A wrong code keeps the user on this step; an expired or locked sign-up sends them back to step 1.
+    const retry = err instanceof ApiError && err.code === 'CODE_INVALID';
+    const message = err instanceof ApiError && JOIN_ERRORS[err.code] ? JOIN_ERRORS[err.code]! : describe(err);
+    return retry ? { pending, error: message } : { error: message };
+  }
+  // The academy exists now. If signing in fails for any reason, the login page is the way on (not a retry of the code).
+  try {
+    const login = await api<LoginResponse>(slug, '/auth/login', { method: 'POST', body: { email: pending.email, password } });
+    await setSession(slug, { token: login.access_token, email: login.user.email, role: login.user.role }, login.expires_in);
+  } catch {
+    redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/dashboard/settings?welcome=1`)}`);
+  }
+  redirect(`/${pending.slug}/dashboard/settings?welcome=1`);
+}
+
+export async function resendProviderCodeAction(pending: { id: string; email: string; slug: string }, _prev: JoinState): Promise<JoinState> {
+  try {
+    await platformApi('/providers/resend', { method: 'POST', body: { pending_id: pending.id } });
+    return { pending, resent: true };
+  } catch (err) {
+    const message = err instanceof ApiError && JOIN_ERRORS[err.code] ? JOIN_ERRORS[err.code]! : describe(err);
+    return err instanceof ApiError && err.code === 'RESEND_TOO_SOON' ? { pending, error: message } : { error: message };
+  }
 }
 
 /** PRD §6 learner self-registration in this academy, then signed straight in. */

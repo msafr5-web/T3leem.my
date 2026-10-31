@@ -40,6 +40,7 @@ import { ProviderService } from './modules/provider/provider.service';
 import { BrandingService } from './modules/tenant/branding.service';
 import { DomainService } from './modules/tenant/domain.service';
 import { RegistrationService } from './modules/tenant/registration.service';
+import { SmtpMailer, UnconfiguredMailer } from './shared/services/mailer';
 import { TenantResolverService } from './modules/tenant/tenant-resolver.service';
 import { TenantRepository } from './modules/tenant/tenant.repository';
 import { createRateLimiter } from './shared/middlewares/rate-limiter.middleware';
@@ -148,7 +149,16 @@ export function createServerApp(): ServerApp {
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
     brandingService: new BrandingService(tenantRepository, (id) => invalidateTenant(id)),
-    registrationService: new RegistrationService(tenantRepository, hashPassword, env.PROVIDER_SIGNUP_ENABLED),
+    registrationService: new RegistrationService({
+      repository: tenantRepository,
+      hashPassword,
+      enabled: env.PROVIDER_SIGNUP_ENABLED,
+      webUrl: env.PUBLIC_WEB_URL,
+      mailer:
+        env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD
+          ? new SmtpMailer({ host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, password: env.SMTP_PASSWORD, from: env.MAIL_FROM })
+          : new UnconfiguredMailer(),
+    }),
     domainService: new DomainService(tenantRepository, env.BASE_DOMAIN, (name) => dns.resolveTxt(name), invalidateTenant),
     contentService: new ContentService({
       repository: new PrismaContentRepository(),

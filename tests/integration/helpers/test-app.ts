@@ -30,6 +30,7 @@ import { buildLearningFakes } from './learning-fakes';
 import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
 import { buildHealthFakes } from './health-fakes';
+import { buildRegistrationFakes } from './registration-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 import { hashPassword, verifyPassword } from '../../../src/shared/utils/password';
 
@@ -288,14 +289,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     },
     getLogo: async (t) => (t === TENANT_A ? brandingState.logo : null),
   };
-  const takenSlugs = new Set(['rukn', 'masar']);
-  const registrationRepo: RegistrationRepository = {
-    slugTaken: async (slug) => takenSlugs.has(slug),
-    register: async (input) => {
-      takenSlugs.add(input.slug);
-      return { tenantId: 'new-tenant-id' };
-    },
-  };
+  const registration = buildRegistrationFakes({ enabled: opts.signupEnabled ?? true });
   const catalog = new CourseCatalogService(catalogRepo, 15);
   const recorded = buildRecordedFakes({
     tenantA: TENANT_A,
@@ -334,7 +328,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
       ],
     },
     brandingService: new BrandingService(brandingRepo, async () => undefined),
-    registrationService: new RegistrationService(registrationRepo, async (p) => `hashed:${p}`, opts.signupEnabled ?? true),
+    registrationService: registration.service,
     signupRateLimiter: passThrough,
     domainService: fakes.domains,
     contentService: fakes.content,
@@ -350,5 +344,6 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.recorded = recorded;
   app.locals.quiz = quiz;
   app.locals.health = health;
+  app.locals.registration = registration;
   return app;
 }

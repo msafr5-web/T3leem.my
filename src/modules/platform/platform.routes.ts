@@ -67,7 +67,8 @@ export function buildPlatformRouter(
     validate,
     async (req: Request, res: Response) => {
       const b = req.body as Record<string, unknown>;
-      const result = await registration.register({
+      // Step 1 of 2: nothing is created until the e-mailed code is confirmed (POST /providers/verify).
+      const result = await registration.start({
         academyName: String(b.academy_name),
         slug: String(b.slug),
         city: typeof b.city === 'string' && b.city.trim() ? b.city.trim() : null,
@@ -75,7 +76,30 @@ export function buildPlatformRouter(
         adminEmail: String(b.admin_email),
         password: String(b.password),
       });
+      res.status(202).json(ok({ pending_id: result.pendingId, email: result.email, expires_in: result.expiresInSec }));
+    },
+  );
+
+  router.post(
+    '/providers/verify',
+    signupLimiter,
+    body('pending_id').isUUID().withMessage('pending_id must be a UUID'),
+    body('code').isString().trim().matches(/^\d{6}$/).withMessage('code must be 6 digits'),
+    validate,
+    async (req: Request, res: Response) => {
+      const result = await registration.verify(String(req.body.pending_id), String(req.body.code));
       res.status(201).json(ok({ tenant_id: result.tenantId, slug: result.slug }));
+    },
+  );
+
+  router.post(
+    '/providers/resend',
+    signupLimiter,
+    body('pending_id').isUUID().withMessage('pending_id must be a UUID'),
+    validate,
+    async (req: Request, res: Response) => {
+      const result = await registration.resend(String(req.body.pending_id));
+      res.status(202).json(ok({ expires_in: result.expiresInSec }));
     },
   );
 

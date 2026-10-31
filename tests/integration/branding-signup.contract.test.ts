@@ -57,14 +57,44 @@ describe('academy branding', () => {
   });
 });
 
-describe('POST /api/v1/platform/providers (self-service sign-up)', () => {
+describe('POST /api/v1/platform/providers (self-service sign-up with e-mail code)', () => {
   const valid = { academy_name: 'Dammam Skills', slug: 'dammam-skills', city: 'Dammam', admin_name: 'Faisal Admin', admin_email: 'boss@dammam.test', password: 'Str0ngPass!', accept_terms: true };
   const signup = (body: object, app = buildApp()) => request(app).post('/api/v1/platform/providers').send(body);
+  const regOf = (app: ReturnType<typeof buildApp>) => app.locals.registration as ReturnType<typeof import('./helpers/registration-fakes').buildRegistrationFakes>;
 
-  it('creates an academy (201) without any tenant context', async () => {
-    const res = await signup(valid);
-    expect(res.status).toBe(201);
-    expect(res.body.data).toEqual({ tenant_id: 'new-tenant-id', slug: 'dammam-skills' });
+  it('202: sends a code and creates nothing until it is confirmed', async () => {
+    const app = buildApp();
+    const res = await signup(valid, app);
+    expect(res.status).toBe(202);
+    expect(res.body.data).toMatchObject({ email: 'boss@dammam.test', expires_in: 900 });
+    expect(res.body.data.pending_id).toEqual(expect.any(String));
+    expect(res.body.data).not.toHaveProperty('slug');
+    expect(regOf(app).repository.registered).toHaveLength(0);
+    expect(regOf(app).mailer.sent[0]!.to).toBe('boss@dammam.test');
+  });
+
+  it('confirming the code creates the academy (201); a wrong code is 422; the code works once', async () => {
+    const app = buildApp();
+    const { pending_id } = (await signup(valid, app)).body.data;
+    const verify = (code: string) => request(app).post('/api/v1/platform/providers/verify').send({ pending_id, code });
+    const wrong = regOf(app).mailer.lastCode === '000000' ? '111111' : '000000';
+    expect((await verify(wrong)).body.error.code).toBe('CODE_INVALID');
+    const ok = await verify(regOf(app).mailer.lastCode);
+    expect(ok.status).toBe(201);
+    expect(ok.body.data).toEqual({ tenant_id: 'new-tenant-id', slug: 'dammam-skills' });
+    expect((await verify(regOf(app).mailer.lastCode)).body.error.code).toBe('CODE_EXPIRED');
+  });
+
+  it('validates the code format and the pending id', async () => {
+    const app = buildApp();
+    expect((await request(app).post('/api/v1/platform/providers/verify').send({ pending_id: 'nope', code: '12' })).status).toBe(422);
+    expect((await request(app).post('/api/v1/platform/providers/resend').send({ pending_id: 'nope' })).status).toBe(422);
+  });
+
+  it('resend is rate limited by the cooldown', async () => {
+    const app = buildApp();
+    const { pending_id } = (await signup(valid, app)).body.data;
+    expect((await request(app).post('/api/v1/platform/providers/resend').send({ pending_id })).body.error.code).toBe('RESEND_TOO_SOON');
   });
 
   it('409 for a taken slug, 422 for reserved or malformed slugs', async () => {
@@ -79,7 +109,10 @@ describe('POST /api/v1/platform/providers (self-service sign-up)', () => {
     expect(res.body.error.details.map((d: { field: string }) => d.field)).toEqual(expect.arrayContaining(['accept_terms', 'password']));
   });
 
-  it('403 when sign-up is disabled', async () => {
+  it('503 when the e-mail cannot be sent, 403 when sign-up is disabled', async () => {
+    const app = buildApp();
+    regOf(app).mailer.failNext = true;
+    expect((await signup(valid, app)).body.error.code).toBe('MAIL_UNAVAILABLE');
     expect((await signup(valid, buildApp({ signupEnabled: false }))).status).toBe(403);
   });
 });
