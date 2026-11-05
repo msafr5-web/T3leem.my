@@ -1,3 +1,4 @@
+import { cleanEmail } from '../../shared/utils/email';
 import { Router, type Request, type RequestHandler, type Response } from 'express';
 import { body } from 'express-validator';
 import { validate } from '../../shared/middlewares/validate.middleware';
@@ -61,7 +62,7 @@ export function buildPlatformRouter(
       .withMessage('slug: 3-40 lowercase letters, digits or hyphens, not starting/ending with a hyphen'),
     body('city').optional({ values: 'falsy' }).isString().isLength({ max: 60 }),
     body('admin_name').isString().trim().isLength({ min: 3, max: 120 }),
-    body('admin_email').isString().trim().isEmail().withMessage('A valid email is required'),
+    body('admin_email').customSanitizer(cleanEmail).isString().isEmail().withMessage('A valid email is required'),
     body('phone').optional({ values: 'falsy' }).isString().trim().matches(/^\+[1-9][0-9]{8,14}$/).withMessage('phone must be an international number such as +9665XXXXXXXX'),
     body('accept_terms').equals('true').withMessage('The terms must be accepted'),
     validate,

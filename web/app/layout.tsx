@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { EmailGuard } from './email-guard';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,7 +14,10 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1, view
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ar" dir="rtl">
-      <body>{children}</body>
+      <body>
+        <EmailGuard />
+        {children}
+      </body>
     </html>
   );
 }

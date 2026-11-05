@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { body } from 'express-validator';
 import { validate } from '../../shared/middlewares/validate.middleware';
+import { cleanEmail } from '../../shared/utils/email';
 import type { AuthController } from './auth.controller';
 
 export const otpCodeRules = [
@@ -9,7 +10,7 @@ export const otpCodeRules = [
 ];
 
 /** No normalizeEmail(): it rewrites provider-specific addresses (dots, +tags) and would stop matching the stored email. */
-export const otpEmailRule = body('email').isString().trim().isEmail().withMessage('A valid email is required');
+export const otpEmailRule = body('email').customSanitizer(cleanEmail).isString().isEmail().withMessage('A valid email is required');
 
 /**
  * Mounted under /api/v1/auth. Sign-in is passwordless: an e-mailed 6-digit code (for owners, trainers

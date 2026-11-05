@@ -114,6 +114,19 @@ describe('e-mail code sign-in (POST /api/v1/auth/otp/*)', () => {
     expect((await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code })).body.error.code).toBe('OTP_INVALID');
   });
 
+  it('ignores invisible direction marks and spaces inside the address (RTL keyboards, pasting)', async () => {
+    const app = buildApp();
+    const dirty = 'learner\u200F@rukn.test\u200E \u00A0';
+    const r = await request_(app, dirty);
+    expect(r.status).toBe(202);
+    expect(otpOf(app).mailer.sent.map((m) => m.to)).toEqual([LEARNER_EMAIL]);
+    const res = await post(app, 'verify', { challenge_id: r.body.data.challenge_id, code: otpOf(app).mailer.lastCode });
+    expect(res.status).toBe(200);
+    const reg = await request(app).post('/api/v1/auth/register').set('x-tenant-slug', 'rukn').send({ full_name: 'Reem Saleh', email: 'reem\u200F@new.test' });
+    expect(reg.status).toBe(201);
+    expect(reg.body.data).toEqual({ email: 'reem@new.test' });
+  });
+
   it('an unknown address gets the same answer and no e-mail (no account enumeration)', async () => {
     const app = buildApp();
     const known = await request_(app, LEARNER_EMAIL);
