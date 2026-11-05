@@ -4,13 +4,11 @@
 <meta charset="utf-8">
 <title>دليل الهوية البصرية — T3leem.my</title>
 <style>
-@font-face { font-family: 'Aref Ruqaa'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/aref-ruqaa-regular.woff2') format('woff2'); font-weight: 400; }
-@font-face { font-family: 'Aref Ruqaa'; src: url('file:///C:/Users/abuhe/Desktop/my%20projects/T3leem.my/web/public/fonts/aref-ruqaa-bold.woff2') format('woff2'); font-weight: 700; }
 :root { --sky:#0195f5; --brand:#0877c9; --navy:#163051; --ice:#e8f4fe; --bg:#f2f8fd; --ink:#14213a; --muted:#55657a; --line:#d6e3f0; }
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-body { font-family: 'Aref Ruqaa', Tahoma, sans-serif; color: var(--ink); font-size: 13pt; line-height: 1.7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: Arial, Helvetica, Tahoma, sans-serif; color: var(--ink); font-size: 12pt; line-height: 1.7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .page { width: 210mm; height: 297mm; padding: 14mm 16mm 11mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; display: flex; flex-direction: column; }
 .page:last-child { page-break-after: auto; }
 .page::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4mm; background: var(--sky); }
@@ -149,12 +147,12 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
 
 <!-- 5. typography -->
 <section class="page">
-  <div class="kicker">٣ · الخط الرسمي</div><h2>الخط المعتمد: Aref Ruqaa</h2><div class="rule"></div>
+  <div class="kicker">٣ · الخط الرسمي</div><h2>الخط المعتمد: Arial</h2><div class="rule"></div>
   <div class="card tint" style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:6mm">
     <div><div class="specimen-big">تعليمي</div><div class="ltr" style="font-size:30pt;font-weight:700;color:var(--navy)">T3leem.my</div></div>
-    <div style="font-size:11.5pt;line-height:1.7;min-width:62mm"><b>Aref Ruqaa</b> (عادي + Swashes Fixed)<br>المصمم: Abdullah Aref<br>الإصدار 1.003 (نوفمبر 2025)<br>الترخيص: SIL OFL 1.1 · حر ومفتوح المصدر</div>
+    <div style="font-size:11.5pt;line-height:1.7;min-width:62mm"><b>Arial</b> (عادي وعريض)<br>المصمم: Robin Nicholas وPatricia Saunders<br>خط نظام مثبّت على Windows وmacOS وAndroid وiOS<br>لا يحتاج تنزيلاً من الموقع</div>
   </div>
-  <p style="margin-top:5mm">خط عربي بطابع <b>الرقعة</b> اليدوي، يمنح الموقع هوية خطية مميزة تليق بالتعليم والتدريب والشهادات. يُستعمل <b>Swashes Fixed (العريض 700)</b> للعناوين والأزرار والأرقام البارزة، و<b>العادي (400)</b> للنصوص والفقرات. لا يُخلط معه خط عربي آخر. لأن الرقعة خط كثيف صغير الارتفاع رُفع حجم النص الأساسي إلى 20px.</p>
+  <p style="margin-top:5mm">خط واضح وحيادي يدعم العربية واللاتينية بوضوح عالٍ على جميع الشاشات ويظهر فوراً دون تحميل. يُستعمل <b>العريض (700)</b> للعناوين والأزرار والأرقام البارزة، و<b>العادي (400)</b> للنصوص والفقرات. لا يُخلط معه خط آخر. الحجم الأساسي للنص 16px.</p>
   <div class="grid2" style="margin: 3mm 0 5mm">
     <div class="card"><h3>الحروف والأرقام</h3><div class="glyphs">أ ب ت ث ج ح خ د ذ ر ز<br>س ش ص ض ط ظ ع غ ف ق<br>ك ل م ن هـ و ي لا ء ة<br><span class="ltr">٠ ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩</span></div></div>
     <div class="card"><h3>اللاتينية</h3><div class="glyphs ltr">ABCDEFGHIJKLM<br>NOPQRSTUVWXYZ<br>abcdefghijklm<br>nopqrstuvwxyz<br>0123456789</div></div>
@@ -164,11 +162,11 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
     <tr><th>المستوى</th><th>الحجم</th><th>الوزن</th><th>مثال</th></tr>
     <tr><td>عنوان الصفحة H1</td><td class="code">42px</td><td>عريض 700</td><td style="font-size:20pt;font-weight:700;color:var(--navy)">أكاديمية رقمية</td></tr>
     <tr><td>عنوان القسم H2</td><td class="code">22px</td><td>عريض 700</td><td style="font-size:16pt;font-weight:700;color:var(--navy)">مزودو الخدمة</td></tr>
-    <tr><td>عنوان فرعي H3</td><td class="code">18px</td><td>عريض 700</td><td style="font-size:14pt;font-weight:700">الباقات والاشتراك</td></tr>
-    <tr><td>النص الأساسي</td><td class="code">20px / 1.9</td><td>عادي 400</td><td>تعلّم وتدرّب في أي وقت.</td></tr>
-    <tr><td>الشروحات والتلميحات</td><td class="code">17px</td><td>عادي 400</td><td class="muted" style="font-size:12pt">نص ثانوي بلون رمادي مزرق</td></tr>
+    <tr><td>عنوان فرعي H3</td><td class="code">17px</td><td>عريض 700</td><td style="font-size:14pt;font-weight:700">الباقات والاشتراك</td></tr>
+    <tr><td>النص الأساسي</td><td class="code">16px / 1.75</td><td>عادي 400</td><td>تعلّم وتدرّب في أي وقت.</td></tr>
+    <tr><td>الشروحات والتلميحات</td><td class="code">14px</td><td>عادي 400</td><td class="muted" style="font-size:12pt">نص ثانوي بلون رمادي مزرق</td></tr>
   </table>
-  <p class="muted" style="margin-top:3mm;font-size:11.5pt">الخط مضمّن في الموقع بصيغة WOFF2 (عربي + لاتيني) مع نسخة الترخيص <span class="code">/fonts/OFL.txt</span>. مصدره: arfonts.net/aref-ruqaa-swashes-fixed-font.</p>
+  <p class="muted" style="margin-top:3mm;font-size:11.5pt">تعريف الخط في الموقع: <span class="code">font-family: Arial, 'Helvetica Neue', Helvetica, Tahoma, sans-serif</span>.</p>
   <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>5</span></div>
 </section>
 
@@ -210,7 +208,7 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
     <tr><td class="code">web/public/brand/emblem.png · emblem-96.png</td><td>الرمز وحده</td></tr>
     <tr><td class="code">web/public/brand/og.jpg</td><td>صورة المشاركة</td></tr>
     <tr><td class="code">web/app/icon.png · apple-icon.png</td><td>أيقونة المتصفح والجوال</td></tr>
-    <tr><td class="code">web/public/fonts/aref-ruqaa-*.woff2 · OFL.txt</td><td>الخط الرسمي ورخصته</td></tr>
+    
   </table>
   <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>7</span></div>
 </section>
@@ -222,11 +220,11 @@ th { color: var(--muted); font-weight: 700; background: var(--bg); }
   <ol class="rules" style="font-size:14pt">
     <li><b>الشعار:</b> الصورة المرفقة في هذا الدليل بصيغتيها (الكامل والرمز) هي الشعار الرسمي الوحيد للمنصة.</li>
     <li><b>الألوان:</b> أزرق الشعار <span class="code">#0195F5</span>، أزرق العلامة <span class="code">#0877C9</span>، الكحلي <span class="code">#163051</span>، الثلجي <span class="code">#E8F4FE</span> مع درجات الخلفية والنص الموضحة.</li>
-    <li><b>الخط:</b> <b>Aref Ruqaa</b> بوزنيه العادي والعريض هو الخط الرسمي للموقع والمطبوعات، وهو مرخّص بـ SIL OFL 1.1 ويجوز استعماله تجارياً.</li>
+    <li><b>الخط:</b> <b>Arial</b> بوزنيه العادي والعريض هو الخط الرسمي للموقع والمطبوعات.</li>
     <li><b>الأكاديميات:</b> تحتفظ كل أكاديمية بشعارها ولونها الخاص داخل صفحاتها، وتبقى صفحات المنصة بهوية T3leem.my.</li>
     <li><b>التغيير:</b> لا يُعدَّل أي عنصر من الهوية إلا بإصدار جديد من هذا الدليل يحمل رقماً وتاريخاً.</li>
   </ol>
-  <div class="card tint" style="margin-top:6mm"><h3>ملاحظة على ترخيص الخط</h3><p style="margin:0;font-size:12.5pt">تسمح رخصة SIL OFL 1.1 باستعمال الخط وتضمينه في المواقع والتطبيقات والمطبوعات، تجارياً أو غير تجاري، ونسخه وتوزيعه ما دامت الرخصة مرفقة معه (موجودة في <span class="code">/fonts/OFL.txt</span>)، مع منع بيع الخط نفسه منفرداً أو استعمال اسمه «Aref Ruqaa» لنسخة معدّلة.</p></div>
+  
   <div class="sig"><div>مالك المنصة<br><br>الاسم:</div><div>التوقيع<br><br></div><div>التاريخ<br><br>٣١ / ١٠ / ٢٠٢٦</div></div>
   <div style="margin-top: 8mm; text-align:center"><span class="stamp">هوية معتمدة</span></div>
   <div class="foot"><span>دليل الهوية البصرية · T3leem.my</span><span>8</span></div>
