@@ -36,6 +36,8 @@ import { AcademicService } from '../../../src/modules/institute/academic/academi
 import type { InstituteService } from '../../../src/modules/institute/institute.service';
 import { PrismaFinanceRepository } from '../../../src/modules/institute/finance/finance.repository';
 import { FinanceService } from '../../../src/modules/institute/finance/finance.service';
+import { PrismaCostRepository } from '../../../src/modules/institute/cost/cost.repository';
+import { CostService } from '../../../src/modules/institute/cost/cost.service';
 import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
@@ -112,7 +114,7 @@ export const QUIZ_DAYS = [
   { id: '77777777-7777-4777-8777-777777777773', title: 'اليوم 2' },
 ].map((d) => ({ ...d, opensAt: null as Date | null, closesAt: null as Date | null }));
 
-export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean; instituteService?: InstituteService; academicService?: AcademicService; financeService?: FinanceService } = {}) {
+export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean; instituteService?: InstituteService; academicService?: AcademicService; financeService?: FinanceService; costService?: CostService } = {}) {
   const enrolled = new Set<string>();
 
   // Each fake mimics RLS: data exists only inside TENANT_A.
@@ -362,6 +364,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     healthService: health.service,
     instituteService: opts.instituteService ?? institute.service,
     // The academic side is exercised against the real database (see institute-academic.contract.test.ts); other suites never reach it.
+    costService: opts.costService ?? new CostService(new PrismaCostRepository(), institute.service, institute.repository, new PrismaAcademicRepository(), new PrismaFinanceRepository()),
     financeService: opts.financeService ?? new FinanceService(new PrismaFinanceRepository(), institute.service, institute.repository, new PrismaAcademicRepository()),
     academicService: opts.academicService ?? new AcademicService(new PrismaAcademicRepository(), institute.service, institute.repository),
     learningService: fakes.learning,

@@ -153,7 +153,7 @@ describe('inventory attention', () => {
 
 describe('inventory rules (pure)', () => {
   const asset = (over: Partial<AssetRow>): AssetRow => ({
-    id: 'a', branchId: 'b', roomId: 'r', name: 'x', category: null, serialNo: null, purchaseDate: null, purchaseValue: '0.00', salvagePercent: '10.00', usefulLifeMonths: null, status: 'IN_SERVICE', notes: null, ...over,
+    id: 'a', branchId: 'b', roomId: 'r', name: 'x', category: null, serialNo: null, purchaseDate: null, retiredOn: null, purchaseValue: '0.00', salvagePercent: '10.00', usefulLifeMonths: null, status: 'IN_SERVICE', notes: null, ...over,
   });
   it('counts whole months only', () => {
     expect(monthsBetween('2026-01-15', '2026-02-14')).toBe(0);

@@ -127,6 +127,7 @@ export default async function InstitutePage({ params, searchParams }: { params: 
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <Link href={`/${slug}/institute/academic`} className="btn btn-primary">الدبلومات والطلاب والجداول</Link>
           {me.can_read.finance && <Link href={`/${slug}/institute/finance`} className="btn btn-primary">المالية</Link>}
+          {me.can_read.cost && <Link href={`/${slug}/institute/cost`} className="btn btn-primary">التكاليف</Link>}
           {session.role === 'TENANT_ADMIN' && <Link href={`/${slug}/dashboard`} className="btn btn-ghost">لوحة التحكم</Link>}
         </div>
       </div>

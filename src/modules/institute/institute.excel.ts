@@ -130,6 +130,7 @@ export async function parseAssetSheet(file: Buffer, lookup: Lookup): Promise<{ a
       category: get(row, 'Category') || null,
       serialNo: get(row, 'Serial') || null,
       purchaseDate: date || null,
+      retiredOn: null,
       purchaseValue: value ? Number(value).toFixed(2) : '0.00',
       salvagePercent: salvage ? Number(salvage).toFixed(2) : '10.00',
       usefulLifeMonths: life ? Number(life) : null,

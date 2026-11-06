@@ -818,6 +818,7 @@ model Room {
   sessions ClassSession[]
 
   expenses Expense[]
+  readings RoomMeterReading[]
 
   @@unique([branchId, name])
   @@index([tenantId, branchId])
@@ -837,6 +838,7 @@ model Asset {
   salvagePercent   Decimal   @default(10) @map("salvage_percent") @db.Decimal(5, 2)
   usefulLifeMonths Int?      @map("useful_life_months")
   // IN_SERVICE | MAINTENANCE | RETIRED
+  retiredOn        DateTime? @map("retired_on") @db.Date
   status           String    @default("IN_SERVICE")
   notes            String?
   createdAt        DateTime  @default(now()) @map("created_at")
@@ -1081,6 +1083,8 @@ model UtilityBill {
   periodEnd   DateTime @map("period_end") @db.Date
   amount      Decimal  @db.Decimal(12, 2)
   kwh         Decimal? @db.Decimal(12, 2)
+  // VAT stated on the bill (included in amount); null = not stated.
+  vatAmount   Decimal? @map("vat_amount") @db.Decimal(12, 2)
   createdAt   DateTime @default(now()) @map("created_at")
 
   branch Branch @relation(fields: [branchId], references: [id])
@@ -1176,4 +1180,37 @@ model ClosedPeriod {
   @@unique([branchId, period])
   @@index([tenantId])
   @@map("closed_periods")
+}
+
+model CostPolicy {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  version    Int
+  // DRAFT | APPROVED | SUPERSEDED. Approved and superseded rows are frozen by a database trigger.
+  status     String    @default("DRAFT")
+  params     Json
+  note       String?
+  createdBy  String    @map("created_by") @db.Uuid
+  approvedBy String?   @map("approved_by") @db.Uuid
+  approvedAt DateTime? @map("approved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, version])
+  @@map("cost_policies")
+}
+
+model RoomMeterReading {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  period    DateTime @db.Date
+  kwh       Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, period])
+  @@index([tenantId, branchId, period])
+  @@map("room_meter_readings")
 }

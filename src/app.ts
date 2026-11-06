@@ -19,6 +19,8 @@ import { buildAcademicRouter } from './modules/institute/academic/academic.route
 import type { AcademicService } from './modules/institute/academic/academic.service';
 import { buildFinanceRouter } from './modules/institute/finance/finance.routes';
 import type { FinanceService } from './modules/institute/finance/finance.service';
+import { buildCostRouter } from './modules/institute/cost/cost.routes';
+import type { CostService } from './modules/institute/cost/cost.service';
 import { buildOwnerRouter } from './modules/platform/owner.routes';
 import type { OwnerService } from './modules/platform/owner.service';
 import type { OtpLoginService } from './modules/auth/otp.service';
@@ -64,6 +66,7 @@ export interface AppDependencies {
   instituteService: InstituteService;
   academicService: AcademicService;
   financeService: FinanceService;
+  costService: CostService;
   otpLogin: OtpLoginService;
   ownerService: OwnerService;
   learningService: LearningService;
@@ -135,6 +138,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/admin', buildInstituteRouter(deps.instituteService, deps.jwt));
   api.use('/admin', buildAcademicRouter(deps.academicService, deps.jwt));
   api.use('/admin', buildFinanceRouter(deps.financeService, deps.jwt));
+  api.use('/admin', buildCostRouter(deps.costService, deps.jwt));
   api.use('/admin', buildProviderAdminRouter(deps.providerController, deps.jwt));
   api.use('/admin', buildContentAdminRouter(deps.contentService, deps.videoService, deps.learningService, deps.jwt));
   api.use('/admin', buildRecordedAdminRouter(deps.recordedCourseService, deps.jwt));

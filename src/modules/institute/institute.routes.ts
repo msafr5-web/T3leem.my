@@ -25,6 +25,7 @@ const assetJson = (a: PublicAsset) => ({
   category: a.category,
   serial_no: a.serialNo,
   purchase_date: a.purchaseDate,
+  retired_on: a.retiredOn,
   status: a.status,
   notes: a.notes,
   // Absent (not null) for roles that may not see money, so the UI can tell "hidden" from "zero".
@@ -81,6 +82,7 @@ const assetRules = [
   body('category').optional({ values: 'null' }).isString().isLength({ max: 80 }),
   body('serial_no').optional({ values: 'null' }).isString().isLength({ max: 80 }),
   body('purchase_date').optional({ values: 'null' }).isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('purchase_date must be YYYY-MM-DD'),
+  body('retired_on').optional({ values: 'null' }).isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('retired_on must be YYYY-MM-DD'),
   body('purchase_value').optional({ values: 'null' }).custom((v) => MONEY.test(String(v))).withMessage('purchase_value must be an amount with at most 2 decimals'),
   body('salvage_percent').optional({ values: 'null' }).isFloat({ min: 0, max: 100 }),
   body('useful_life_months').optional({ values: 'null' }).isInt({ min: 1, max: 1200 }),
@@ -104,6 +106,7 @@ const assetInput = (b: Record<string, unknown>, branchId: string): AssetInput =>
   category: str(b.category),
   serialNo: str(b.serial_no),
   purchaseDate: str(b.purchase_date),
+  retiredOn: str(b.retired_on),
   purchaseValue: b.purchase_value === undefined || b.purchase_value === null ? '0.00' : Number(b.purchase_value).toFixed(2),
   salvagePercent: b.salvage_percent === undefined || b.salvage_percent === null ? '10.00' : Number(b.salvage_percent).toFixed(2),
   usefulLifeMonths: b.useful_life_months === undefined || b.useful_life_months === null ? null : Number(b.useful_life_months),

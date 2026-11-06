@@ -22,6 +22,8 @@ export interface BillRow {
   periodEnd: string;
   amount: string;
   kwh: string | null;
+  /** VAT included in `amount` as stated on the bill; null = not stated. */
+  vatAmount: string | null;
 }
 export type BillInput = Omit<BillRow, 'id'>;
 
@@ -154,8 +156,8 @@ const money = (d: Prisma.Decimal): string => d.toFixed(2);
 const toExpense = (e: { id: string; branchId: string; roomId: string | null; category: string; amount: Prisma.Decimal; incurredOn: Date; vendor: string | null; description: string | null }): ExpenseRow => ({
   id: e.id, branchId: e.branchId, roomId: e.roomId, category: e.category, amount: money(e.amount), incurredOn: day(e.incurredOn), vendor: e.vendor, description: e.description,
 });
-const toBill = (b: { id: string; branchId: string; periodStart: Date; periodEnd: Date; amount: Prisma.Decimal; kwh: Prisma.Decimal | null }): BillRow => ({
-  id: b.id, branchId: b.branchId, periodStart: day(b.periodStart), periodEnd: day(b.periodEnd), amount: money(b.amount), kwh: b.kwh ? money(b.kwh) : null,
+const toBill = (b: { id: string; branchId: string; periodStart: Date; periodEnd: Date; amount: Prisma.Decimal; kwh: Prisma.Decimal | null; vatAmount: Prisma.Decimal | null }): BillRow => ({
+  id: b.id, branchId: b.branchId, periodStart: day(b.periodStart), periodEnd: day(b.periodEnd), amount: money(b.amount), kwh: b.kwh ? money(b.kwh) : null, vatAmount: b.vatAmount ? money(b.vatAmount) : null,
 });
 const toBudget = (b: { id: string; branchId: string; category: string | null; period: Date; amount: Prisma.Decimal; warnPercent: number }): BudgetRow => ({
   id: b.id, branchId: b.branchId, category: b.category, period: day(b.period), amount: money(b.amount), warnPercent: b.warnPercent,
@@ -236,7 +238,7 @@ export class PrismaFinanceRepository implements FinanceRepository {
     return withTenantTransaction(tenantId, async (tx) => {
       try {
         const b = await tx.utilityBill.create({
-          data: { tenantId, branchId: input.branchId, periodStart: date(input.periodStart), periodEnd: date(input.periodEnd), amount: new Prisma.Decimal(input.amount), kwh: input.kwh === null ? null : new Prisma.Decimal(input.kwh) },
+          data: { tenantId, branchId: input.branchId, periodStart: date(input.periodStart), periodEnd: date(input.periodEnd), amount: new Prisma.Decimal(input.amount), kwh: input.kwh === null ? null : new Prisma.Decimal(input.kwh), vatAmount: input.vatAmount === null ? null : new Prisma.Decimal(input.vatAmount) },
         });
         await audit(tx, tenantId, actor, 'institute.bill_recorded', b.id, { branchId: b.branchId, amount: money(b.amount), periodStart: input.periodStart });
         return { kind: 'ok' as const, value: toBill(b) };

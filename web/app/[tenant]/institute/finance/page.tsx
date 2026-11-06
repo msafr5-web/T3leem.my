@@ -230,7 +230,8 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
                 <label>من<input type="date" name="period_start" required defaultValue={`${month}-01`} /></label>
                 <label>إلى<input type="date" name="period_end" required defaultValue={lastDay(month)} /></label>
                 <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
-                <label>الاستهلاك بالكيلوواط ساعة <span className="hint">(اختياري)</span><input name="kwh" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>الاستهلاك بالكيلوواط ساعة <span className="hint">(اختياري، لفحص الفاتورة مقابل التعرفة)</span><input name="kwh" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>الضريبة المذكورة في الفاتورة (ريال) <span className="hint">(اختياري، مشمولة في المبلغ)</span><input name="vat_amount" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
               </ActionForm>
             </details>
           )}

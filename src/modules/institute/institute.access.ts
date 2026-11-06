@@ -18,7 +18,7 @@ export interface Principal {
   branchId: string | null;
 }
 
-export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance' | 'program' | 'instructor' | 'student' | 'session' | 'attendance' | 'expense' | 'bill' | 'budget' | 'invoice' | 'ledger_admin' | 'dues';
+export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance' | 'program' | 'instructor' | 'student' | 'session' | 'attendance' | 'expense' | 'bill' | 'budget' | 'invoice' | 'ledger_admin' | 'dues' | 'cost_policy' | 'cost_policy_approve' | 'cost_report' | 'meter';
 export type Action = 'read' | 'write';
 
 const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
@@ -43,6 +43,11 @@ const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
   // Undoing money: voiding a payment, cancelling an invoice, closing or reopening a month.
   ledger_admin: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
   dues: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
+  // Cost engine: finance drafts the policy, only head office approves it.
+  cost_policy: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
+  cost_policy_approve: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ'] },
+  cost_report: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
+  meter: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'BRANCH_MANAGER', 'FINANCE'] },
 };
 
 export const can = (role: InstituteRole, resource: Resource, action: Action): boolean => MATRIX[resource][action].includes(role);

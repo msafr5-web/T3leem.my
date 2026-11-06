@@ -50,6 +50,8 @@ export interface AssetRow {
   serialNo: string | null;
   /** YYYY-MM-DD */
   purchaseDate: string | null;
+  /** YYYY-MM-DD the asset left service; depreciation stops after that month. */
+  retiredOn: string | null;
   purchaseValue: string;
   salvagePercent: string;
   usefulLifeMonths: number | null;
@@ -172,6 +174,7 @@ const toAsset = (a: {
   category: string | null;
   serialNo: string | null;
   purchaseDate: Date | null;
+  retiredOn: Date | null;
   purchaseValue: Prisma.Decimal;
   salvagePercent: Prisma.Decimal;
   usefulLifeMonths: number | null;
@@ -185,6 +188,7 @@ const toAsset = (a: {
   category: a.category,
   serialNo: a.serialNo,
   purchaseDate: dateOnly(a.purchaseDate),
+  retiredOn: dateOnly(a.retiredOn),
   purchaseValue: a.purchaseValue.toFixed(2),
   salvagePercent: a.salvagePercent.toFixed(2),
   usefulLifeMonths: a.usefulLifeMonths,
@@ -219,6 +223,7 @@ const assetData = (i: AssetInput) => ({
   category: i.category,
   serialNo: i.serialNo,
   purchaseDate: i.purchaseDate ? new Date(`${i.purchaseDate}T00:00:00Z`) : null,
+  retiredOn: i.retiredOn ? new Date(`${i.retiredOn}T00:00:00Z`) : null,
   purchaseValue: new Prisma.Decimal(i.purchaseValue),
   salvagePercent: new Prisma.Decimal(i.salvagePercent),
   usefulLifeMonths: i.usefulLifeMonths,

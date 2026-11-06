@@ -685,7 +685,28 @@ export interface FinInvoice {
 export interface FinSummary { month: string; branches: { branch_id: string; income: string; spend: string; net: string; by_category: Record<string, string>; closed: boolean }[]; totals: { income: string; spend: string; net: string } }
 export interface FinDues { month: string; total: string; instructors: { instructor_id: string; branch_id: string; name: string; minutes: number; hourly_rate: string; pay: string }[] }
 export interface FinClosed { id: string; branch_id: string; period: string; closed_by: string; closed_at: string }
-export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean; expense: boolean; budget: boolean; invoice: boolean; ledger_admin: boolean }; can_read: { finance: boolean } }
+export interface CostPolicyParams {
+  electricity: { tariffCategory: string; allocation: 'AREA' | 'POWER_HOURS' | 'METER'; vatRatePercent: number; vatRecoverable: boolean; breakerAmps: Record<string, number> };
+  depreciation: { start: 'PURCHASE_MONTH' | 'NEXT_MONTH'; defaultLifeMonths: number };
+  overhead: { basis: 'AREA' | 'HOURS' };
+  occupancy: { availableHoursPerMonth: number };
+  revenue: { basis: 'CASH' | 'OVER_TIME' };
+}
+export interface CostPolicy { id: string; version: number; status: 'DRAFT' | 'APPROVED' | 'SUPERSEDED'; params: CostPolicyParams; note: string | null; approved_at: string | null; created_at: string }
+export interface CostPolicies { approved: CostPolicy | null; draft: CostPolicy | null; history: CostPolicy[]; defaults: CostPolicyParams }
+export interface CostReading { id: string; branch_id: string; room_id: string; month: string; kwh: string }
+export interface CostReport {
+  month: string; branch_id: string; policy: { id: string; version: number; approved_at: string | null };
+  electricity: { method_used: string; cost: string }; overhead: string; total_room_cost: string; idle_cost: string;
+  rooms: { room_id: string; name: string; electricity: string; depreciation: string; direct_expenses: string; overhead: string; total: string; held_minutes: number; cost_per_hour: string | null; occupancy_percent: number }[];
+  programs: { program_id: string; name: string; held_minutes: number; facility_cost: string; instructor_cost: string; total_cost: string; revenue: string; profit: string; active_students: number; cost_per_student: string | null }[];
+  bill_check: {
+    bill_id: string; tariff_id: string | null; failure: string | null; actual: string; difference: string | null; level: 'OK' | 'REVIEW' | null; note: string;
+    estimate: { energy: string; fixed: string | null; vat: string; total: string; tiers: { kwh: number; halalas_per_kwh: number; amount: string }[]; warnings: string[] } | null;
+  } | null;
+  warnings: { code: string; detail?: string }[];
+}
+export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean; expense: boolean; budget: boolean; invoice: boolean; ledger_admin: boolean; cost_policy: boolean; cost_policy_approve: boolean; meter: boolean }; can_read: { finance: boolean; cost: boolean } }
 
 export const admin = {
   institutePrograms: (slug: string, token: string) => api<{ programs: InstProgram[] }>(slug, '/admin/institute/programs', { token }),
@@ -701,6 +722,9 @@ export const admin = {
   finSummary: (slug: string, token: string, month: string) => api<FinSummary>(slug, `/admin/institute/finance/summary?month=${month}`, { token }),
   finDues: (slug: string, token: string, month: string) => api<FinDues>(slug, `/admin/institute/finance/instructor-dues?month=${month}`, { token }),
   finClosed: (slug: string, token: string) => api<{ closed: FinClosed[] }>(slug, '/admin/institute/finance/closed-periods', { token }),
+  costPolicies: (slug: string, token: string) => api<CostPolicies>(slug, '/admin/institute/cost/policy', { token }),
+  costReadings: (slug: string, token: string, month: string) => api<{ readings: CostReading[] }>(slug, `/admin/institute/cost/meter-readings?month=${month}`, { token }),
+  costReport: (slug: string, token: string, branchId: string, month: string) => api<CostReport>(slug, `/admin/institute/cost/report?branch_id=${encodeURIComponent(branchId)}&month=${month}`, { token }),
   instituteMe: (slug: string, token: string) => api<InstMe>(slug, '/admin/institute/me', { token }),
   instituteBranches: (slug: string, token: string) => api<{ branches: InstBranch[] }>(slug, '/admin/institute/branches', { token }),
   instituteRooms: (slug: string, token: string) => api<{ rooms: InstRoom[] }>(slug, '/admin/institute/rooms', { token }),

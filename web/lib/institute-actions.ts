@@ -41,6 +41,12 @@ const MESSAGES: Record<string, string> = {
   IMPORT_INVALID: 'في الملف صفوف لا يمكن استيرادها، ولم يُستورد شيء. صحّحها وأعد الرفع.',
   PAYLOAD_TOO_LARGE: 'حجم الملف أكبر من المسموح (٢ ميغابايت).',
   VALIDATION_FAILED: 'تحقق من الحقول: القيم غير صحيحة.',
+  INVALID_POLICY: 'قيم السياسة غير صحيحة. راجع الحقول.',
+  NO_DRAFT_POLICY: 'لا توجد مسودة سياسة.',
+  POLICY_FROZEN: 'السياسة المعتمدة لا تُعدَّل: عدّل مسودة جديدة.',
+  NO_APPROVED_POLICY: 'اعتمد سياسة التكلفة أولاً: لا تُصدر التقارير إلا بسياسة معتمدة.',
+  READING_NOT_FOUND: 'القراءة غير موجودة.',
+  VAT_EXCEEDS_BILL: 'الضريبة لا تزيد عن مبلغ الفاتورة.',
   PERIOD_CLOSED: 'هذا الشهر مغلق: لا يمكن إضافة أو تعديل أو حذف ما تاريخه فيه. أعد فتحه أولاً إن لزم.',
   PERIOD_NOT_ENDED: 'لا يُغلق الشهر إلا بعد انتهائه.',
   PERIOD_EXISTS: 'هذا الشهر مغلق مسبقاً.',
@@ -311,7 +317,7 @@ export async function deleteExpenseAction(slug: string, month: string, id: strin
   return saveFin(slug, `/finance/expenses/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'expense');
 }
 export async function addBillAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
-  return saveFin(slug, '/finance/bills', 'POST', { branch_id: str(form, 'branch_id'), period_start: str(form, 'period_start'), period_end: str(form, 'period_end'), amount: str(form, 'amount'), kwh: optional(form, 'kwh') }, monthOf(form), 'bill');
+  return saveFin(slug, '/finance/bills', 'POST', { branch_id: str(form, 'branch_id'), period_start: str(form, 'period_start'), period_end: str(form, 'period_end'), amount: str(form, 'amount'), kwh: optional(form, 'kwh'), vat_amount: optional(form, 'vat_amount') }, monthOf(form), 'bill');
 }
 export async function deleteBillAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
   return saveFin(slug, `/finance/bills/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'bill');
@@ -346,4 +352,50 @@ export async function closeMonthAction(slug: string, _prev: InstState, form: For
 }
 export async function reopenMonthAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
   return saveFin(slug, `/finance/closed-periods/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'reopened');
+}
+
+// ---- cost engine ----
+async function saveCost(slug: string, path: string, method: 'POST' | 'PUT' | 'DELETE', body: unknown, to: string, notice: string): Promise<InstState> {
+  const t = await token(slug);
+  try {
+    await api(slug, `/admin/institute${path}`, { method, token: t, body });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'INVALID_POLICY') {
+      const fields = (err.details ?? []).map((d) => `${d.field}`).join('، ');
+      return { error: `${MESSAGES.INVALID_POLICY}${fields ? ` (${fields})` : ''}` };
+    }
+    return describe(err);
+  }
+  revalidatePath(`/${slug}/institute/cost`);
+  redirect(`/${slug}/institute/cost${to}${to.includes('?') ? '&' : '?'}saved=${notice}`);
+}
+
+/** Builds the policy JSON from the form: one field per decision, nothing implied. */
+export async function saveCostPolicyAction(slug: string, branchIds: string[], _prev: InstState, form: FormData): Promise<InstState> {
+  const breakerAmps: Record<string, number> = {};
+  for (const id of branchIds) {
+    const v = str(form, `amps_${id}`);
+    if (v) breakerAmps[id] = Number(v);
+  }
+  const policy = {
+    electricity: { tariffCategory: str(form, 'tariffCategory'), allocation: str(form, 'allocation'), vatRatePercent: Number(str(form, 'vatRatePercent')), vatRecoverable: form.get('vatRecoverable') === 'on', breakerAmps },
+    depreciation: { start: str(form, 'depStart'), defaultLifeMonths: Number(str(form, 'defaultLifeMonths')) },
+    overhead: { basis: str(form, 'overheadBasis') },
+    occupancy: { availableHoursPerMonth: Number(str(form, 'availableHours')) },
+    revenue: { basis: str(form, 'revenueBasis') },
+  };
+  return saveCost(slug, '/cost/policy/draft', 'PUT', { policy, note: optional(form, 'note') }, '', 'draft');
+}
+export async function approveCostPolicyAction(slug: string, _prev: InstState): Promise<InstState> {
+  return saveCost(slug, '/cost/policy/approve', 'POST', undefined, '', 'approved');
+}
+export async function discardCostDraftAction(slug: string, _prev: InstState): Promise<InstState> {
+  return saveCost(slug, '/cost/policy/draft', 'DELETE', undefined, '', 'discarded');
+}
+export async function saveReadingAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, 'month')) ? str(form, 'month') : '';
+  return saveCost(slug, '/cost/meter-readings', 'PUT', { room_id: str(form, 'room_id'), month, kwh: str(form, 'kwh') }, `?month=${month}&branch=${encodeURIComponent(str(form, 'branch_id'))}`, 'reading');
+}
+export async function deleteReadingAction(slug: string, month: string, branchId: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveCost(slug, `/cost/meter-readings/${encodeURIComponent(id)}`, 'DELETE', undefined, `?month=${month}&branch=${encodeURIComponent(branchId)}`, 'reading');
 }

@@ -25,7 +25,7 @@ const monthQuery = () => query('month').matches(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/)
 const monthOf = (v: unknown): string => `${String(v).slice(0, 7)}-01`;
 
 const expenseJson = (e: ExpenseRow) => ({ id: e.id, branch_id: e.branchId, room_id: e.roomId, category: e.category, amount: e.amount, incurred_on: e.incurredOn, vendor: e.vendor, description: e.description });
-const billJson = (b: BillRow) => ({ id: b.id, branch_id: b.branchId, period_start: b.periodStart, period_end: b.periodEnd, amount: b.amount, kwh: b.kwh });
+const billJson = (b: BillRow) => ({ id: b.id, branch_id: b.branchId, period_start: b.periodStart, period_end: b.periodEnd, amount: b.amount, kwh: b.kwh, vat_amount: b.vatAmount });
 const budgetJson = (v: BudgetView) => ({
   id: v.budget.id,
   branch_id: v.budget.branchId,
@@ -107,11 +107,12 @@ export function buildFinanceRouter(service: FinanceService, jwt: JwtVerifyOption
     noStore(res);
     res.json(ok({ bills: (await service.listBills(tenantId, caller, str(req.query.branch_id) ?? undefined)).map(billJson) }));
   });
-  router.post(`${F}/bills`, auth, body('branch_id').isUUID(), dateField('period_start'), dateField('period_end'), money('amount', true, true), money('kwh', false), validate, async (req: Request, res: Response) => {
+  router.post(`${F}/bills`, auth, body('branch_id').isUUID(), dateField('period_start'), dateField('period_end'), money('amount', true, true), money('kwh', false), money('vat_amount', false), validate, async (req: Request, res: Response) => {
     const { tenantId, caller } = ctx(req);
     const b = req.body as Record<string, unknown>;
     if (String(b.period_end) < String(b.period_start)) throw HttpError.unprocessable('INVALID_PERIOD', 'period_end must not be before period_start');
-    const created = await service.recordBill(tenantId, caller, { branchId: String(b.branch_id), periodStart: String(b.period_start), periodEnd: String(b.period_end), amount: amountOf(b.amount), kwh: b.kwh === undefined || b.kwh === null || b.kwh === '' ? null : amountOf(b.kwh) });
+    if (b.vat_amount !== undefined && b.vat_amount !== null && b.vat_amount !== '' && Number(b.vat_amount) > Number(b.amount)) throw HttpError.unprocessable('VAT_EXCEEDS_BILL', 'The VAT cannot be more than the bill amount');
+    const created = await service.recordBill(tenantId, caller, { branchId: String(b.branch_id), periodStart: String(b.period_start), periodEnd: String(b.period_end), amount: amountOf(b.amount), kwh: b.kwh === undefined || b.kwh === null || b.kwh === '' ? null : amountOf(b.kwh), vatAmount: b.vat_amount === undefined || b.vat_amount === null || b.vat_amount === '' ? null : amountOf(b.vat_amount) });
     res.status(201).json(ok(billJson(created)));
   });
   router.delete(`${F}/bills/:id`, auth, uuid('id'), validate, async (req: Request, res: Response) => {

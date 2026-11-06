@@ -27,6 +27,8 @@ import { PrismaAcademicRepository } from './modules/institute/academic/academic.
 import { AcademicService } from './modules/institute/academic/academic.service';
 import { PrismaFinanceRepository } from './modules/institute/finance/finance.repository';
 import { FinanceService } from './modules/institute/finance/finance.service';
+import { PrismaCostRepository } from './modules/institute/cost/cost.repository';
+import { CostService } from './modules/institute/cost/cost.service';
 import { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { YoutubeMetadataClient } from './modules/lms/recorded/youtube';
 import { CourseController } from './modules/lms/courses/course.controller';
@@ -119,6 +121,7 @@ export function createServerApp(): ServerApp {
   const instituteRepository = new PrismaInstituteRepository();
   const instituteService = new InstituteService(instituteRepository);
   const academicRepository = new PrismaAcademicRepository();
+  const financeRepository = new PrismaFinanceRepository();
   const authService = new AuthService({
     repository: authRepository,
     unusablePasswordHash: () => hashPassword(randomBytes(24).toString('hex')),
@@ -198,7 +201,8 @@ export function createServerApp(): ServerApp {
     quizService: new QuizService({ repository: new PrismaQuizRepository() }),
     instituteService: instituteService,
     academicService: new AcademicService(academicRepository, instituteService, instituteRepository),
-    financeService: new FinanceService(new PrismaFinanceRepository(), instituteService, instituteRepository, academicRepository),
+    financeService: new FinanceService(financeRepository, instituteService, instituteRepository, academicRepository),
+    costService: new CostService(new PrismaCostRepository(), instituteService, instituteRepository, academicRepository, financeRepository),
     healthService: new HealthService({
       repository: healthRepository,
       stepUp: {
