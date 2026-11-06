@@ -14,11 +14,11 @@ const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
 type Db = typeof import('../../src/config/database');
 
 const POLICY = {
-  electricity: { tariffCategory: 'COMMERCIAL', allocation: 'POWER_HOURS', vatRatePercent: 15, vatRecoverable: false, breakerAmps: {} },
+  electricity: { tariffCategory: 'COMMERCIAL', allocation: 'POWER_HOURS', vatRatePercent: 15, vatRegistered: false, vatRecoveryPercent: 0, breakerAmps: {} },
   depreciation: { start: 'PURCHASE_MONTH', defaultLifeMonths: 60 },
   overhead: { basis: 'AREA' },
   occupancy: { availableHoursPerMonth: 176 },
-  revenue: { basis: 'CASH' },
+  revenue: { basis: 'OVER_TIME' },
 };
 const policyWith = (over: { electricity?: object; depreciation?: object; overhead?: object; occupancy?: object; revenue?: object }) => ({
   electricity: { ...POLICY.electricity, ...over.electricity },
@@ -179,10 +179,15 @@ describeDb('Institute cost engine API (real database)', () => {
       const w = await world();
       const none = await report(w.h, w);
       expect([none.status, none.body.error.code]).toEqual([409, 'NO_APPROVED_POLICY']);
-      const bad = await w.fin.put('/cost/policy/draft', { policy: { ...POLICY, electricity: { ...POLICY.electricity, allocation: 'GUESS', vatRatePercent: 150 }, depreciation: { start: 'NEVER', defaultLifeMonths: 0 }, revenue: { basis: 7 } } });
+      const bad = await w.fin.put('/cost/policy/draft', { policy: { ...POLICY, electricity: { ...POLICY.electricity, allocation: 'GUESS', vatRatePercent: 150, vatRecoveryPercent: 120 }, depreciation: { start: 'NEVER', defaultLifeMonths: 0 }, revenue: { basis: 7 } } });
       expect([bad.status, bad.body.error.code]).toEqual([422, 'INVALID_POLICY']);
-      expect(bad.body.error.details.map((d: { field: string }) => d.field).sort()).toEqual(['depreciation.defaultLifeMonths', 'depreciation.start', 'electricity.allocation', 'electricity.vatRatePercent', 'revenue.basis']);
+      expect(bad.body.error.details.map((d: { field: string }) => d.field).sort()).toEqual(['depreciation.defaultLifeMonths', 'depreciation.start', 'electricity.allocation', 'electricity.vatRatePercent', 'electricity.vatRecoveryPercent', 'revenue.basis']);
       expect((await w.fin.put('/cost/policy/draft', { policy: {} })).status).toBe(422);
+      // not registered for VAT but claiming a deduction is a contradiction the policy refuses
+      const contradiction = await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { vatRegistered: false, vatRecoveryPercent: 100 } }) });
+      expect([contradiction.status, contradiction.body.error.details[0].field]).toEqual([422, 'electricity.vatRecoveryPercent']);
+      // the old boolean is not accepted any more
+      expect((await w.fin.put('/cost/policy/draft', { policy: { ...POLICY, electricity: { tariffCategory: 'COMMERCIAL', allocation: 'AREA', vatRatePercent: 15, vatRecoverable: true, breakerAmps: {} } } })).status).toBe(422);
       expect((await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { breakerAmps: { [randomUUID()]: 150 } } }) })).status).toBe(422); // unknown branch
       expect((await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { breakerAmps: { [w.riyadh]: 0 } } }) })).status).toBe(422);
       expect((await w.h.post('/cost/policy/approve')).body.error.code).toBe('NO_DRAFT_POLICY');
@@ -254,10 +259,19 @@ describeDb('Institute cost engine API (real database)', () => {
       // all 10 sessions absorb the rooms' cost; instructors: 10 h x 150.00 + 10 h x 100.00 = 2,500.00; 2 active students
       const p = r.programs[0];
       expect(p).toMatchObject({ name: 'دبلوم الإدارة', held_minutes: 1200, facility_cost: '12200.00', instructor_cost: '2500.00', total_cost: '14700.00', active_students: 2, cost_per_student: '7350.00' });
-      expect(p).toMatchObject({ revenue: '2500.00', profit: '-12200.00' }); // cash collected in September
+      // over time (the default, IFRS 15): the 6,000.00 invoice is earned as the programme's 20 h are delivered; all 20 h were held in Sept
+      expect(p).toMatchObject({ revenue: '6000.00', profit: '-8700.00' });
       expect(r.idle_cost).toBe('0.00');
       expect(r.policy.version).toBe(1);
       expect(r.warnings).toEqual([]);
+    });
+
+    it('the cash basis is allowed but flagged as a management view, and reports what was collected in the month', async () => {
+      const w = await world();
+      await approve(w, policyWith({ revenue: { basis: 'CASH' } }));
+      const r = (await report(w.h, w)).body.data;
+      expect(r.programs[0]).toMatchObject({ revenue: '2500.00', profit: '-12200.00' });
+      expect(r.warnings).toEqual([{ code: 'REVENUE_BASIS_NOT_IFRS15' }]);
     });
 
     it('re-running gives exactly the same figures (deterministic), and another month is empty', async () => {
@@ -273,12 +287,12 @@ describeDb('Institute cost engine API (real database)', () => {
       expect(oct.idle_cost).toBe('300.00');
     });
 
-    it('area allocation, hours overhead, and electricity net of recoverable VAT change the figures as the policy says', async () => {
+    it('area allocation, hours overhead, and electricity net of deductible VAT change the figures as the policy says', async () => {
       const w = await world();
       await approve(w, policyWith({ electricity: { allocation: 'AREA' } }));
       const byArea = (await report(w.h, w)).body.data;
       expect(byArea.rooms.map((x: { electricity: string }) => x.electricity)).toEqual(['5142.86', '3857.14']);
-      await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { allocation: 'POWER_HOURS', vatRecoverable: true }, overhead: { basis: 'HOURS' } }) });
+      await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { allocation: 'POWER_HOURS', vatRegistered: true, vatRecoveryPercent: 100 }, overhead: { basis: 'HOURS' } }) });
       await w.h.post('/cost/policy/approve');
       // the bill states no VAT: net = 9,000.00 / 1.15 = 7,826.09 (estimated, and flagged). Overhead by held hours is 50 / 50.
       const net = (await report(w.h, w)).body.data;
@@ -292,10 +306,14 @@ describeDb('Institute cost engine API (real database)', () => {
       await w.h.del(`/finance/bills/${(await w.h.get('/finance/bills')).body.data.bills[0].id}`);
       expect((await w.h.post('/finance/bills', { branch_id: w.riyadh, period_start: '2026-09-01', period_end: '2026-09-30', amount: '9000.00', kwh: '12000', vat_amount: '1173.91' })).status).toBe(201);
       expect((await w.h.post('/finance/bills', { branch_id: w.riyadh, period_start: '2026-10-01', period_end: '2026-10-31', amount: '100', vat_amount: '101' })).status).toBe(422);
-      await approve(w, policyWith({ electricity: { vatRecoverable: true } }));
+      await approve(w, policyWith({ electricity: { vatRegistered: true, vatRecoveryPercent: 100 } }));
       const r = (await report(w.h, w)).body.data;
       expect(r.electricity.cost).toBe('7826.09'); // 9,000.00 - 1,173.91
       expect(r.warnings).toEqual([]);
+      // mixed taxable / exempt activity: only 60% of the VAT is deductible -> 9,000.00 - 704.35
+      await w.fin.put('/cost/policy/draft', { policy: policyWith({ electricity: { vatRegistered: true, vatRecoveryPercent: 60 } }) });
+      await w.h.post('/cost/policy/approve');
+      expect((await report(w.h, w)).body.data.electricity.cost).toBe('8295.65');
     });
 
     it('by meter: a sub-metered room bears its kWh share, common areas are shared by area', async () => {

@@ -686,7 +686,7 @@ export interface FinSummary { month: string; branches: { branch_id: string; inco
 export interface FinDues { month: string; total: string; instructors: { instructor_id: string; branch_id: string; name: string; minutes: number; hourly_rate: string; pay: string }[] }
 export interface FinClosed { id: string; branch_id: string; period: string; closed_by: string; closed_at: string }
 export interface CostPolicyParams {
-  electricity: { tariffCategory: string; allocation: 'AREA' | 'POWER_HOURS' | 'METER'; vatRatePercent: number; vatRecoverable: boolean; breakerAmps: Record<string, number> };
+  electricity: { tariffCategory: string; allocation: 'AREA' | 'POWER_HOURS' | 'METER'; vatRatePercent: number; vatRegistered: boolean; vatRecoveryPercent: number; breakerAmps: Record<string, number> };
   depreciation: { start: 'PURCHASE_MONTH' | 'NEXT_MONTH'; defaultLifeMonths: number };
   overhead: { basis: 'AREA' | 'HOURS' };
   occupancy: { availableHoursPerMonth: number };

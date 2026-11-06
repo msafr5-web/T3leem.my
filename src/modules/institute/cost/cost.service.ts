@@ -59,6 +59,12 @@ export function parsePolicy(raw: unknown): { ok: true; policy: CostPolicyParams 
 
   const vat = e.vatRatePercent;
   if (!(typeof vat === 'number' && vat >= 0 && vat <= 100 && Math.round(vat * 100) === vat * 100)) bad('electricity.vatRatePercent', 'must be a percentage from 0 to 100 with at most 2 decimals');
+  const rec = e.vatRecoveryPercent;
+  const recoveryValid = typeof rec === 'number' && rec >= 0 && rec <= 100 && Math.round(rec * 100) === rec * 100;
+  if (!recoveryValid) bad('electricity.vatRecoveryPercent', 'must be a percentage from 0 to 100 with at most 2 decimals');
+  const recovery = typeof rec === 'number' ? rec : 0;
+  // Only a VAT-registered person can deduct input VAT: an unregistered institute with a recovery above 0 is a contradiction, not a default.
+  if (recoveryValid && e.vatRegistered === false && recovery > 0) bad('electricity.vatRecoveryPercent', 'must be 0 when the institute is not registered for VAT');
   const breakerAmps: Record<string, number> = {};
   const rawBreakers = e.breakerAmps === undefined ? {} : obj(e.breakerAmps, 'electricity.breakerAmps');
   for (const [branchId, amps] of Object.entries(rawBreakers)) {
@@ -71,7 +77,8 @@ export function parsePolicy(raw: unknown): { ok: true; policy: CostPolicyParams 
       tariffCategory: oneOf(e.tariffCategory, 'electricity.tariffCategory', TARIFF_CATEGORIES),
       allocation: oneOf(e.allocation, 'electricity.allocation', ['AREA', 'POWER_HOURS', 'METER'] as const),
       vatRatePercent: typeof vat === 'number' ? vat : 15,
-      vatRecoverable: bool(e.vatRecoverable, 'electricity.vatRecoverable'),
+      vatRegistered: bool(e.vatRegistered, 'electricity.vatRegistered'),
+      vatRecoveryPercent: recovery,
       breakerAmps,
     },
     depreciation: { start: oneOf(d.start, 'depreciation.start', ['PURCHASE_MONTH', 'NEXT_MONTH'] as const), defaultLifeMonths: int(d.defaultLifeMonths, 'depreciation.defaultLifeMonths', 1, 600) },
@@ -80,6 +87,14 @@ export function parsePolicy(raw: unknown): { ok: true; policy: CostPolicyParams 
     revenue: { basis: oneOf(r.basis, 'revenue.basis', ['CASH', 'OVER_TIME'] as const) },
   };
   return problems.length > 0 ? { ok: false, problems } : { ok: true, policy };
+}
+
+/** Policies approved before VAT recovery became a percentage carry a boolean: read them as 100% (recoverable) or 0%. */
+export function normalizePolicy(p: CostPolicyParams): CostPolicyParams {
+  const e = p.electricity as CostPolicyParams['electricity'] & { vatRecoverable?: boolean };
+  if (e.vatRegistered !== undefined && e.vatRecoveryPercent !== undefined) return p;
+  const recoverable = e.vatRecoverable === true;
+  return { ...p, electricity: { ...e, vatRegistered: recoverable, vatRecoveryPercent: recoverable ? 100 : 0 } };
 }
 
 export interface BillCheck {
@@ -207,7 +222,7 @@ export class CostService {
     await this.branchInScope(tenantId, p, input.branchId);
     const approved = await this.repo.approvedPolicy(tenantId);
     if (!approved) throw HttpError.conflict('NO_APPROVED_POLICY', 'Approve a cost policy first: reports are only produced under an approved policy');
-    const policy = approved.params;
+    const policy = normalizePolicy(approved.params);
     const month = monthStart(input.month);
     const next = nextMonthStart(month);
     // Month bounds are Saudi-time midnights, like every other date in the institute.

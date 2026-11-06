@@ -14,7 +14,8 @@ const ALLOCATION: Record<string, string> = { AREA: 'بالمساحة', POWER_HOU
 const CATEGORY: Record<string, string> = { COMMERCIAL: 'تجاري (يشمل المعاهد والمدارس الأهلية)', GOVERNMENT: 'حكومي', INDUSTRIAL: 'صناعي', AGRICULTURAL: 'زراعي', CHARITY: 'جمعيات خيرية' };
 const WARNING: Record<string, string> = {
   NO_BILL: 'لا توجد فاتورة كهرباء لهذا الشهر: كهرباء القاعات صفر.',
-  BILL_NET_OF_VAT_ESTIMATED: 'الضريبة غير مدخلة في الفاتورة: حُسبت تقديرياً (المبلغ ÷ 1 + النسبة).',
+  BILL_NET_OF_VAT_ESTIMATED: 'الضريبة غير مدخلة في الفاتورة: حُسبت تقديرياً من النسبة لخصمها. أدخل الضريبة المذكورة في الفاتورة للدقة.',
+  REVENUE_BASIS_NOT_IFRS15: 'أساس الإيراد «المحصَّل» رأي إداري، وليس وفق IFRS 15 (التحقق عبر الزمن).',
   NO_USAGE_FALLBACK_AREA: 'لم تُنفَّذ حصص في الشهر، فوُزّعت الكهرباء بالمساحة.',
   NO_BILL_KWH_FALLBACK_POWER_HOURS: 'لا توجد قراءات عدادات أو كيلوواط ساعة في الفاتورة، فوُزّعت بالقدرة × الساعات.',
   READINGS_EXCEED_BILL_KWH: 'قراءات العدادات أكبر من استهلاك الفاتورة: استُعملت كنسب فقط.',
@@ -52,7 +53,8 @@ function PolicyForm({ slug, p, branches, note }: { slug: string; p: CostPolicyPa
         <label>فئة التعرفة<select name="tariffCategory" defaultValue={p.electricity.tariffCategory}>{Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
         <label>توزيع الكهرباء على القاعات<select name="allocation" defaultValue={p.electricity.allocation}>{Object.entries(ALLOCATION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
         <label>نسبة ضريبة القيمة المضافة % <input type="number" name="vatRatePercent" min={0} max={100} step="0.01" defaultValue={p.electricity.vatRatePercent} /></label>
-        <label className="check"><input type="checkbox" name="vatRecoverable" defaultChecked={p.electricity.vatRecoverable} /> الضريبة على الكهرباء قابلة للاسترداد (التكلفة تُحسب بدونها). قرار المحاسب: يتوقف على تسجيل المعهد في الضريبة ونوع إيراده.</label>
+        <label className="check"><input type="checkbox" name="vatRegistered" defaultChecked={p.electricity.vatRegistered} /> المعهد مسجَّل في ضريبة القيمة المضافة (التسجيل إلزامي إذا جاوزت توريداته الخاضعة 375,000 ريال خلال 12 شهراً). غير المسجَّل لا يخصم ضريبة المدخلات.</label>
+        <label>نسبة الضريبة القابلة للخصم % <span className="hint">100 إذا كانت كل توريداتك خاضعة (التعليم خاضع، وللمواطنين تتحمل الدولة الضريبة)؛ أقل إذا كانت لديك توريدات معفاة (كتأجير سكني)، فتُوزَّع بنسبة الخاضع</span><input type="number" name="vatRecoveryPercent" min={0} max={100} step="0.01" defaultValue={p.electricity.vatRecoveryPercent} /></label>
         {branches.map((b) => (
           <label key={b.id}>سعة القاطع الرئيسي لفرع {b.name} (أمبير) <span className="hint">للرسم الثابت من 2027</span><input type="number" name={`amps_${b.id}`} min={1} max={10000} defaultValue={p.electricity.breakerAmps[b.id] ?? ''} /></label>
         ))}
@@ -66,7 +68,7 @@ function PolicyForm({ slug, p, branches, note }: { slug: string; p: CostPolicyPa
         <legend className="small">التحميل والإيراد</legend>
         <label>توزيع المصروفات العامة (غير المرتبطة بقاعة)<select name="overheadBasis" defaultValue={p.overhead.basis}><option value="AREA">بالمساحة</option><option value="HOURS">بساعات التشغيل الفعلية</option></select></label>
         <label>ساعات القاعة المتاحة شهرياً <span className="hint">مقام الإشغال</span><input type="number" name="availableHours" min={1} max={744} defaultValue={p.occupancy.availableHoursPerMonth} /></label>
-        <label>أساس إيراد البرنامج<select name="revenueBasis" defaultValue={p.revenue.basis}><option value="CASH">المحصَّل في الشهر</option><option value="OVER_TIME">يُثبَّت عبر الزمن بنسبة الساعات المنفذة (IFRS 15)</option></select></label>
+        <label>أساس إيراد البرنامج<select name="revenueBasis" defaultValue={p.revenue.basis}><option value="OVER_TIME">يُثبَّت عبر الزمن بنسبة الساعات المنفذة (IFRS 15، الموصى به)</option><option value="CASH">المحصَّل في الشهر (رأي إداري، ليس وفق IFRS 15)</option></select></label>
       </fieldset>
       <label>ملاحظة للاعتماد<input name="note" maxLength={500} defaultValue={note ?? ''} /></label>
     </ActionForm>
@@ -115,7 +117,7 @@ export default async function CostPage({ params, searchParams }: { params: Promi
   const w = me.can_write;
   const notice = sp.saved ? NOTICES[sp.saved] : null;
   const link = (m: string, b = branchId) => `/${slug}/institute/cost?month=${m}${b ? `&branch=${b}` : ''}`;
-  const formBase: CostPolicyParams = (draft ?? approved)?.params ?? policies?.defaults ?? { electricity: { tariffCategory: 'COMMERCIAL', allocation: 'POWER_HOURS', vatRatePercent: 15, vatRecoverable: false, breakerAmps: {} }, depreciation: { start: 'PURCHASE_MONTH', defaultLifeMonths: 60 }, overhead: { basis: 'AREA' }, occupancy: { availableHoursPerMonth: 176 }, revenue: { basis: 'CASH' } };
+  const formBase: CostPolicyParams = (draft ?? approved)?.params ?? policies?.defaults ?? { electricity: { tariffCategory: 'COMMERCIAL', allocation: 'METER', vatRatePercent: 15, vatRegistered: true, vatRecoveryPercent: 100, breakerAmps: {} }, depreciation: { start: 'PURCHASE_MONTH', defaultLifeMonths: 60 }, overhead: { basis: 'AREA' }, occupancy: { availableHoursPerMonth: 176 }, revenue: { basis: 'OVER_TIME' } };
 
   return (
     <div className="stack" style={{ gap: 28 }}>

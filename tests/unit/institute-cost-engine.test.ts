@@ -166,7 +166,8 @@ describe('room costs', () => {
     { id: 'R1', name: 'معمل', areaX100: 8000, kwX100: 1200 },
     { id: 'R2', name: 'قاعة', areaX100: 6000, kwX100: 500 },
   ];
-  const policy: CostPolicyParams = { ...DEFAULT_POLICY, electricity: { ...DEFAULT_POLICY.electricity, allocation: 'POWER_HOURS' } };
+  // Not registered for VAT: the whole bill is a cost (the figures below are then the bill as paid)
+  const policy: CostPolicyParams = { ...DEFAULT_POLICY, electricity: { ...DEFAULT_POLICY.electricity, allocation: 'POWER_HOURS', vatRegistered: false, vatRecoveryPercent: 0 } };
   const computer: DepAsset = { id: 'pc', roomId: 'R1', status: 'IN_SERVICE', purchaseDate: '2026-01-10', retiredOn: null, costCents: 1_200_000, residualBp: 1000, usefulLifeMonths: 36 };
   const input = {
     month: '2026-09-01',
@@ -191,14 +192,32 @@ describe('room costs', () => {
     expect(r1.occupancyPercent).toBe(75); // 132 / 176 hours
   });
 
-  it('takes electricity net of VAT when the policy says VAT is recoverable (stated, or estimated and flagged)', () => {
-    const rec = { ...policy, electricity: { ...policy.electricity, vatRecoverable: true } };
-    const stated = computeRoomCosts({ ...input, policy: rec, bill: { amountCents: 900_000, vatCents: 117_391, kwhX100: null } });
+  it('takes input VAT out of the electricity cost as far as it is deductible: stated VAT, or estimated from the rate and flagged', () => {
+    const registered = (percent: number) => ({ ...policy, electricity: { ...policy.electricity, vatRegistered: true, vatRecoveryPercent: percent } });
+    // fully taxable: 9,000.00 less the 1,173.91 VAT stated on the bill
+    const stated = computeRoomCosts({ ...input, policy: registered(100), bill: { amountCents: 900_000, vatCents: 117_391, kwhX100: null } });
     expect(stated.electricity.costCents).toBe(782_609);
     expect(stated.warnings.some((w) => w.code === 'BILL_NET_OF_VAT_ESTIMATED')).toBe(false);
-    const estimated = computeRoomCosts({ ...input, policy: rec });
-    expect(estimated.electricity.costCents).toBe(782_609); // 9000.00 / 1.15 = 7826.09
+    // VAT not stated: 9,000.00 x 15 / 115 = 1,173.91 estimated, and flagged
+    const estimated = computeRoomCosts({ ...input, policy: registered(100) });
+    expect(estimated.electricity.costCents).toBe(782_609);
     expect(estimated.warnings).toContainEqual({ code: 'BILL_NET_OF_VAT_ESTIMATED' });
+    // mixed activity: only the taxable share is deducted (50% of 1,173.91 = 586.96 rounded), the rest stays a cost
+    expect(computeRoomCosts({ ...input, policy: registered(50), bill: { amountCents: 900_000, vatCents: 117_391, kwhX100: null } }).electricity.costCents).toBe(900_000 - 58_696);
+    // a share of 66.67% (the ZATCA guideline's own example) of 5,000 would be 3,333.50 -> checked on the bill amount here
+    expect(computeRoomCosts({ ...input, policy: registered(66.67), bill: { amountCents: 1_150_000, vatCents: 150_000, kwhX100: null } }).electricity.costCents).toBe(1_150_000 - 100_005);
+  });
+
+  it('an institute not registered for VAT cannot deduct anything, whatever the percentage says; and says nothing about estimating', () => {
+    const unreg = { ...policy, electricity: { ...policy.electricity, vatRegistered: false, vatRecoveryPercent: 100 } };
+    const r = computeRoomCosts({ ...input, policy: unreg, bill: { amountCents: 900_000, vatCents: 117_391, kwhX100: null } });
+    expect(r.electricity.costCents).toBe(900_000);
+    expect(computeRoomCosts({ ...input, policy: unreg }).warnings.some((w) => w.code === 'BILL_NET_OF_VAT_ESTIMATED')).toBe(false);
+  });
+
+  it('defaults follow the official positions: metered use, VAT deductible in full when registered, revenue over time', () => {
+    expect(DEFAULT_POLICY.electricity).toMatchObject({ allocation: 'METER', vatRegistered: true, vatRecoveryPercent: 100, tariffCategory: 'COMMERCIAL', vatRatePercent: 15 });
+    expect(DEFAULT_POLICY.revenue.basis).toBe('OVER_TIME');
   });
 
   it('reports what it cannot cost instead of guessing: no bill, assets without date / cost, retired without a date', () => {
@@ -224,7 +243,7 @@ describe('room costs', () => {
 });
 
 describe('program costing and profit', () => {
-  const policy: CostPolicyParams = DEFAULT_POLICY;
+  const policy: CostPolicyParams = { ...DEFAULT_POLICY, revenue: { basis: 'CASH' } }; // cash figures below; over-time cases set their own basis
   const rooms = [{ roomId: 'R1', name: 'x', electricityCents: 0, depreciationCents: 0, directExpenseCents: 0, overheadCents: 0, totalCents: 100_000, heldMinutes: 600, costPerHourCents: 10_000, occupancyPercent: 0 }];
   const program = (over: object = {}) => ({ id: 'P1', name: 'دبلوم', activeStudents: 4, totalMinutes: 6000, invoicedCents: 1_200_000, collectedCents: 300_000, deliveredBeforeMinutes: 0, deliveredUntilMinutes: 0, ...over });
 
@@ -240,6 +259,12 @@ describe('program costing and profit', () => {
     expect(r.programs[0]).toMatchObject({ facilityCents: 20_000, instructorCents: 30_000, totalCostCents: 50_000, costPerStudentCents: 12_500, revenueCents: 300_000, profitCents: 250_000, heldMinutes: 120 });
     expect(r.programs[1]).toMatchObject({ facilityCents: 10_000, instructorCents: 15_000, costPerStudentCents: null });
     expect(r.idleCostCents).toBe(100_000 - 30_000); // 70% of the room's minutes were not used
+  });
+
+  it('a cash basis works but is flagged as a management view, not IFRS 15', () => {
+    const cash = computeProgramCosts({ policy, rooms, sessions: [], hourlyRateCents: {}, programs: [program()] });
+    expect(cash.warnings).toEqual([{ code: 'REVENUE_BASIS_NOT_IFRS15' }]);
+    expect(cash.programs[0]!.revenueCents).toBe(300_000);
   });
 
   it('over time: invoiced total x the share of the program hours delivered in the month, never beyond the total', () => {

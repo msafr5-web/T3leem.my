@@ -378,7 +378,7 @@ export async function saveCostPolicyAction(slug: string, branchIds: string[], _p
     if (v) breakerAmps[id] = Number(v);
   }
   const policy = {
-    electricity: { tariffCategory: str(form, 'tariffCategory'), allocation: str(form, 'allocation'), vatRatePercent: Number(str(form, 'vatRatePercent')), vatRecoverable: form.get('vatRecoverable') === 'on', breakerAmps },
+    electricity: { tariffCategory: str(form, 'tariffCategory'), allocation: str(form, 'allocation'), vatRatePercent: Number(str(form, 'vatRatePercent')), vatRegistered: form.get('vatRegistered') === 'on', vatRecoveryPercent: form.get('vatRegistered') === 'on' ? Number(str(form, 'vatRecoveryPercent') || 0) : 0, breakerAmps },
     depreciation: { start: str(form, 'depStart'), defaultLifeMonths: Number(str(form, 'defaultLifeMonths')) },
     overhead: { basis: str(form, 'overheadBasis') },
     occupancy: { availableHoursPerMonth: Number(str(form, 'availableHours')) },

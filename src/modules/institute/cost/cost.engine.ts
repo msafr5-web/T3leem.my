@@ -24,8 +24,17 @@ export interface CostPolicyParams {
     allocation: ElectricityAllocation;
     /** VAT rate in percent, applied when estimating what a bill should be (15 at the time of writing). */
     vatRatePercent: number;
-    /** True when input VAT on the bill is recoverable (VAT-registered with taxable supplies): cost is then taken net of VAT. */
-    vatRecoverable: boolean;
+    /**
+     * Whether the institute is registered for VAT (mandatory above SAR 375,000 of taxable supplies in 12 months). Only a registered
+     * person can deduct input VAT; an unregistered one bears it as a cost.
+     */
+    vatRegistered: boolean;
+    /**
+     * The share of the VAT on the bill that can be deducted, in percent. ZATCA's input-tax guideline: a person making only taxable
+     * supplies (standard or zero rated; private education is taxable, the State bearing the VAT for citizens) deducts in full (100);
+     * with exempt supplies as well, the overhead VAT (electricity and water are named) is apportioned to the taxable share.
+     */
+    vatRecoveryPercent: number;
     /** Main breaker size in amperes per branch id, for the fixed charge. */
     breakerAmps: Record<string, number>;
   };
@@ -42,11 +51,13 @@ export interface CostPolicyParams {
 }
 
 export const DEFAULT_POLICY: CostPolicyParams = {
-  electricity: { tariffCategory: 'COMMERCIAL', allocation: 'POWER_HOURS', vatRatePercent: 15, vatRecoverable: false, breakerAmps: {} },
+  // Defaults follow the official positions: metered use first (the cause), connected load x hours as the proxy, area as the last resort;
+  // input VAT deductible in full for a registered, fully taxable institute; tuition recognised over time (IFRS 15).
+  electricity: { tariffCategory: 'COMMERCIAL', allocation: 'METER', vatRatePercent: 15, vatRegistered: true, vatRecoveryPercent: 100, breakerAmps: {} },
   depreciation: { start: 'PURCHASE_MONTH', defaultLifeMonths: 60 },
   overhead: { basis: 'AREA' },
   occupancy: { availableHoursPerMonth: 176 },
-  revenue: { basis: 'CASH' },
+  revenue: { basis: 'OVER_TIME' },
 };
 
 // ------------------------------------------------------------------ exact allocation
@@ -130,7 +141,8 @@ export type Warning =
   | { code: 'ASSET_RETIRED_WITHOUT_DATE'; detail: string }
   | { code: 'ASSET_NO_COST'; detail: string }
   | { code: 'NO_ROOMS'; detail?: undefined }
-  | { code: 'NO_PROGRAM_HOURS'; detail: string };
+  | { code: 'NO_PROGRAM_HOURS'; detail: string }
+  | { code: 'REVENUE_BASIS_NOT_IFRS15'; detail?: undefined };
 
 export interface ElectricityInput {
   method: ElectricityAllocation;
@@ -245,16 +257,19 @@ export function computeRoomCosts(input: RoomCostInput): RoomCostResult {
   const { rooms, policy } = input;
   const warnings: Warning[] = [];
 
-  // Electricity: net of recoverable VAT when the policy says so (an estimate when the bill did not state its VAT).
+  // Electricity: what the institute actually bears = the bill less the input VAT it can deduct. The VAT is the one stated on the bill,
+  // or estimated from the rate (and flagged) when the bill did not state it. Not registered = nothing deductible.
   let electricityCost = 0;
   if (!input.bill) warnings.push({ code: 'NO_BILL' });
-  else if (policy.electricity.vatRecoverable) {
-    if (input.bill.vatCents !== null) electricityCost = input.bill.amountCents - input.bill.vatCents;
-    else {
-      electricityCost = Math.round((input.bill.amountCents * 100) / (100 + policy.electricity.vatRatePercent));
-      warnings.push({ code: 'BILL_NET_OF_VAT_ESTIMATED' });
+  else {
+    const recoveryBp = policy.electricity.vatRegistered ? Math.round(policy.electricity.vatRecoveryPercent * 100) : 0;
+    let vat = input.bill.vatCents;
+    if (vat === null) {
+      vat = Math.round((input.bill.amountCents * policy.electricity.vatRatePercent) / (100 + policy.electricity.vatRatePercent));
+      if (recoveryBp > 0) warnings.push({ code: 'BILL_NET_OF_VAT_ESTIMATED' });
     }
-  } else electricityCost = input.bill.amountCents;
+    electricityCost = input.bill.amountCents - Math.round((vat * recoveryBp) / 10_000);
+  }
 
   const elec = allocateElectricity({ method: policy.electricity.allocation, costCents: electricityCost, billKwhX100: input.bill?.kwhX100 ?? null, rooms, heldMinutes: input.heldMinutes, readingsKwhX100: input.readingsKwhX100 });
   warnings.push(...elec.warnings);
@@ -385,7 +400,7 @@ export function computeProgramCosts(input: {
     const cur = acc.get(s.programId) ?? { minutes: 0, facility: 0, instructor: 0 };
     acc.set(s.programId, { minutes: cur.minutes + s.minutes, facility: cur.facility + facility, instructor: cur.instructor + pay });
   }
-  const warnings: Warning[] = [];
+  const warnings: Warning[] = input.policy.revenue.basis === 'CASH' ? [{ code: 'REVENUE_BASIS_NOT_IFRS15' }] : [];
   const programs: ProgramCost[] = input.programs.map((p) => {
     const c = acc.get(p.id) ?? { minutes: 0, facility: 0, instructor: 0 };
     let revenue = p.collectedCents;
