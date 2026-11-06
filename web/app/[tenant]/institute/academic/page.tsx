@@ -168,6 +168,7 @@ export default async function AcademicPage({ params, searchParams }: { params: P
                   <label>الفرع<BranchSelect name="branch_id" /></label>
                   <label>اسم البرنامج<input name="name" required maxLength={120} /></label>
                   <label>شروط القبول<input name="admission_requirements" maxLength={1000} /></label>
+                  <label className="check"><input type="checkbox" name="state_borne_vat" /> رسوم البرنامج مشمولة بتحمّل الدولة ضريبة القيمة المضافة عن المواطنين (التعليم الأهلي المشمول بالأمر الملكي أ/86: مدارس وجامعات أهلية وبرامج المؤسسة العامة للتدريب التقني والمهني المعادلة). تأكد من ترخيص البرنامج.</label>
                   {showMoney && <label>الرسوم (ريال)<input name="fee" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>}
                 </ActionForm>
               </details>
@@ -229,7 +230,7 @@ export default async function AcademicPage({ params, searchParams }: { params: P
           {studentList.length === 0 ? <p className="muted">لا يوجد طلاب.</p> : (
             <table className="table"><thead><tr><th>الاسم</th><th>الفرع</th><th>البرنامج / المستوى</th><th>الحالة</th>{w.student && <th />}</tr></thead>
               <tbody>{studentList.map((s) => (
-                <tr key={s.id}><td>{s.full_name}</td><td>{branchName.get(s.branch_id) ?? '—'}</td><td>{s.program_id ? `${programName.get(s.program_id) ?? ''}${s.level_id ? ` › ${levelName.get(s.level_id) ?? ''}` : ''}` : '—'}</td><td>{STATUS_LABEL[s.status]}</td>
+                <tr key={s.id}><td>{s.full_name}</td><td>{branchName.get(s.branch_id) ?? '—'}</td><td>{s.program_id ? `${programName.get(s.program_id) ?? ''}${s.level_id ? ` › ${levelName.get(s.level_id) ?? ''}` : ''}` : '—'}</td><td>{STATUS_LABEL[s.status]}{s.citizenship === 'SAUDI' ? ` · مواطن${s.has_national_id ? ` (هوية ••••${s.national_id_last4 ?? ''})` : ' (بلا هوية)'}` : ''}</td>
                   {w.student && <td><ConfirmAction action={deleteStudentAction.bind(null, slug, s.id)} label="حذف" confirmText={`حذف ${s.full_name}؟`} variant="danger" /></td>}</tr>
               ))}</tbody></table>
           )}
@@ -242,6 +243,8 @@ export default async function AcademicPage({ params, searchParams }: { params: P
                 <label>البرنامج والمستوى <span className="hint">(يجب أن يكون من فرع الطالب)</span>
                   <select name="track" defaultValue=""><option value="">بلا برنامج بعد</option>{programList.flatMap((p) => [<option key={p.id} value={`${p.id}|`}>{branchName.get(p.branch_id)} — {p.name}</option>, ...p.levels.map((l) => <option key={l.id} value={`${p.id}|${l.id}`}>{branchName.get(p.branch_id)} — {p.name} › {l.name}</option>)])}</select></label>
                 <label>تاريخ الالتحاق<input type="date" name="enrolled_on" /></label>
+                <label>الجنسية<select name="citizenship" defaultValue="OTHER"><option value="OTHER">غير سعودي (مقيم): الضريبة 15٪</option><option value="SAUDI">سعودي: تتحمل الدولة الضريبة في البرنامج المشمول</option></select></label>
+                <label>رقم الهوية الوطنية أو الإقامة <span className="hint">(١٠ أرقام؛ يلزم للمواطن في فاتورة تتحمل الدولة ضريبتها. يُحفظ مشفراً ولا يُعرض)</span><input name="national_id" inputMode="numeric" pattern="\d{10}" maxLength={10} dir="ltr" autoComplete="off" /></label>
                 <label>الجوال<input name="phone" maxLength={30} dir="ltr" inputMode="tel" /></label>
                 <label>البريد<input type="email" name="email" dir="ltr" /></label>
               </ActionForm>

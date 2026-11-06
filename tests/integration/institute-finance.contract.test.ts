@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { buildApp, sign, tenants } from './helpers/test-app';
+import { buildApp, sign, tenants, testCipher } from './helpers/test-app';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
@@ -46,7 +46,7 @@ describeDb('Institute finance API (real database)', () => {
     const instituteService = new InstituteService(instRepo);
     app = buildApp({
       instituteService,
-      academicService: new AcademicService(acadRepo, instituteService, instRepo),
+      academicService: new AcademicService(acadRepo, instituteService, instRepo, testCipher),
       financeService: new FinanceService(new PrismaFinanceRepository(), instituteService, instRepo, acadRepo),
     });
 

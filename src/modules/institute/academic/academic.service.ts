@@ -1,3 +1,4 @@
+import type { FieldCipher } from '../../../shared/utils/crypto';
 import { HttpError } from '../../../shared/utils/http-error';
 import type { Actor } from '../../provider/provider.types';
 import { can, canSeeValues, inScope, type Action, type Principal, type Resource } from '../institute.access';
@@ -35,6 +36,8 @@ export class AcademicService {
     private readonly repo: AcademicRepository,
     private readonly inst: InstituteService,
     private readonly base: Pick<InstituteRepository, 'getBranch' | 'getRoom'>,
+    /** Seals national IDs (AES-256-GCM) before they reach the database. */
+    private readonly cipher: Pick<FieldCipher, 'encrypt'>,
   ) {}
 
   private allow(p: Principal, resource: Resource, action: Action): void {
@@ -177,19 +180,31 @@ export class AcademicService {
     const scope = this.scope(p, f.branchId);
     return scope === 'none' ? [] : this.repo.listStudents(tenantId, { branchId: scope, programId: f.programId, status: f.status });
   }
-  async createStudent(tenantId: string, c: Caller, input: StudentInput): Promise<StudentRow> {
+  /**
+   * `nationalId` is the plain ID as typed (a Saudi citizen's starts with 1, a resident's with 2); it is sealed here and the plain
+   * value goes no further. Left undefined on an update it keeps the stored one.
+   */
+  private sealId(nationalId: string | null | undefined, citizenship: 'SAUDI' | 'OTHER'): { nationalIdEnc?: string | null; nationalIdLast4?: string | null } {
+    if (nationalId === undefined) return {};
+    if (nationalId === null) return { nationalIdEnc: null, nationalIdLast4: null };
+    if (!(citizenship === 'SAUDI' ? /^1\d{9}$/ : /^[12]\d{9}$/).test(nationalId)) throw HttpError.unprocessable('NATIONAL_ID_INVALID', citizenship === 'SAUDI' ? 'A Saudi national ID is 10 digits starting with 1' : 'The ID is 10 digits starting with 1 or 2');
+    return { nationalIdEnc: this.cipher.encrypt(Buffer.from(nationalId, 'utf8')), nationalIdLast4: nationalId.slice(-4) };
+  }
+  async createStudent(tenantId: string, c: Caller, input: StudentInput & { nationalId?: string | null }): Promise<StudentRow> {
     const p = await this.inst.principal(tenantId, c);
     this.allow(p, 'student', 'write');
     await this.branchInScope(tenantId, p, input.branchId);
     await this.requireTrack(tenantId, input);
-    return AcademicService.written(await this.repo.createStudent(tenantId, this.actor(c), input), 'student');
+    const { nationalId, ...rest } = input;
+    return AcademicService.written(await this.repo.createStudent(tenantId, this.actor(c), { ...rest, ...this.sealId(nationalId ?? null, input.citizenship) }), 'student');
   }
-  async updateStudent(tenantId: string, c: Caller, id: string, input: StudentInput): Promise<StudentRow> {
+  async updateStudent(tenantId: string, c: Caller, id: string, input: StudentInput & { nationalId?: string | null }): Promise<StudentRow> {
     const p = await this.inst.principal(tenantId, c);
     this.allow(p, 'student', 'write');
     const cur = await this.repo.getStudent(tenantId, id);
     if (!cur || !inScope(p, cur.branchId)) throw AcademicService.missing('student');
-    const next = { ...input, branchId: cur.branchId };
+    const { nationalId, ...rest } = input;
+    const next = { ...rest, branchId: cur.branchId, ...this.sealId(nationalId, input.citizenship) };
     await this.requireTrack(tenantId, next);
     return AcademicService.written(await this.repo.updateStudent(tenantId, this.actor(c), id, next), 'student');
   }

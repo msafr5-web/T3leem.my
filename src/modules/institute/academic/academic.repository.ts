@@ -27,6 +27,8 @@ export interface ProgramRow {
   admissionRequirements: string | null;
   fee: string;
   active: boolean;
+  /** Fees qualify for the State bearing the VAT of Saudi citizens (private education, Royal Order A/86). */
+  stateBorneVat: boolean;
   levels: LevelRow[];
 }
 export interface ProgramInput {
@@ -36,6 +38,7 @@ export interface ProgramInput {
   admissionRequirements: string | null;
   fee: string;
   active: boolean;
+  stateBorneVat: boolean;
 }
 
 export interface InstructorRow {
@@ -52,6 +55,7 @@ export interface InstructorRow {
 export type InstructorInput = Omit<InstructorRow, 'id'>;
 
 export type StudentStatus = 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'WITHDRAWN';
+export type Citizenship = 'SAUDI' | 'OTHER';
 export interface StudentRow {
   id: string;
   branchId: string;
@@ -63,8 +67,13 @@ export interface StudentRow {
   email: string | null;
   status: StudentStatus;
   enrolledOn: string | null;
+  citizenship: Citizenship;
+  /** Sealed ID (AES-256-GCM). Internal: copied onto a State-borne invoice, never sent to a client. */
+  nationalIdEnc: string | null;
+  nationalIdLast4: string | null;
 }
-export type StudentInput = Omit<StudentRow, 'id'>;
+/** On update, an ID left `undefined` is kept as it is; `null` removes it. */
+export type StudentInput = Omit<StudentRow, 'id' | 'nationalIdEnc' | 'nationalIdLast4'> & { nationalIdEnc?: string | null; nationalIdLast4?: string | null };
 
 export type SessionStatus = 'SCHEDULED' | 'HELD' | 'CANCELLED';
 export interface SessionRow {
@@ -159,7 +168,7 @@ const toSubject = (s: { id: string; branchId: string; levelId: string; name: str
 });
 type LevelWithSubjects = { id: string; branchId: string; programId: string; name: string; sortOrder: number; subjects: Parameters<typeof toSubject>[0][] };
 const toLevel = (l: LevelWithSubjects): LevelRow => ({ id: l.id, branchId: l.branchId, programId: l.programId, name: l.name, sortOrder: l.sortOrder, subjects: l.subjects.map(toSubject) });
-const toProgram = (p: { id: string; branchId: string; name: string; description: string | null; admissionRequirements: string | null; fee: Prisma.Decimal; active: boolean; levels: LevelWithSubjects[] }): ProgramRow => ({
+const toProgram = (p: { id: string; branchId: string; name: string; description: string | null; admissionRequirements: string | null; fee: Prisma.Decimal; active: boolean; stateBorneVat: boolean; levels: LevelWithSubjects[] }): ProgramRow => ({
   id: p.id,
   branchId: p.branchId,
   name: p.name,
@@ -167,6 +176,7 @@ const toProgram = (p: { id: string; branchId: string; name: string; description:
   admissionRequirements: p.admissionRequirements,
   fee: money(p.fee),
   active: p.active,
+  stateBorneVat: p.stateBorneVat,
   levels: p.levels.map(toLevel),
 });
 const treeInclude = { levels: { orderBy: { sortOrder: 'asc' as const }, include: { subjects: { orderBy: { name: 'asc' as const } } } } };
@@ -182,7 +192,7 @@ const toInstructor = (i: { id: string; branchId: string; userId: string | null; 
   hourlyRate: money(i.hourlyRate),
   active: i.active,
 });
-const toStudent = (s: { id: string; branchId: string; programId: string | null; levelId: string | null; userId: string | null; fullName: string; phone: string | null; email: string | null; status: string; enrolledOn: Date | null }): StudentRow => ({
+const toStudent = (s: { id: string; branchId: string; programId: string | null; levelId: string | null; userId: string | null; fullName: string; phone: string | null; email: string | null; status: string; enrolledOn: Date | null; citizenship: string; nationalIdEnc: string | null; nationalIdLast4: string | null }): StudentRow => ({
   id: s.id,
   branchId: s.branchId,
   programId: s.programId,
@@ -193,6 +203,9 @@ const toStudent = (s: { id: string; branchId: string; programId: string | null; 
   email: s.email,
   status: s.status as StudentStatus,
   enrolledOn: dateOnly(s.enrolledOn),
+  citizenship: s.citizenship as Citizenship,
+  nationalIdEnc: s.nationalIdEnc,
+  nationalIdLast4: s.nationalIdLast4,
 });
 const toSession = (s: { id: string; branchId: string; subjectId: string; roomId: string; instructorId: string; startsAt: Date; endsAt: Date; status: string; notes: string | null }): SessionRow => ({
   id: s.id,
@@ -388,7 +401,7 @@ export class PrismaAcademicRepository implements AcademicRepository {
   createStudent(tenantId: string, actor: Actor, input: StudentInput): Promise<AWrite<StudentRow>> {
     return withTenantTransaction(tenantId, async (tx) => {
       try {
-        const s = await tx.student.create({ data: { tenantId, ...input, enrolledOn: input.enrolledOn ? new Date(`${input.enrolledOn}T00:00:00Z`) : null } });
+        const s = await tx.student.create({ data: { tenantId, ...input, nationalIdEnc: input.nationalIdEnc ?? null, nationalIdLast4: input.nationalIdLast4 ?? null, enrolledOn: input.enrolledOn ? new Date(`${input.enrolledOn}T00:00:00Z`) : null } });
         await audit(tx, tenantId, actor, 'institute.student_created', s.id, { branchId: s.branchId, programId: s.programId });
         return { kind: 'ok' as const, value: toStudent(s) };
       } catch (e) {
@@ -402,10 +415,12 @@ export class PrismaAcademicRepository implements AcademicRepository {
     return withTenantTransaction(tenantId, async (tx) => {
       try {
         const { branchId: _b, ...rest } = input; // a student stays in their branch
-        const { count } = await tx.student.updateMany({ where: { tenantId, id }, data: { ...rest, enrolledOn: input.enrolledOn ? new Date(`${input.enrolledOn}T00:00:00Z`) : null } });
+        const { nationalIdEnc, nationalIdLast4, ...plain } = rest;
+        const idChange = nationalIdEnc === undefined ? {} : { nationalIdEnc, nationalIdLast4: nationalIdLast4 ?? null };
+        const { count } = await tx.student.updateMany({ where: { tenantId, id }, data: { ...plain, ...idChange, enrolledOn: input.enrolledOn ? new Date(`${input.enrolledOn}T00:00:00Z`) : null } });
         if (count === 0) return { kind: 'not_found' as const };
         const s = await tx.student.findFirstOrThrow({ where: { tenantId, id } });
-        await audit(tx, tenantId, actor, 'institute.student_updated', id, { status: s.status, programId: s.programId, levelId: s.levelId });
+        await audit(tx, tenantId, actor, 'institute.student_updated', id, { status: s.status, programId: s.programId, levelId: s.levelId, citizenship: s.citizenship, idChanged: nationalIdEnc !== undefined });
         return { kind: 'ok' as const, value: toStudent(s) };
       } catch (e) {
         if (isUnique(e)) return { kind: 'duplicate' as const };

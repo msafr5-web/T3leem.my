@@ -5,7 +5,7 @@ import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import { HttpError } from '../../../shared/utils/http-error';
 import { fromCents } from './finance.logic';
-import type { BillRow, BudgetRow, ClosedPeriodRow, ExpenseRow, PaymentMethod, PaymentRow } from './finance.repository';
+import type { BillRow, BudgetRow, ClosedPeriodRow, ExpenseRow, PaymentMethod, PaymentRow, PayoutMethod, PayoutRow } from './finance.repository';
 import type { BudgetView, FinanceService, InvoiceView } from './finance.service';
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
@@ -47,6 +47,11 @@ const invoiceJson = (v: InvoiceView) => ({
   amount: v.invoice.amount,
   discount: v.invoice.discount,
   net: fromCents(v.netCents),
+  vat_treatment: v.invoice.vatTreatment,
+  vat_rate_percent: v.invoice.vatRateBp / 100,
+  vat: fromCents(v.vatCents),
+  total: fromCents(v.totalCents),
+  beneficiary_id_last4: v.invoice.beneficiaryIdLast4,
   paid: fromCents(v.paidCents),
   outstanding: fromCents(v.outstandingCents),
   issued_on: v.invoice.issuedOn,
@@ -55,6 +60,7 @@ const invoiceJson = (v: InvoiceView) => ({
   installments: v.installments.map((i) => ({ due_on: i.dueOn, amount: fromCents(i.amountCents), paid: fromCents(i.paidCents), remaining: fromCents(i.remainingCents), state: i.state })),
   payments: v.payments.map(paymentJson),
 });
+const payoutJson = (p: PayoutRow) => ({ id: p.id, branch_id: p.branchId, instructor_id: p.instructorId, month: p.period, amount: p.amount, dues: p.duesAmount, minutes: p.minutes, hourly_rate: p.hourlyRate, paid_on: p.paidOn, method: p.method, reference: p.reference, voided: p.voided, void_reason: p.voidReason });
 const closedJson = (c: ClosedPeriodRow) => ({ id: c.id, branch_id: c.branchId, period: c.period, closed_by: c.closedBy, closed_at: c.closedAt.toISOString() });
 const budgetFromRow = (r: BudgetRow) => r;
 
@@ -64,8 +70,9 @@ export function buildFinanceRouter(service: FinanceService, jwt: JwtVerifyOption
   router.use('/institute/finance', requireFeature('institute'));
   const auth = authenticate(jwt);
   const ctx = (req: Request) => {
-    const { tenantId, user } = requireAuthContext(req);
-    return { tenantId, caller: { userId: user.id, userRole: user.role, ip: req.ip ?? null } };
+    const { tenantId, tenant, user } = requireAuthContext(req);
+    // An academy with a VAT number is VAT-registered: only then does an invoice carry VAT.
+    return { tenantId, caller: { userId: user.id, userRole: user.role, ip: req.ip ?? null, vatRegistered: Boolean(tenant.vatNumber) } };
   };
   const noStore = (res: Response) => res.setHeader('Cache-Control', 'no-store');
   const F = '/institute/finance';
@@ -258,7 +265,54 @@ export function buildFinanceRouter(service: FinanceService, jwt: JwtVerifyOption
     const { tenantId, caller } = ctx(req);
     const d = await service.instructorDues(tenantId, caller, { branchId: str(req.query.branch_id) ?? undefined, month: monthOf(req.query.month) });
     noStore(res);
-    res.json(ok({ month: d.month, total: fromCents(d.totalCents), instructors: d.rows.map((r) => ({ instructor_id: r.instructorId, branch_id: r.branchId, name: r.name, minutes: r.minutes, hourly_rate: r.hourlyRate, pay: fromCents(r.payCents) })) }));
+    res.json(
+      ok({
+        month: d.month,
+        total: fromCents(d.totalCents),
+        paid: fromCents(d.paidCents),
+        outstanding: fromCents(d.outstandingCents),
+        instructors: d.rows.map((r) => ({ instructor_id: r.instructorId, branch_id: r.branchId, name: r.name, minutes: r.minutes, hourly_rate: r.hourlyRate, pay: fromCents(r.payCents), paid: fromCents(r.paidCents), outstanding: fromCents(r.outstandingCents) })),
+        payouts: d.payouts.map(payoutJson),
+      }),
+    );
+  });
+
+  // ---- paying instructors ----
+  router.post(
+    `${F}/payouts`,
+    auth,
+    body('instructor_id').isUUID(),
+    body('month').matches(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/).withMessage('month must be YYYY-MM'),
+    money('amount', false, true),
+    dateField('paid_on'),
+    body('method').optional().isIn(['CASH', 'TRANSFER', 'CHEQUE', 'OTHER']),
+    body('reference').optional({ values: 'null' }).isString().isLength({ max: 120 }),
+    validate,
+    async (req: Request, res: Response) => {
+      const { tenantId, caller } = ctx(req);
+      const b = req.body as Record<string, unknown>;
+      const p = await service.recordPayout(tenantId, caller, {
+        instructorId: String(b.instructor_id),
+        month: monthOf(b.month),
+        amount: b.amount === undefined || b.amount === null || b.amount === '' ? undefined : amountOf(b.amount),
+        paidOn: String(b.paid_on),
+        method: (typeof b.method === 'string' ? b.method : 'TRANSFER') as PayoutMethod,
+        reference: str(b.reference),
+      });
+      res.status(201).json(ok(payoutJson(p)));
+    },
+  );
+  router.post(`${F}/payouts/:id/void`, auth, uuid('id'), body('reason').isString().trim().isLength({ min: 3, max: 300 }).withMessage('A reason is required'), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    res.json(ok(payoutJson(await service.voidPayout(tenantId, caller, req.params.id as string, String(req.body.reason).trim()))));
+  });
+
+  // ---- VAT of the month's invoices (to prepare the VAT return) ----
+  router.get(`${F}/vat-summary`, auth, monthQuery(), query('branch_id').optional().isUUID(), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    const v = await service.vatSummary(tenantId, caller, { branchId: str(req.query.branch_id) ?? undefined, month: monthOf(req.query.month) });
+    noStore(res);
+    res.json(ok({ month: v.month, rows: v.rows.map((r) => ({ branch_id: r.branchId, treatment: r.treatment, invoices: r.invoices, net_amount: r.netAmount, vat_amount: r.vatAmount })) }));
   });
 
   return router;

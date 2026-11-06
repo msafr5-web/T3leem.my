@@ -2,12 +2,14 @@ import {
   addMonths,
   allocateInstallments,
   budgetStatus,
+  decideVat,
   evenInstallments,
   fromCents,
   instructorPayCents,
   monthStart,
   nextMonthStart,
   toCents,
+  vatOn,
 } from '../../src/modules/institute/finance/finance.logic';
 
 describe('money conversion', () => {
@@ -84,5 +86,24 @@ describe('instructor pay', () => {
     expect(instructorPayCents(90, toCents('150.00'))).toBe(22500);
     expect(instructorPayCents(1, toCents('100.00'))).toBe(167); // 1.6667 -> 1.67
     expect(instructorPayCents(0, toCents('150.00'))).toBe(0);
+  });
+});
+
+describe('VAT on an invoice', () => {
+  const decide = (over: object = {}) => decideVat({ registered: true, citizenship: 'OTHER', programStateBorne: true, standardRatePercent: 15, ...over });
+  it('is decided from registration, citizenship and the programme, and the State-borne case needs both a citizen and a qualifying programme', () => {
+    expect(decide({ registered: false })).toEqual({ treatment: 'NONE', rateBp: 0 });
+    expect(decide({ registered: false, citizenship: 'SAUDI' })).toEqual({ treatment: 'NONE', rateBp: 0 });
+    expect(decide()).toEqual({ treatment: 'STANDARD', rateBp: 1500 }); // expatriate
+    expect(decide({ citizenship: 'SAUDI' })).toEqual({ treatment: 'STATE_BORNE', rateBp: 0 });
+    expect(decide({ citizenship: 'SAUDI', programStateBorne: false })).toEqual({ treatment: 'STANDARD', rateBp: 1500 });
+    expect(decide({ standardRatePercent: 5 })).toEqual({ treatment: 'STANDARD', rateBp: 500 });
+  });
+  it('rounds the VAT to the halala on the net after discount', () => {
+    expect(vatOn(90000, 1500)).toBe(13500); // 900.00 -> 135.00
+    expect(vatOn(10001, 1500)).toBe(1500); // 100.01 -> 15.0015 -> 15.00
+    expect(vatOn(10003, 1500)).toBe(1500); // 15.0045 -> 15.00
+    expect(vatOn(10004, 1500)).toBe(1501); // 15.006 -> 15.01
+    expect(vatOn(12345, 0)).toBe(0);
   });
 });

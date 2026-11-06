@@ -41,6 +41,11 @@ const MESSAGES: Record<string, string> = {
   IMPORT_INVALID: 'في الملف صفوف لا يمكن استيرادها، ولم يُستورد شيء. صحّحها وأعد الرفع.',
   PAYLOAD_TOO_LARGE: 'حجم الملف أكبر من المسموح (٢ ميغابايت).',
   VALIDATION_FAILED: 'تحقق من الحقول: القيم غير صحيحة.',
+  NATIONAL_ID_REQUIRED: 'فاتورة المواطن (تتحمل الدولة ضريبتها) تتطلب هوية وطنية مسجلة للطالب. سجّلها أولاً من الطلاب.',
+  NATIONAL_ID_INVALID: 'رقم الهوية غير صحيح: هوية المواطن ١٠ أرقام تبدأ بـ١، ورقم الإقامة يبدأ بـ٢.',
+  ALREADY_PAID: 'سُدِّد مستحق هذا الشهر بالكامل.',
+  NOTHING_DUE: 'لا حصص منفذة لهذا المدرب في الشهر، أو أجر ساعته صفر.',
+  PAYOUT_NOT_FOUND: 'الصرف غير موجود.',
   INVALID_POLICY: 'قيم السياسة غير صحيحة. راجع الحقول.',
   NO_DRAFT_POLICY: 'لا توجد مسودة سياسة.',
   POLICY_FROZEN: 'السياسة المعتمدة لا تُعدَّل: عدّل مسودة جديدة.',
@@ -223,7 +228,7 @@ export async function importAssetsAction(slug: string, _prev: InstState, form: F
 const riyadh = (date: string, time: string): string => `${date}T${time}:00+03:00`;
 
 export async function addProgramAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
-  return save(slug, '/programs', 'POST', { branch_id: str(form, 'branch_id'), name: str(form, 'name'), description: optional(form, 'description'), admission_requirements: optional(form, 'admission_requirements'), fee: optional(form, 'fee') }, 'program');
+  return save(slug, '/programs', 'POST', { branch_id: str(form, 'branch_id'), name: str(form, 'name'), description: optional(form, 'description'), admission_requirements: optional(form, 'admission_requirements'), fee: optional(form, 'fee'), state_borne_vat: form.get('state_borne_vat') === 'on' }, 'program');
 }
 export async function deleteProgramAction(slug: string, id: string, _prev: InstState): Promise<InstState> {
   return save(slug, `/programs/${encodeURIComponent(id)}`, 'DELETE', undefined, 'program');
@@ -255,7 +260,7 @@ export async function addStudentAction(slug: string, _prev: InstState, form: For
     slug,
     '/students',
     'POST',
-    { branch_id: str(form, 'branch_id'), full_name: str(form, 'full_name'), phone: optional(form, 'phone'), email: optional(form, 'email'), program_id: track[0] || null, level_id: track[1] || null, enrolled_on: optional(form, 'enrolled_on') },
+    { branch_id: str(form, 'branch_id'), full_name: str(form, 'full_name'), phone: optional(form, 'phone'), email: optional(form, 'email'), program_id: track[0] || null, level_id: track[1] || null, enrolled_on: optional(form, 'enrolled_on'), citizenship: str(form, 'citizenship') === 'SAUDI' ? 'SAUDI' : 'OTHER', national_id: optional(form, 'national_id') ?? undefined },
     'student',
   );
 }
@@ -398,4 +403,19 @@ export async function saveReadingAction(slug: string, _prev: InstState, form: Fo
 }
 export async function deleteReadingAction(slug: string, month: string, branchId: string, id: string, _prev: InstState): Promise<InstState> {
   return saveCost(slug, `/cost/meter-readings/${encodeURIComponent(id)}`, 'DELETE', undefined, `?month=${month}&branch=${encodeURIComponent(branchId)}`, 'reading');
+}
+
+// ---- paying instructors ----
+export async function recordPayoutAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(
+    slug,
+    '/finance/payouts',
+    'POST',
+    { instructor_id: str(form, 'instructor_id'), month: monthOf(form), amount: optional(form, 'amount') ?? undefined, paid_on: str(form, 'paid_on'), method: str(form, 'method') || 'TRANSFER', reference: optional(form, 'reference') },
+    monthOf(form),
+    'payout',
+  );
+}
+export async function voidPayoutAction(slug: string, month: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, `/finance/payouts/${encodeURIComponent(str(form, 'payout_id'))}/void`, 'POST', { reason: str(form, 'reason') }, month, 'void');
 }

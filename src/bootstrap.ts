@@ -200,7 +200,7 @@ export function createServerApp(): ServerApp {
     }),
     quizService: new QuizService({ repository: new PrismaQuizRepository() }),
     instituteService: instituteService,
-    academicService: new AcademicService(academicRepository, instituteService, instituteRepository),
+    academicService: new AcademicService(academicRepository, instituteService, instituteRepository, new FieldCipher(env.FIELD_ENCRYPTION_KEY_BASE64)),
     financeService: new FinanceService(financeRepository, instituteService, instituteRepository, academicRepository),
     costService: new CostService(new PrismaCostRepository(), instituteService, instituteRepository, academicRepository, financeRepository),
     healthService: new HealthService({

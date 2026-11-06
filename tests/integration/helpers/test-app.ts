@@ -30,6 +30,7 @@ import { buildLearningFakes } from './learning-fakes';
 import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
 import { buildHealthFakes } from './health-fakes';
+import { FieldCipher } from '../../../src/shared/utils/crypto';
 import { buildInstituteFakes } from './institute-fakes';
 import { PrismaAcademicRepository } from '../../../src/modules/institute/academic/academic.repository';
 import { AcademicService } from '../../../src/modules/institute/academic/academic.service';
@@ -72,6 +73,9 @@ const resolver: TenantResolver = {
   findBySlug: async (slug) => Object.values(tenants).find((t) => t.slug === slug) ?? null,
   findByHost: async (host) => Object.values(tenants).find((t) => host === `${t.slug}.t3leem.my`) ?? null,
 };
+
+/** A fixed 32-byte key: tests that seal national IDs use it so they can also check what ends up in the table. */
+export const testCipher = new FieldCipher(Buffer.alloc(32, 7).toString('base64'));
 
 export const TRAINER = 'f1000000-0000-4000-8000-000000000001';
 export const ADMIN = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00';
@@ -366,7 +370,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     // The academic side is exercised against the real database (see institute-academic.contract.test.ts); other suites never reach it.
     costService: opts.costService ?? new CostService(new PrismaCostRepository(), institute.service, institute.repository, new PrismaAcademicRepository(), new PrismaFinanceRepository()),
     financeService: opts.financeService ?? new FinanceService(new PrismaFinanceRepository(), institute.service, institute.repository, new PrismaAcademicRepository()),
-    academicService: opts.academicService ?? new AcademicService(new PrismaAcademicRepository(), institute.service, institute.repository),
+    academicService: opts.academicService ?? new AcademicService(new PrismaAcademicRepository(), institute.service, institute.repository, testCipher),
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,

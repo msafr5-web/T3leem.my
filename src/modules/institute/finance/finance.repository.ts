@@ -59,6 +59,12 @@ export interface InvoiceRow {
   discount: string;
   issuedOn: string;
   status: 'OPEN' | 'CANCELLED';
+  /** VAT frozen at issue: NONE (not registered), STANDARD (rate in basis points) or STATE_BORNE (citizen, State bears it). */
+  vatTreatment: 'NONE' | 'STANDARD' | 'STATE_BORNE';
+  vatRateBp: number;
+  /** VAT charged to the student, on top of amount - discount. */
+  vatAmount: string;
+  beneficiaryIdLast4: string | null;
   installments: { id: string; dueOn: string; amount: string }[];
   payments: PaymentRow[];
 }
@@ -69,6 +75,12 @@ export interface InvoiceInput {
   amount: string;
   discount: string;
   issuedOn: string;
+  vatTreatment: 'NONE' | 'STANDARD' | 'STATE_BORNE';
+  vatRateBp: number;
+  vatAmount: string;
+  /** The student's sealed national ID, copied as a snapshot onto a State-borne invoice. */
+  beneficiaryIdEnc: string | null;
+  beneficiaryIdLast4: string | null;
   installments: { dueOn: string; amount: string }[];
 }
 export interface PaymentInput {
@@ -77,6 +89,45 @@ export interface PaymentInput {
   paidOn: string;
   method: PaymentMethod;
   reference: string | null;
+}
+
+export type PayoutMethod = 'CASH' | 'TRANSFER' | 'CHEQUE' | 'OTHER';
+export interface PayoutRow {
+  id: string;
+  branchId: string;
+  instructorId: string;
+  /** First day of the month the pay is for. */
+  period: string;
+  amount: string;
+  duesAmount: string;
+  minutes: number;
+  hourlyRate: string;
+  paidOn: string;
+  method: PayoutMethod;
+  reference: string | null;
+  voided: boolean;
+  voidReason: string | null;
+}
+export interface PayoutInput {
+  branchId: string;
+  instructorId: string;
+  period: string;
+  amount: string;
+  /** The month's dues (minutes x rate) when paid, and what they were computed from. */
+  duesAmount: string;
+  minutes: number;
+  hourlyRate: string;
+  paidOn: string;
+  method: PayoutMethod;
+  reference: string | null;
+}
+export interface VatSummaryRow {
+  branchId: string;
+  treatment: 'NONE' | 'STANDARD' | 'STATE_BORNE';
+  invoices: number;
+  /** Sum of amount - discount of the invoices issued in the month. */
+  netAmount: string;
+  vatAmount: string;
 }
 
 export interface ClosedPeriodRow {
@@ -95,7 +146,8 @@ export type FWrite<T> =
   | { kind: 'closed' }
   | { kind: 'overpaid'; outstanding: string }
   | { kind: 'cancelled' }
-  | { kind: 'has_payments' };
+  | { kind: 'has_payments' }
+  | { kind: 'not_found_instructor' };
 
 export interface FinanceRepository {
   listExpenses(tenantId: string, f: { branchId: string | null; from?: string; to?: string; category?: string }): Promise<ExpenseRow[]>;
@@ -124,6 +176,15 @@ export interface FinanceRepository {
   recordPayment(tenantId: string, actor: Actor, input: PaymentInput): Promise<FWrite<PaymentRow>>;
   voidPayment(tenantId: string, actor: Actor, paymentId: string, reason: string): Promise<FWrite<PaymentRow>>;
   getPayment(tenantId: string, id: string): Promise<PaymentRow | null>;
+
+  /** VAT of the invoices issued in [from, toExclusive), per branch and treatment (cancelled invoices excluded). */
+  vatSummary(tenantId: string, branchId: string | null, from: string, toExclusive: string): Promise<VatSummaryRow[]>;
+
+  listPayouts(tenantId: string, f: { branchId: string | null; period: string }): Promise<PayoutRow[]>;
+  getPayout(tenantId: string, id: string): Promise<PayoutRow | null>;
+  /** Locks the instructor, then refuses a payout beyond the month's dues (`overpaid` carries what is still owed). */
+  createPayout(tenantId: string, actor: Actor, input: PayoutInput): Promise<FWrite<PayoutRow>>;
+  voidPayout(tenantId: string, actor: Actor, id: string, reason: string): Promise<FWrite<PayoutRow>>;
 
   listClosed(tenantId: string, branchId: string | null): Promise<ClosedPeriodRow[]>;
   getClosed(tenantId: string, id: string): Promise<ClosedPeriodRow | null>;
@@ -168,13 +229,20 @@ const toPayment = (p: PaymentDb): PaymentRow => ({
 });
 type InvoiceDb = {
   id: string; branchId: string; studentId: string; description: string; amount: Prisma.Decimal; discount: Prisma.Decimal; issuedOn: Date; status: string;
+  vatTreatment: string; vatRateBp: number; vatAmount: Prisma.Decimal; beneficiaryIdLast4: string | null;
   installments: { id: string; dueOn: Date; amount: Prisma.Decimal }[]; payments: PaymentDb[];
 };
 const invoiceInclude = { installments: { orderBy: { dueOn: 'asc' as const } }, payments: { orderBy: [{ paidOn: 'asc' as const }, { createdAt: 'asc' as const }] } };
 const toInvoice = (i: InvoiceDb): InvoiceRow => ({
   id: i.id, branchId: i.branchId, studentId: i.studentId, description: i.description, amount: money(i.amount), discount: money(i.discount), issuedOn: day(i.issuedOn), status: i.status as 'OPEN' | 'CANCELLED',
+  vatTreatment: i.vatTreatment as 'NONE' | 'STANDARD' | 'STATE_BORNE', vatRateBp: i.vatRateBp, vatAmount: money(i.vatAmount), beneficiaryIdLast4: i.beneficiaryIdLast4,
   installments: i.installments.map((x) => ({ id: x.id, dueOn: day(x.dueOn), amount: money(x.amount) })),
   payments: i.payments.map(toPayment),
+});
+type PayoutDb = { id: string; branchId: string; instructorId: string; period: Date; amount: Prisma.Decimal; duesAmount: Prisma.Decimal; minutes: number; hourlyRate: Prisma.Decimal; paidOn: Date; method: string; reference: string | null; voidedAt: Date | null; voidReason: string | null };
+const toPayout = (p: PayoutDb): PayoutRow => ({
+  id: p.id, branchId: p.branchId, instructorId: p.instructorId, period: day(p.period), amount: money(p.amount), duesAmount: money(p.duesAmount), minutes: p.minutes, hourlyRate: money(p.hourlyRate),
+  paidOn: day(p.paidOn), method: p.method as PayoutMethod, reference: p.reference, voided: p.voidedAt !== null, voidReason: p.voidReason,
 });
 const toClosed = (c: { id: string; branchId: string; period: Date; closedBy: string; closedAt: Date }): ClosedPeriodRow => ({ id: c.id, branchId: c.branchId, period: day(c.period), closedBy: c.closedBy, closedAt: c.closedAt });
 
@@ -307,9 +375,12 @@ export class PrismaFinanceRepository implements FinanceRepository {
       db.expense.groupBy({ by: ['branchId', 'category'], where: { ...where, incurredOn: { gte: date(from), lt: date(toExclusive) } }, _sum: { amount: true } }),
       db.utilityBill.groupBy({ by: ['branchId'], where: { ...where, periodStart: { gte: date(from), lt: date(toExclusive) } }, _sum: { amount: true } }),
     ]);
+    // Instructor pay is cash going out in the month it is paid: it counts under its own category.
+    const payouts = await db.instructorPayout.groupBy({ by: ['branchId'], where: { ...where, voidedAt: null, paidOn: { gte: date(from), lt: date(toExclusive) } }, _sum: { amount: true } });
     return [
       ...expenses.map((e) => ({ branchId: e.branchId, category: e.category, amount: money(e._sum.amount ?? new Prisma.Decimal(0)) })),
       ...bills.map((b) => ({ branchId: b.branchId, category: 'ELECTRICITY', amount: money(b._sum.amount ?? new Prisma.Decimal(0)) })),
+      ...payouts.map((p) => ({ branchId: p.branchId, category: 'INSTRUCTOR_PAY', amount: money(p._sum.amount ?? new Prisma.Decimal(0)) })),
     ];
   }
   async income(tenantId: string, branchId: string | null, from: string, toExclusive: string) {
@@ -347,6 +418,11 @@ export class PrismaFinanceRepository implements FinanceRepository {
             amount: new Prisma.Decimal(input.amount),
             discount: new Prisma.Decimal(input.discount),
             issuedOn: date(input.issuedOn),
+            vatTreatment: input.vatTreatment,
+            vatRateBp: input.vatRateBp,
+            vatAmount: new Prisma.Decimal(input.vatAmount),
+            beneficiaryIdEnc: input.beneficiaryIdEnc,
+            beneficiaryIdLast4: input.beneficiaryIdLast4,
             installments: { create: input.installments.map((x) => ({ tenantId, branchId: input.branchId, dueOn: date(x.dueOn), amount: new Prisma.Decimal(x.amount) })) },
           },
           include: invoiceInclude,
@@ -381,7 +457,7 @@ export class PrismaFinanceRepository implements FinanceRepository {
         if (!inv) return { kind: 'not_found' as const };
         if (inv.status === 'CANCELLED') return { kind: 'cancelled' as const };
         const paid = inv.payments.filter((p) => p.voidedAt === null).reduce((n, p) => n.plus(p.amount), new Prisma.Decimal(0));
-        const outstanding = inv.amount.minus(inv.discount).minus(paid);
+        const outstanding = inv.amount.minus(inv.discount).plus(inv.vatAmount).minus(paid); // what the student owes includes the VAT charged
         if (new Prisma.Decimal(input.amount).greaterThan(outstanding)) return { kind: 'overpaid' as const, outstanding: money(outstanding) };
         const p = await tx.studentPayment.create({
           data: { tenantId, branchId: inv.branchId, invoiceId: inv.id, amount: new Prisma.Decimal(input.amount), paidOn: date(input.paidOn), method: input.method, reference: input.reference },
@@ -407,6 +483,82 @@ export class PrismaFinanceRepository implements FinanceRepository {
         const v = await tx.studentPayment.update({ where: { id: paymentId }, data: { voidedAt: new Date(), voidReason: reason } });
         await audit(tx, tenantId, actor, 'institute.payment_voided', paymentId, { invoiceId: p.invoiceId, branchId: p.branchId, amount: money(p.amount), reason });
         return { kind: 'ok' as const, value: toPayment(v) };
+      } catch (err) {
+        if (isClosed(err)) return { kind: 'closed' as const };
+        throw err;
+      }
+    });
+  }
+
+  // ---- VAT summary ----
+  async vatSummary(tenantId: string, branchId: string | null, from: string, toExclusive: string) {
+    const rows = await forTenant(tenantId).studentInvoice.findMany({
+      where: { tenantId, ...(branchId ? { branchId } : {}), status: 'OPEN', issuedOn: { gte: date(from), lt: date(toExclusive) } },
+      select: { branchId: true, vatTreatment: true, amount: true, discount: true, vatAmount: true },
+    });
+    const groups = new Map<string, { branchId: string; treatment: 'NONE' | 'STANDARD' | 'STATE_BORNE'; invoices: number; net: Prisma.Decimal; vat: Prisma.Decimal }>();
+    for (const r of rows) {
+      const key = `${r.branchId}|${r.vatTreatment}`;
+      const g = groups.get(key) ?? { branchId: r.branchId, treatment: r.vatTreatment as 'NONE' | 'STANDARD' | 'STATE_BORNE', invoices: 0, net: new Prisma.Decimal(0), vat: new Prisma.Decimal(0) };
+      g.invoices += 1;
+      g.net = g.net.plus(r.amount).minus(r.discount);
+      g.vat = g.vat.plus(r.vatAmount);
+      groups.set(key, g);
+    }
+    return [...groups.values()].map((g) => ({ branchId: g.branchId, treatment: g.treatment, invoices: g.invoices, netAmount: money(g.net), vatAmount: money(g.vat) }));
+  }
+
+  // ---- instructor payouts ----
+  async listPayouts(tenantId: string, f: { branchId: string | null; period: string }) {
+    const rows = await forTenant(tenantId).instructorPayout.findMany({ where: { tenantId, period: date(f.period), ...(f.branchId ? { branchId: f.branchId } : {}) }, orderBy: [{ paidOn: 'asc' }, { createdAt: 'asc' }] });
+    return rows.map(toPayout);
+  }
+  async getPayout(tenantId: string, id: string) {
+    const p = await forTenant(tenantId).instructorPayout.findFirst({ where: { tenantId, id } });
+    return p ? toPayout(p) : null;
+  }
+  createPayout(tenantId: string, actor: Actor, input: PayoutInput): Promise<FWrite<PayoutRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        // Serialise payouts to one instructor: lock the instructor row, then compare with what the month still owes.
+        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM instructors WHERE id = ${input.instructorId}::uuid AND tenant_id = ${tenantId}::uuid FOR UPDATE`;
+        if (locked.length === 0) return { kind: 'not_found_instructor' as const };
+        const paid = await tx.instructorPayout.aggregate({ where: { tenantId, instructorId: input.instructorId, period: date(input.period), voidedAt: null }, _sum: { amount: true } });
+        const owed = new Prisma.Decimal(input.duesAmount).minus(paid._sum.amount ?? new Prisma.Decimal(0));
+        if (new Prisma.Decimal(input.amount).greaterThan(owed)) return { kind: 'overpaid' as const, outstanding: money(owed.lessThan(0) ? new Prisma.Decimal(0) : owed) };
+        const p = await tx.instructorPayout.create({
+          data: {
+            tenantId,
+            branchId: input.branchId,
+            instructorId: input.instructorId,
+            period: date(input.period),
+            amount: new Prisma.Decimal(input.amount),
+            duesAmount: new Prisma.Decimal(input.duesAmount),
+            minutes: input.minutes,
+            hourlyRate: new Prisma.Decimal(input.hourlyRate),
+            paidOn: date(input.paidOn),
+            method: input.method,
+            reference: input.reference,
+          },
+        });
+        await audit(tx, tenantId, actor, 'institute.payout_recorded', p.id, { instructorId: p.instructorId, branchId: p.branchId, period: input.period, amount: money(p.amount), dues: money(p.duesAmount), paidOn: input.paidOn });
+        return { kind: 'ok' as const, value: toPayout(p) };
+      } catch (err) {
+        if (isClosed(err)) return { kind: 'closed' as const };
+        if (isFk(err)) return { kind: 'not_found' as const };
+        throw err;
+      }
+    });
+  }
+  voidPayout(tenantId: string, actor: Actor, id: string, reason: string): Promise<FWrite<PayoutRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const p = await tx.instructorPayout.findFirst({ where: { tenantId, id } });
+        if (!p) return { kind: 'not_found' as const };
+        if (p.voidedAt) return { kind: 'ok' as const, value: toPayout(p) };
+        const v = await tx.instructorPayout.update({ where: { id }, data: { voidedAt: new Date(), voidReason: reason } });
+        await audit(tx, tenantId, actor, 'institute.payout_voided', id, { instructorId: p.instructorId, branchId: p.branchId, amount: money(p.amount), reason });
+        return { kind: 'ok' as const, value: toPayout(v) };
       } catch (err) {
         if (isClosed(err)) return { kind: 'closed' as const };
         throw err;

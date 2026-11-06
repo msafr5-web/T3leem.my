@@ -276,7 +276,12 @@ export class CostService {
     const programInputs: ProgramInput[] = programs.map((pr) => {
       const mine = invoices.filter((i) => programOf.get(i.studentId) === pr.id);
       const open = mine.filter((i) => i.status === 'OPEN');
-      const collected = mine.flatMap((i) => i.payments).filter((x) => !x.voided && x.paidOn >= month && x.paidOn < next).reduce((n, x) => n + toCents(x.amount), 0);
+      // Revenue is net of VAT (VAT collected is owed to the Authority, not earned): each payment counts for the net share of its invoice.
+      const collected = mine.reduce((sum, i) => {
+        const net = toCents(i.amount) - toCents(i.discount);
+        const total = net + toCents(i.vatAmount);
+        return sum + i.payments.filter((x) => !x.voided && x.paidOn >= month && x.paidOn < next).reduce((n, x) => n + (total === 0 ? 0 : Math.round((toCents(x.amount) * net) / total)), 0);
+      }, 0);
       return {
         id: pr.id,
         name: pr.name,

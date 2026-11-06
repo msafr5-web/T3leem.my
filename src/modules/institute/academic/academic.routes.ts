@@ -23,6 +23,7 @@ const programJson = (p: PublicProgram) => ({
   description: p.description,
   admission_requirements: p.admissionRequirements,
   active: p.active,
+  state_borne_vat: p.stateBorneVat,
   ...(p.fee !== undefined ? { fee: p.fee } : {}),
   levels: p.levels.map(levelJson),
 });
@@ -37,7 +38,8 @@ const instructorJson = (i: PublicInstructor) => ({
   active: i.active,
   ...(i.hourlyRate !== undefined ? { hourly_rate: i.hourlyRate } : {}),
 });
-const studentJson = (s: StudentRow) => ({ id: s.id, branch_id: s.branchId, program_id: s.programId, level_id: s.levelId, user_id: s.userId, full_name: s.fullName, phone: s.phone, email: s.email, status: s.status, enrolled_on: s.enrolledOn });
+// The sealed ID never leaves the server: a client sees whether one is on file and its last four digits.
+const studentJson = (s: StudentRow) => ({ id: s.id, branch_id: s.branchId, program_id: s.programId, level_id: s.levelId, user_id: s.userId, full_name: s.fullName, phone: s.phone, email: s.email, status: s.status, enrolled_on: s.enrolledOn, citizenship: s.citizenship, has_national_id: s.nationalIdEnc !== null, national_id_last4: s.nationalIdLast4 });
 const sessionJson = (s: SessionRow) => ({ id: s.id, branch_id: s.branchId, subject_id: s.subjectId, room_id: s.roomId, instructor_id: s.instructorId, starts_at: s.startsAt.toISOString(), ends_at: s.endsAt.toISOString(), status: s.status, notes: s.notes });
 
 const programRules = [
@@ -46,6 +48,7 @@ const programRules = [
   body('admission_requirements').optional({ values: 'null' }).isString().isLength({ max: 1000 }),
   body('fee').optional({ values: 'null' }).custom((v) => MONEY.test(String(v))).withMessage('fee must be an amount with at most 2 decimals'),
   body('active').optional().isBoolean(),
+  body('state_borne_vat').optional().isBoolean(),
 ];
 const instructorRules = [
   body('full_name').isString().trim().isLength({ min: 1, max: 120 }).withMessage('full_name is required'),
@@ -76,8 +79,10 @@ const studentRules = [
   body('email').optional({ values: 'null' }).isEmail(),
   body('status').optional().isIn(STUDENT_STATUSES),
   body('enrolled_on').optional({ values: 'null' }).isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('enrolled_on must be YYYY-MM-DD'),
+  body('citizenship').optional().isIn(['SAUDI', 'OTHER']),
+  body('national_id').optional({ values: 'null' }).isString().matches(/^\d{10}$/).withMessage('national_id must be 10 digits'),
 ];
-const studentInput = (b: Record<string, unknown>, branchId: string): StudentInput => ({
+const studentInput = (b: Record<string, unknown>, branchId: string): StudentInput & { nationalId?: string | null } => ({
   branchId,
   programId: str(b.program_id),
   levelId: str(b.level_id),
@@ -87,6 +92,9 @@ const studentInput = (b: Record<string, unknown>, branchId: string): StudentInpu
   email: str(b.email),
   status: (typeof b.status === 'string' ? b.status : 'ACTIVE') as StudentStatus,
   enrolledOn: str(b.enrolled_on),
+  citizenship: b.citizenship === 'SAUDI' ? 'SAUDI' : 'OTHER',
+  // absent = keep the stored ID on an update; null/empty = remove it
+  ...(b.national_id === undefined ? {} : { nationalId: str(b.national_id) }),
 });
 const instant = (field: string) => body(field).isISO8601({ strict: true }).custom((v) => WITH_OFFSET.test(String(v))).withMessage(`${field} must be an ISO time with an offset, e.g. 2026-11-10T09:00:00+03:00`);
 
@@ -110,13 +118,13 @@ export function buildAcademicRouter(service: AcademicService, jwt: JwtVerifyOpti
   router.post('/institute/programs', auth, body('branch_id').isUUID(), ...programRules, validate, async (req: Request, res: Response) => {
     const { tenantId, caller } = ctx(req);
     const b = req.body as Record<string, unknown>;
-    const created = await service.createProgram(tenantId, caller, { branchId: String(b.branch_id), name: String(b.name).trim(), description: str(b.description), admissionRequirements: str(b.admission_requirements), fee: money(b.fee), active: bool(b.active, true) });
+    const created = await service.createProgram(tenantId, caller, { branchId: String(b.branch_id), name: String(b.name).trim(), description: str(b.description), admissionRequirements: str(b.admission_requirements), fee: money(b.fee), active: bool(b.active, true), stateBorneVat: bool(b.state_borne_vat, false) });
     res.status(201).json(ok(programJson(created)));
   });
   router.put('/institute/programs/:id', auth, uuid('id'), ...programRules, validate, async (req: Request, res: Response) => {
     const { tenantId, caller } = ctx(req);
     const b = req.body as Record<string, unknown>;
-    const updated = await service.updateProgram(tenantId, caller, req.params.id as string, { name: String(b.name).trim(), description: str(b.description), admissionRequirements: str(b.admission_requirements), fee: money(b.fee), active: bool(b.active, true) });
+    const updated = await service.updateProgram(tenantId, caller, req.params.id as string, { name: String(b.name).trim(), description: str(b.description), admissionRequirements: str(b.admission_requirements), fee: money(b.fee), active: bool(b.active, true), stateBorneVat: bool(b.state_borne_vat, false) });
     res.json(ok(programJson(updated)));
   });
   router.delete('/institute/programs/:id', auth, uuid('id'), validate, async (req: Request, res: Response) => {

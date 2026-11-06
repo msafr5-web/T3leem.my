@@ -669,9 +669,9 @@ export interface InstMaintenance { id: string; asset_id: string; performed_on: s
 export interface InstAttention { today: string; items: { asset_id: string; reasons: ('IN_MAINTENANCE' | 'MAINTENANCE_OVERDUE' | 'END_OF_LIFE' | 'NO_ROOM')[] }[] }
 export interface InstSubject { id: string; level_id: string; name: string; hours: number; fee?: string | null }
 export interface InstLevel { id: string; program_id: string; name: string; sort_order: number; subjects: InstSubject[] }
-export interface InstProgram { id: string; branch_id: string; name: string; description: string | null; admission_requirements: string | null; active: boolean; fee?: string; levels: InstLevel[] }
+export interface InstProgram { id: string; branch_id: string; name: string; description: string | null; admission_requirements: string | null; active: boolean; state_borne_vat: boolean; fee?: string; levels: InstLevel[] }
 export interface InstInstructor { id: string; branch_id: string; user_id: string | null; full_name: string; phone: string | null; email: string | null; qualifications: string | null; active: boolean; hourly_rate?: string }
-export interface InstStudent { id: string; branch_id: string; program_id: string | null; level_id: string | null; user_id: string | null; full_name: string; phone: string | null; email: string | null; status: 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'WITHDRAWN'; enrolled_on: string | null }
+export interface InstStudent { id: string; branch_id: string; program_id: string | null; level_id: string | null; user_id: string | null; full_name: string; phone: string | null; email: string | null; status: 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'WITHDRAWN'; enrolled_on: string | null; citizenship: 'SAUDI' | 'OTHER'; has_national_id: boolean; national_id_last4: string | null }
 export interface InstSession { id: string; branch_id: string; subject_id: string; room_id: string; instructor_id: string; starts_at: string; ends_at: string; status: 'SCHEDULED' | 'HELD' | 'CANCELLED'; notes: string | null }
 export interface InstRoster { session: InstSession; students: (InstStudent & { attendance: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | null })[] }
 export interface FinExpense { id: string; branch_id: string; room_id: string | null; category: string; amount: string; incurred_on: string; vendor: string | null; description: string | null }
@@ -679,11 +679,13 @@ export interface FinBill { id: string; branch_id: string; period_start: string; 
 export interface FinBudget { id: string; branch_id: string; category: string | null; period: string; amount: string; warn_percent: number; spent: string; remaining: string; percent: number | null; level: 'OK' | 'WARNING' | 'EXCEEDED' }
 export interface FinPayment { id: string; invoice_id: string; amount: string; paid_on: string; method: 'CASH' | 'TRANSFER' | 'CARD' | 'OTHER'; reference: string | null; voided: boolean; void_reason: string | null }
 export interface FinInvoice {
-  id: string; branch_id: string; student_id: string; description: string; amount: string; discount: string; net: string; paid: string; outstanding: string; issued_on: string;
+  id: string; branch_id: string; student_id: string; description: string; amount: string; discount: string; net: string; vat_treatment: 'NONE' | 'STANDARD' | 'STATE_BORNE'; vat_rate_percent: number; vat: string; total: string; beneficiary_id_last4: string | null; paid: string; outstanding: string; issued_on: string;
   status: 'OPEN' | 'CANCELLED'; overdue: boolean; installments: { due_on: string; amount: string; paid: string; remaining: string; state: 'PAID' | 'PARTIAL' | 'OVERDUE' | 'UPCOMING' }[]; payments: FinPayment[];
 }
 export interface FinSummary { month: string; branches: { branch_id: string; income: string; spend: string; net: string; by_category: Record<string, string>; closed: boolean }[]; totals: { income: string; spend: string; net: string } }
-export interface FinDues { month: string; total: string; instructors: { instructor_id: string; branch_id: string; name: string; minutes: number; hourly_rate: string; pay: string }[] }
+export interface FinPayout { id: string; branch_id: string; instructor_id: string; month: string; amount: string; dues: string; minutes: number; hourly_rate: string; paid_on: string; method: 'CASH' | 'TRANSFER' | 'CHEQUE' | 'OTHER'; reference: string | null; voided: boolean; void_reason: string | null }
+export interface FinDues { month: string; total: string; paid: string; outstanding: string; instructors: { instructor_id: string; branch_id: string; name: string; minutes: number; hourly_rate: string; pay: string; paid: string; outstanding: string }[]; payouts: FinPayout[] }
+export interface FinVatSummary { month: string; rows: { branch_id: string; treatment: 'NONE' | 'STANDARD' | 'STATE_BORNE'; invoices: number; net_amount: string; vat_amount: string }[] }
 export interface FinClosed { id: string; branch_id: string; period: string; closed_by: string; closed_at: string }
 export interface CostPolicyParams {
   electricity: { tariffCategory: string; allocation: 'AREA' | 'POWER_HOURS' | 'METER'; vatRatePercent: number; vatRegistered: boolean; vatRecoveryPercent: number; breakerAmps: Record<string, number> };
@@ -706,7 +708,7 @@ export interface CostReport {
   } | null;
   warnings: { code: string; detail?: string }[];
 }
-export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean; expense: boolean; budget: boolean; invoice: boolean; ledger_admin: boolean; cost_policy: boolean; cost_policy_approve: boolean; meter: boolean }; can_read: { finance: boolean; cost: boolean } }
+export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean; expense: boolean; budget: boolean; invoice: boolean; ledger_admin: boolean; cost_policy: boolean; cost_policy_approve: boolean; meter: boolean; dues: boolean }; can_read: { finance: boolean; cost: boolean } }
 
 export const admin = {
   institutePrograms: (slug: string, token: string) => api<{ programs: InstProgram[] }>(slug, '/admin/institute/programs', { token }),
@@ -721,6 +723,7 @@ export const admin = {
   finInvoices: (slug: string, token: string) => api<{ invoices: FinInvoice[] }>(slug, '/admin/institute/finance/invoices', { token }),
   finSummary: (slug: string, token: string, month: string) => api<FinSummary>(slug, `/admin/institute/finance/summary?month=${month}`, { token }),
   finDues: (slug: string, token: string, month: string) => api<FinDues>(slug, `/admin/institute/finance/instructor-dues?month=${month}`, { token }),
+  finVat: (slug: string, token: string, month: string) => api<FinVatSummary>(slug, `/admin/institute/finance/vat-summary?month=${month}`, { token }),
   finClosed: (slug: string, token: string) => api<{ closed: FinClosed[] }>(slug, '/admin/institute/finance/closed-periods', { token }),
   costPolicies: (slug: string, token: string) => api<CostPolicies>(slug, '/admin/institute/cost/policy', { token }),
   costReadings: (slug: string, token: string, month: string) => api<{ readings: CostReading[] }>(slug, `/admin/institute/cost/meter-readings?month=${month}`, { token }),

@@ -88,3 +88,21 @@ export function budgetStatus(budgetCents: number, spentCents: number, warnPercen
 
 /** Pay for taught time: whole minutes at an hourly rate, rounded to the nearest halala. */
 export const instructorPayCents = (minutes: number, hourlyRateCents: number): number => Math.round((minutes * hourlyRateCents) / 60);
+
+export type VatTreatment = 'NONE' | 'STANDARD' | 'STATE_BORNE';
+
+/**
+ * Which VAT an invoice carries, decided once at issue time and then frozen on the invoice.
+ *  - Institute not registered for VAT: none (it cannot charge VAT).
+ *  - A Saudi citizen in a programme whose fees qualify for the State bearing the VAT (private education, Royal Order A/86): the
+ *    citizen is charged no VAT and the invoice must name the beneficiary's national ID (STATE_BORNE).
+ *  - Everyone else (expatriates, citizens in a non-qualifying programme, no programme): standard rate.
+ */
+export function decideVat(input: { registered: boolean; citizenship: 'SAUDI' | 'OTHER'; programStateBorne: boolean; standardRatePercent: number }): { treatment: VatTreatment; rateBp: number } {
+  if (!input.registered) return { treatment: 'NONE', rateBp: 0 };
+  if (input.citizenship === 'SAUDI' && input.programStateBorne) return { treatment: 'STATE_BORNE', rateBp: 0 };
+  return { treatment: 'STANDARD', rateBp: Math.round(input.standardRatePercent * 100) };
+}
+
+/** VAT on a net amount (after discount) at `rateBp` basis points, rounded to the halala. */
+export const vatOn = (netCents: number, rateBp: number): number => Math.round((netCents * rateBp) / 10_000);

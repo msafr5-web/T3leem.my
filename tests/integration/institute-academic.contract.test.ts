@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { buildApp, sign, tenants } from './helpers/test-app';
+import { buildApp, sign, tenants, testCipher } from './helpers/test-app';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const describeDb = TEST_DATABASE_URL ? describe : describe.skip;
@@ -41,7 +41,7 @@ describeDb('Institute academic API (real database)', () => {
     const { AcademicService } = require('../../src/modules/institute/academic/academic.service') as typeof import('../../src/modules/institute/academic/academic.service'); // eslint-disable-line @typescript-eslint/no-require-imports
     const instRepo = new PrismaInstituteRepository();
     const instituteService = new InstituteService(instRepo);
-    app = buildApp({ instituteService, academicService: new AcademicService(new PrismaAcademicRepository(), instituteService, instRepo) });
+    app = buildApp({ instituteService, academicService: new AcademicService(new PrismaAcademicRepository(), instituteService, instRepo, testCipher) });
 
     await db.prisma.tenant.createMany({
       data: [
