@@ -13,6 +13,7 @@ import { buildQuizAdminRouter, buildQuizLearnerRouter } from './modules/lms/quiz
 import type { QuizService } from './modules/lms/quiz/quiz.service';
 import { buildHealthAdminRouter, buildHealthLearnerRouter } from './modules/lms/health/health.routes';
 import type { HealthService } from './modules/lms/health/health.service';
+import { runWithBranchScope } from './config/database';
 import { buildInstituteRouter } from './modules/institute/institute.routes';
 import type { InstituteService } from './modules/institute/institute.service';
 import { buildAcademicRouter } from './modules/institute/academic/academic.routes';
@@ -135,6 +136,8 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/me', buildHealthLearnerRouter(deps.healthService, deps.jwt));
   // Before the other /admin routers: some of them reject every non-admin user at router level, while institute roles
   // (branch manager, finance, ...) belong to ordinary accounts and are checked inside the institute service.
+  // Each institute request gets its own branch scope; the institute service narrows it once it knows the caller's branch.
+  api.use('/admin/institute', (_req, _res, next) => runWithBranchScope(() => next()));
   api.use('/admin', buildInstituteRouter(deps.instituteService, deps.jwt));
   api.use('/admin', buildAcademicRouter(deps.academicService, deps.jwt));
   api.use('/admin', buildFinanceRouter(deps.financeService, deps.jwt));

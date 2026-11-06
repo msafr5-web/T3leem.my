@@ -1,4 +1,5 @@
 import { UserRole } from '@prisma/client';
+import { setBranchScope } from '../../config/database';
 import { HttpError } from '../../shared/utils/http-error';
 import type { Actor } from '../provider/provider.types';
 import {
@@ -54,6 +55,8 @@ export class InstituteService {
     if (caller.userRole === UserRole.TENANT_ADMIN) return { userId: caller.userId, role: 'HQ', branchId: null };
     const m = await this.repo.memberOf(tenantId, caller.userId);
     if (!m) throw HttpError.forbidden('You have no role in this institute');
+    // From here on every query of this request is limited by the database to this branch, whatever the services do (second RLS layer).
+    setBranchScope(m.branchId ? [m.branchId] : null);
     return { userId: caller.userId, role: m.role, branchId: m.branchId };
   }
 

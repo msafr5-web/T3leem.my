@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { env } from './env';
 
@@ -18,8 +19,31 @@ export const prisma = new PrismaClient({
  * `SET LOCAL ... = '${tenantId}'` it accepts a bound parameter, so a hostile x-tenant-id header
  * can never be spliced into SQL.
  */
+/**
+ * Branch scope (second RLS layer, institute module). A request that resolves a branch-bound role records the branches it may touch in
+ * this per-request store (a mutable object shared by everything the request awaits); every database operation then carries it as
+ * `app.branch_scope`, and RESTRICTIVE policies on the branch-owned tables enforce it. No store, or `null`, means every branch (head
+ * office, finance, background jobs, the other modules).
+ */
+interface BranchScope {
+  branchIds: string[] | null;
+}
+const branchScopeStorage = new AsyncLocalStorage<BranchScope>();
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Runs `fn` (and everything it awaits) with a fresh, unrestricted branch scope that `setBranchScope` can narrow. */
+export const runWithBranchScope = <T>(fn: () => T): T => branchScopeStorage.run({ branchIds: null }, fn);
+
+/** Narrows the current request to these branches (null = all). A no-op outside `runWithBranchScope`. */
+export function setBranchScope(branchIds: string[] | null): void {
+  if (branchIds !== null && !branchIds.every((id) => UUID.test(id))) throw new Error('Branch scope must be a list of branch ids');
+  const store = branchScopeStorage.getStore();
+  if (store) store.branchIds = branchIds;
+}
+const currentBranchScope = (): string => branchScopeStorage.getStore()?.branchIds?.join(',') ?? '';
+
 const setTenantContext = (client: Pick<PrismaClient, '$executeRaw'>, tenantId: string) =>
-  client.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, TRUE)`;
+  client.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, TRUE), set_config('app.branch_scope', ${currentBranchScope()}, TRUE)`;
 
 /**
  * Prisma Client Extension for dynamic RLS context injection (SWET §3).
