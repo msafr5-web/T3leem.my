@@ -31,6 +31,9 @@ import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
 import { buildHealthFakes } from './health-fakes';
 import { buildInstituteFakes } from './institute-fakes';
+import { PrismaAcademicRepository } from '../../../src/modules/institute/academic/academic.repository';
+import { AcademicService } from '../../../src/modules/institute/academic/academic.service';
+import type { InstituteService } from '../../../src/modules/institute/institute.service';
 import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
@@ -107,7 +110,7 @@ export const QUIZ_DAYS = [
   { id: '77777777-7777-4777-8777-777777777773', title: 'اليوم 2' },
 ].map((d) => ({ ...d, opensAt: null as Date | null, closesAt: null as Date | null }));
 
-export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean } = {}) {
+export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingScheduler; signupEnabled?: boolean; instituteService?: InstituteService; academicService?: AcademicService } = {}) {
   const enrolled = new Set<string>();
 
   // Each fake mimics RLS: data exists only inside TENANT_A.
@@ -355,7 +358,9 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     recordedCourseService: recorded.service,
     quizService: quiz.service,
     healthService: health.service,
-    instituteService: institute.service,
+    instituteService: opts.instituteService ?? institute.service,
+    // The academic side is exercised against the real database (see institute-academic.contract.test.ts); other suites never reach it.
+    academicService: opts.academicService ?? new AcademicService(new PrismaAcademicRepository(), institute.service, institute.repository),
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,

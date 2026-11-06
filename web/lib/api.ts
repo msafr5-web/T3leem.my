@@ -667,9 +667,22 @@ export interface InstDepartment { id: string; branch_id: string | null; name: st
 export interface InstStaff { id: string; branch_id: string; department_id: string | null; full_name: string; job_title: string | null; phone: string | null; email: string | null; active: boolean }
 export interface InstMaintenance { id: string; asset_id: string; performed_on: string; kind: 'INSPECTION' | 'REPAIR' | 'SERVICE'; notes: string | null; next_due_on: string | null; cost?: string }
 export interface InstAttention { today: string; items: { asset_id: string; reasons: ('IN_MAINTENANCE' | 'MAINTENANCE_OVERDUE' | 'END_OF_LIFE' | 'NO_ROOM')[] }[] }
-export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean } }
+export interface InstSubject { id: string; level_id: string; name: string; hours: number; fee?: string | null }
+export interface InstLevel { id: string; program_id: string; name: string; sort_order: number; subjects: InstSubject[] }
+export interface InstProgram { id: string; branch_id: string; name: string; description: string | null; admission_requirements: string | null; active: boolean; fee?: string; levels: InstLevel[] }
+export interface InstInstructor { id: string; branch_id: string; user_id: string | null; full_name: string; phone: string | null; email: string | null; qualifications: string | null; active: boolean; hourly_rate?: string }
+export interface InstStudent { id: string; branch_id: string; program_id: string | null; level_id: string | null; user_id: string | null; full_name: string; phone: string | null; email: string | null; status: 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'WITHDRAWN'; enrolled_on: string | null }
+export interface InstSession { id: string; branch_id: string; subject_id: string; room_id: string; instructor_id: string; starts_at: string; ends_at: string; status: 'SCHEDULED' | 'HELD' | 'CANCELLED'; notes: string | null }
+export interface InstRoster { session: InstSession; students: (InstStudent & { attendance: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | null })[] }
+export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean } }
 
 export const admin = {
+  institutePrograms: (slug: string, token: string) => api<{ programs: InstProgram[] }>(slug, '/admin/institute/programs', { token }),
+  instituteInstructors: (slug: string, token: string) => api<{ instructors: InstInstructor[] }>(slug, '/admin/institute/instructors', { token }),
+  instituteStudents: (slug: string, token: string) => api<{ students: InstStudent[] }>(slug, '/admin/institute/students', { token }),
+  instituteSessions: (slug: string, token: string, from?: string, to?: string) =>
+    api<{ sessions: InstSession[] }>(slug, `/admin/institute/sessions${from ? `?from=${encodeURIComponent(from)}${to ? `&to=${encodeURIComponent(to)}` : ''}` : ''}`, { token }),
+  instituteRoster: (slug: string, token: string, id: string) => api<InstRoster>(slug, `/admin/institute/sessions/${encodeURIComponent(id)}/roster`, { token }),
   instituteMe: (slug: string, token: string) => api<InstMe>(slug, '/admin/institute/me', { token }),
   instituteBranches: (slug: string, token: string) => api<{ branches: InstBranch[] }>(slug, '/admin/institute/branches', { token }),
   instituteRooms: (slug: string, token: string) => api<{ rooms: InstRoom[] }>(slug, '/admin/institute/rooms', { token }),

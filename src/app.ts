@@ -15,6 +15,8 @@ import { buildHealthAdminRouter, buildHealthLearnerRouter } from './modules/lms/
 import type { HealthService } from './modules/lms/health/health.service';
 import { buildInstituteRouter } from './modules/institute/institute.routes';
 import type { InstituteService } from './modules/institute/institute.service';
+import { buildAcademicRouter } from './modules/institute/academic/academic.routes';
+import type { AcademicService } from './modules/institute/academic/academic.service';
 import { buildOwnerRouter } from './modules/platform/owner.routes';
 import type { OwnerService } from './modules/platform/owner.service';
 import type { OtpLoginService } from './modules/auth/otp.service';
@@ -58,6 +60,7 @@ export interface AppDependencies {
   quizService: QuizService;
   healthService: HealthService;
   instituteService: InstituteService;
+  academicService: AcademicService;
   otpLogin: OtpLoginService;
   ownerService: OwnerService;
   learningService: LearningService;
@@ -127,6 +130,7 @@ export function createApp(deps: AppDependencies): Express {
   // Before the other /admin routers: some of them reject every non-admin user at router level, while institute roles
   // (branch manager, finance, ...) belong to ordinary accounts and are checked inside the institute service.
   api.use('/admin', buildInstituteRouter(deps.instituteService, deps.jwt));
+  api.use('/admin', buildAcademicRouter(deps.academicService, deps.jwt));
   api.use('/admin', buildProviderAdminRouter(deps.providerController, deps.jwt));
   api.use('/admin', buildContentAdminRouter(deps.contentService, deps.videoService, deps.learningService, deps.jwt));
   api.use('/admin', buildRecordedAdminRouter(deps.recordedCourseService, deps.jwt));

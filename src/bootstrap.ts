@@ -23,6 +23,8 @@ import { PrismaHealthRepository } from './modules/lms/health/health.repository';
 import { HealthService } from './modules/lms/health/health.service';
 import { PrismaInstituteRepository } from './modules/institute/institute.repository';
 import { InstituteService } from './modules/institute/institute.service';
+import { PrismaAcademicRepository } from './modules/institute/academic/academic.repository';
+import { AcademicService } from './modules/institute/academic/academic.service';
 import { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { YoutubeMetadataClient } from './modules/lms/recorded/youtube';
 import { CourseController } from './modules/lms/courses/course.controller';
@@ -112,6 +114,8 @@ export function createServerApp(): ServerApp {
 
   const authRepository = new PrismaAuthRepository();
   const healthRepository = new PrismaHealthRepository();
+  const instituteRepository = new PrismaInstituteRepository();
+  const instituteService = new InstituteService(instituteRepository);
   const authService = new AuthService({
     repository: authRepository,
     unusablePasswordHash: () => hashPassword(randomBytes(24).toString('hex')),
@@ -189,7 +193,8 @@ export function createServerApp(): ServerApp {
       youtube: new YoutubeMetadataClient(env.YOUTUBE_API_KEY),
     }),
     quizService: new QuizService({ repository: new PrismaQuizRepository() }),
-    instituteService: new InstituteService(new PrismaInstituteRepository()),
+    instituteService: instituteService,
+    academicService: new AcademicService(new PrismaAcademicRepository(), instituteService, instituteRepository),
     healthService: new HealthService({
       repository: healthRepository,
       stepUp: {

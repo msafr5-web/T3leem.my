@@ -141,7 +141,15 @@ const audit = (tx: Prisma.TransactionClient, tenantId: string, actor: Actor, act
 const code = (err: unknown): string | null => (err instanceof Prisma.PrismaClientKnownRequestError ? err.code : null);
 /** P2002 unique violation, P2003 foreign-key violation (the composite keys also catch a room in another branch). */
 const isUnique = (err: unknown) => code(err) === 'P2002';
-const isFk = (err: unknown) => code(err) === 'P2003';
+/**
+ * Foreign-key violation. Prisma reports P2003 for most, but PostgreSQL's RESTRICT on delete (SQLSTATE 23001) surfaces
+ * as an unknown request error, so the database code in the message is checked too (otherwise a delete would be a 500).
+ */
+const isFk = (err: unknown) => {
+  if (code(err) === 'P2003') return true;
+  if (err instanceof Prisma.PrismaClientUnknownRequestError) return /23001|23503|violates RESTRICT|foreign key constraint/i.test(err.message);
+  return false;
+};
 
 const dateOnly = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
 

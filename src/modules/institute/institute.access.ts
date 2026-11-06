@@ -18,7 +18,7 @@ export interface Principal {
   branchId: string | null;
 }
 
-export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance';
+export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance' | 'program' | 'instructor' | 'student' | 'session' | 'attendance';
 export type Action = 'read' | 'write';
 
 const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
@@ -29,6 +29,12 @@ const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
   maintenance: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
   department: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER'] },
   staff: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER'] },
+  program: { read: INSTITUTE_ROLES, write: ['HQ', 'BRANCH_MANAGER'] },
+  instructor: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER'] },
+  student: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
+  // An instructor reads and records only their own sessions (narrowed in the service by their linked instructor record).
+  session: { read: INSTITUTE_ROLES, write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
+  attendance: { read: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS', 'INSTRUCTOR'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS', 'INSTRUCTOR'] },
 };
 
 export const can = (role: InstituteRole, resource: Resource, action: Action): boolean => MATRIX[resource][action].includes(role);

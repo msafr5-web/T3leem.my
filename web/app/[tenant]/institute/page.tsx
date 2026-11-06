@@ -124,9 +124,10 @@ export default async function InstitutePage({ params, searchParams }: { params: 
             {me.branch_id ? ` · فرع ${branchName.get(me.branch_id) ?? ''}` : ''}. ترى هنا ما يسمح به دورك فقط.
           </p>
         </div>
-        {session.role === 'TENANT_ADMIN' && (
-          <Link href={`/${slug}/dashboard`} className="btn btn-ghost">لوحة التحكم</Link>
-        )}
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Link href={`/${slug}/institute/academic`} className="btn btn-primary">الدبلومات والطلاب والجداول</Link>
+          {session.role === 'TENANT_ADMIN' && <Link href={`/${slug}/dashboard`} className="btn btn-ghost">لوحة التحكم</Link>}
+        </div>
       </div>
       {notice && <div className="notice ok" role="status">{notice}</div>}
 
