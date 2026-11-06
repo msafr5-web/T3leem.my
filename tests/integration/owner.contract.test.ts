@@ -94,7 +94,7 @@ describe('approving an academy', () => {
     const o = as(app, await signIn(app));
     await o.post(`/tenants/${PENDING_TENANT}/approve`, { months: 1, features: ALL_FEATURES });
     expect((await o.put(`/tenants/${PENDING_TENANT}`, { status: 'SUSPENDED' })).body.data.status).toBe('SUSPENDED');
-    expect((await o.put(`/tenants/${PENDING_TENANT}`, { status: 'ACTIVE', features: { health: false, recorded: true } })).body.data).toMatchObject({ status: 'ACTIVE', features: { health: false, recorded: true } });
+    expect((await o.put(`/tenants/${PENDING_TENANT}`, { status: 'ACTIVE', features: { health: false, recorded: true, institute: false } })).body.data).toMatchObject({ status: 'ACTIVE', features: { health: false, recorded: true, institute: false } });
     const ext = await o.post(`/tenants/${PENDING_TENANT}/extend`, { months: 3 });
     expect(ext.body.data.subscription_ends_at).toBe('2027-03-01T10:00:00.000Z'); // 2026-12-01 + 3 months
     expect((await o.put(`/tenants/${PENDING_TENANT}`, { subscription_ends_at: null })).body.data.subscription_ends_at).toBeNull();

@@ -523,6 +523,7 @@ export interface RegisterPolicy {
 export interface OwnerFeatures {
   health: boolean;
   recorded: boolean;
+  institute: boolean;
 }
 
 export interface OwnerTenant {
@@ -653,7 +654,23 @@ export const getUpcomingClassrooms = (slug: string) => api<Classroom[]>(slug, '/
 export const getProviders = () => platformApi<Provider[]>('/providers', { revalidate: 60 });
 
 /** Provider dashboard reads (TENANT_ADMIN token; never cached). */
+/** Institute management (branches, rooms, assets, members). Money is absent for roles that may not see it. */
+export interface InstBranch { id: string; name: string; city: string | null; address: string | null; active: boolean }
+export interface InstRoom { id: string; branch_id: string; name: string; kind: 'CLASSROOM' | 'LAB' | 'HALL'; area_m2: string; capacity: number; power_kw: string; active: boolean }
+export interface InstAsset {
+  id: string; branch_id: string; room_id: string | null; name: string; category: string | null; serial_no: string | null;
+  purchase_date: string | null; status: 'IN_SERVICE' | 'MAINTENANCE' | 'RETIRED'; notes: string | null;
+  purchase_value?: string; salvage_percent?: string; useful_life_months?: number | null;
+}
+export interface InstMember { id: string; user_id: string; email: string; full_name: string | null; role: string; branch_id: string | null }
+export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean } }
+
 export const admin = {
+  instituteMe: (slug: string, token: string) => api<InstMe>(slug, '/admin/institute/me', { token }),
+  instituteBranches: (slug: string, token: string) => api<{ branches: InstBranch[] }>(slug, '/admin/institute/branches', { token }),
+  instituteRooms: (slug: string, token: string) => api<{ rooms: InstRoom[] }>(slug, '/admin/institute/rooms', { token }),
+  instituteAssets: (slug: string, token: string) => api<{ assets: InstAsset[] }>(slug, '/admin/institute/assets', { token }),
+  instituteMembers: (slug: string, token: string) => api<{ members: InstMember[]; roles: string[] }>(slug, '/admin/institute/members', { token }),
   overview: (slug: string, token: string) => api<Overview>(slug, '/admin/overview', { token }),
   courses: (slug: string, token: string) => api<AdminCourse[]>(slug, '/admin/courses', { token }),
   course: (slug: string, token: string, id: string) => api<AdminCourse>(slug, `/admin/courses/${encodeURIComponent(id)}`, { token }),

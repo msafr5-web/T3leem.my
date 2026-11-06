@@ -2,7 +2,7 @@ import type { Mailer } from '../../shared/services/mailer';
 import { HttpError } from '../../shared/utils/http-error';
 import type { TenantStatus } from '@prisma/client';
 
-export const FEATURES = ['health', 'recorded'] as const;
+export const FEATURES = ['health', 'recorded', 'institute'] as const;
 export type FeatureKey = (typeof FEATURES)[number];
 export type Features = Record<FeatureKey, boolean>;
 

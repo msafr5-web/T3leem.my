@@ -66,6 +66,16 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
+  FEATURE_DISABLED: 'هذه الوحدة غير مفعّلة لأكاديميتك. تواصل مع إدارة المنصة.',
+  BRANCH_EXISTS: 'يوجد فرع بهذا الاسم.',
+  BRANCH_NOT_FOUND: 'الفرع غير موجود.',
+  ROOM_EXISTS: 'يوجد في هذا الفرع قاعة بهذا الاسم.',
+  ROOM_NOT_FOUND: 'القاعة غير موجودة.',
+  ROOM_IN_USE: 'في هذه القاعة أصول. انقلها أو احذفها أولاً.',
+  ROOM_BRANCH_MISMATCH: 'القاعة المختارة ليست في فرع الأصل.',
+  ASSET_NOT_FOUND: 'الأصل غير موجود.',
+  BRANCH_REQUIRED: 'هذا الدور يجب أن يرتبط بفرع واحد.',
+  MEMBER_NOT_FOUND: 'العضو غير موجود.',
   UNKNOWN_TRAINER: 'المدرب المختار غير موجود في أكاديميتك.',
   UNKNOWN_COURSE: 'إحدى الدورات المختارة غير موجودة في أكاديميتك.',
   DUPLICATE_COURSES: 'لا يمكن إضافة الدورة نفسها مرتين إلى الخطة.',
@@ -734,4 +744,58 @@ export async function importHealthAction(slug: string, _prev: QuizImportState, f
     }
     return describeError(err);
   }
+}
+
+// ---- Institute management ----
+const INST_PATH = (slug: string, notice: string) => `/${slug}/dashboard/institute?saved=${notice}`;
+const num = (form: FormData, k: string) => (str(form, k) === '' ? undefined : Number(str(form, k)));
+
+export async function addBranchAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, '/admin/institute/branches', 'POST', { name: str(form, 'name'), city: optional(form, 'city'), address: optional(form, 'address') }, INST_PATH(slug, 'branch'));
+}
+
+export async function addRoomAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    '/admin/institute/rooms',
+    'POST',
+    { branch_id: str(form, 'branch_id'), name: str(form, 'name'), kind: str(form, 'kind'), area_m2: num(form, 'area_m2'), capacity: num(form, 'capacity'), power_kw: num(form, 'power_kw') ?? 0 },
+    INST_PATH(slug, 'room'),
+  );
+}
+
+export async function deleteRoomAction(slug: string, roomId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/institute/rooms/${encodeURIComponent(roomId)}`, 'DELETE', undefined, INST_PATH(slug, 'room'));
+}
+
+export async function addAssetAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(
+    slug,
+    '/admin/institute/assets',
+    'POST',
+    {
+      branch_id: str(form, 'branch_id'),
+      room_id: optional(form, 'room_id'),
+      name: str(form, 'name'),
+      category: optional(form, 'category'),
+      serial_no: optional(form, 'serial_no'),
+      purchase_date: optional(form, 'purchase_date'),
+      purchase_value: optional(form, 'purchase_value'),
+      salvage_percent: num(form, 'salvage_percent'),
+      useful_life_months: num(form, 'useful_life_months'),
+    },
+    INST_PATH(slug, 'asset'),
+  );
+}
+
+export async function deleteAssetAction(slug: string, assetId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/institute/assets/${encodeURIComponent(assetId)}`, 'DELETE', undefined, INST_PATH(slug, 'asset'));
+}
+
+export async function saveMemberAction(slug: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  return save(slug, '/admin/institute/members', 'PUT', { email: str(form, 'email'), role: str(form, 'role'), branch_id: optional(form, 'branch_id') }, INST_PATH(slug, 'member'));
+}
+
+export async function removeMemberAction(slug: string, userId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  return save(slug, `/admin/institute/members/${encodeURIComponent(userId)}`, 'DELETE', undefined, INST_PATH(slug, 'member'));
 }

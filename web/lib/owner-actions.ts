@@ -81,7 +81,7 @@ export async function ownerLogoutAction(): Promise<void> {
 
 // ---- console ----
 const flag = (form: FormData, key: string) => form.get(key) === 'on';
-const featuresOf = (form: FormData) => ({ health: flag(form, 'f_health'), recorded: flag(form, 'f_recorded') });
+const featuresOf = (form: FormData) => ({ health: flag(form, 'f_health'), recorded: flag(form, 'f_recorded'), institute: flag(form, 'f_institute') });
 
 async function run(call: (t: string) => Promise<unknown>, done: string): Promise<OwnerFormState> {
   const t = await token();

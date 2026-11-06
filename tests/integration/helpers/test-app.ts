@@ -30,6 +30,7 @@ import { buildLearningFakes } from './learning-fakes';
 import { buildRecordedFakes } from './recorded-fakes';
 import { buildQuizFakes } from './quiz-fakes';
 import { buildHealthFakes } from './health-fakes';
+import { buildInstituteFakes } from './institute-fakes';
 import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
@@ -54,8 +55,8 @@ export const learnerToken = sign({ sub: USER, tid: TENANT_A, role: 'LEARNER' });
 
 const brand = { primaryColor: '#0d6b62' };
 export const tenants: Record<string, ResolvedTenant> = {
-  [TENANT_A]: { id: TENANT_A, slug: 'rukn', name: 'Rukn', status: 'ACTIVE', legalName: 'Rukn Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z'), subscriptionEndsAt: null, features: { health: true, recorded: true } },
-  [TENANT_B]: { id: TENANT_B, slug: 'masar', name: 'Masar Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null, subscriptionEndsAt: null, features: { health: true, recorded: true } },
+  [TENANT_A]: { id: TENANT_A, slug: 'rukn', name: 'Rukn', status: 'ACTIVE', legalName: 'Rukn Academy', vatNumber: '300000000000003', brandSettings: brand, logoUpdatedAt: new Date('2026-10-01T00:00:00Z'), subscriptionEndsAt: null, features: { health: true, recorded: true, institute: true } },
+  [TENANT_B]: { id: TENANT_B, slug: 'masar', name: 'Masar Training', status: 'ACTIVE', legalName: null, vatNumber: '311111111111113', brandSettings: {}, logoUpdatedAt: null, subscriptionEndsAt: null, features: { health: true, recorded: true, institute: true } },
   [SUSPENDED]: { id: SUSPENDED, slug: 'old', name: 'Old', status: 'SUSPENDED', legalName: null, vatNumber: null, brandSettings: {}, logoUpdatedAt: null, subscriptionEndsAt: null, features: { health: true, recorded: true } },
 };
 
@@ -302,6 +303,8 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     users: { [USER]: { name: 'Sara', role: 'LEARNER' }, [ADMIN]: { name: 'Admin', role: 'TENANT_ADMIN' } },
   });
 
+  const instituteUsers: Record<string, { tenantId: string; email: string; fullName: string }> = {};
+  const institute = { ...buildInstituteFakes(instituteUsers), users: instituteUsers };
   const quiz = buildQuizFakes({ tenantA: TENANT_A, courseId: QUIZ_COURSE, days: QUIZ_DAYS, enrolled: [USER] });
 
   const healthClock = { now: new Date() };
@@ -352,6 +355,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     recordedCourseService: recorded.service,
     quizService: quiz.service,
     healthService: health.service,
+    instituteService: institute.service,
     learningService: fakes.learning,
     videoService: fakes.video,
     zoomWebhooks: fakes.zoom,
@@ -361,6 +365,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.recorded = recorded;
   app.locals.quiz = quiz;
   app.locals.health = health;
+  app.locals.institute = institute;
   app.locals.registration = registration;
   app.locals.otp = otp;
   app.locals.owner = owner;

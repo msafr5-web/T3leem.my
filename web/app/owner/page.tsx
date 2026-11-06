@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 const nf = new Intl.NumberFormat('ar-SA');
 const dateFmt = new Intl.DateTimeFormat('ar-SA', { dateStyle: 'long', timeZone: 'Asia/Riyadh' });
 const STATUS: Record<OwnerTenant['status'], string> = { PROVISIONING: 'بانتظار الاعتماد', ACTIVE: 'فعّالة', SUSPENDED: 'موقوفة' };
-const FEATURE_LABEL: Record<keyof OwnerFeatures, string> = { health: 'الشهادات الصحية', recorded: 'الدورات المسجلة والاختبارات' };
+const FEATURE_LABEL: Record<keyof OwnerFeatures, string> = { health: 'الشهادات الصحية', recorded: 'الدورات المسجلة والاختبارات', institute: 'إدارة المعهد (فروع، قاعات، أصول)' };
 
 /** The datetime-free date input value (Saudi calendar day) of an ISO instant. */
 const dayInput = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + 3 * 3_600_000).toISOString().slice(0, 10) : '');
@@ -56,7 +56,7 @@ function Features({ t, plans }: { t?: OwnerTenant; plans: OwnerPlan[] }) {
         <legend className="small">الصلاحيات (الوحدات المتاحة للأكاديمية)</legend>
         {(Object.keys(FEATURE_LABEL) as (keyof OwnerFeatures)[]).map((k) => (
           <label key={k} className="check">
-            <input type="checkbox" name={`f_${k}`} defaultChecked={t ? t.features[k] : true} />
+            <input type="checkbox" name={`f_${k}`} defaultChecked={t ? t.features[k] : k !== 'institute'} />
             {FEATURE_LABEL[k]}
           </label>
         ))}

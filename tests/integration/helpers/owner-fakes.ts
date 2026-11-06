@@ -81,7 +81,7 @@ export class InMemoryOwnerRepository implements OwnerRepository {
 }
 
 export const PENDING_TENANT = 'c1000000-0000-4000-8000-000000000001';
-export const ALL_FEATURES: Features = { health: true, recorded: true };
+export const ALL_FEATURES: Features = { health: true, recorded: true, institute: true };
 
 export function buildOtpFakes(opts: { users: UserLookup; signer: JwtTokenSigner; platformAdmins?: string[]; now?: () => Date }) {
   const repository = new InMemoryOtpRepository();
@@ -104,7 +104,7 @@ export function buildOwnerFakes(opts: { mailer: CapturingMailer; invalidated?: s
     planName: null,
     approvedAt: null,
     subscriptionEndsAt: null,
-    features: { health: false, recorded: false },
+    features: { health: false, recorded: false, institute: false },
     ownerName: 'عبدالرحمن',
     ownerEmail: 'owner@health.test',
     ownerPhone: '+966500000000',

@@ -13,6 +13,7 @@ const ITEMS = [
   { href: '/classrooms', label: 'الفصول الافتراضية' },
   { href: '/certificates', label: 'الشهادات الصادرة' },
   { href: '/health', label: 'الشهادات الصحية' },
+  { href: '/institute', label: 'إدارة المعهد' },
   { href: '/settings', label: 'الإعدادات والهوية' },
 ];
 

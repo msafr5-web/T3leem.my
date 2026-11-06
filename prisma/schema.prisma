@@ -208,6 +208,7 @@ model SaasPlan {
 }
 
 model User {
+  instituteMember   InstituteMember?
   id                String   @id @default(uuid()) @db.Uuid
   tenantId          String   @map("tenant_id") @db.Uuid
   email             String
@@ -748,4 +749,86 @@ model HealthEntitlement {
 
   @@index([tenantId])
   @@map("health_entitlements")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Institute management (branches, members, rooms, assets). One tenant = one institute.
+// Same-tenant and same-branch consistency is enforced by composite foreign keys in the migration.
+// ---------------------------------------------------------------------------------------------
+model Branch {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  city      String?
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  members InstituteMember[]
+  rooms   Room[]
+  assets  Asset[]
+
+  @@unique([tenantId, name])
+  @@map("branches")
+}
+
+model InstituteMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  // HQ | BRANCH_MANAGER | FINANCE | STUDENT_AFFAIRS | INSTRUCTOR (CHECK in the migration)
+  role      String
+  // Null = every branch (HQ, FINANCE); required for BRANCH_MANAGER / STUDENT_AFFAIRS.
+  branchId  String?  @map("branch_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId])
+  @@map("institute_members")
+}
+
+model Room {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  branchId String  @map("branch_id") @db.Uuid
+  name     String
+  // CLASSROOM | LAB | HALL
+  kind     String  @default("CLASSROOM")
+  areaM2   Decimal @map("area_m2") @db.Decimal(8, 2)
+  capacity Int
+  powerKw  Decimal @default(0) @map("power_kw") @db.Decimal(8, 2)
+  active   Boolean @default(true)
+
+  branch Branch  @relation(fields: [branchId], references: [id])
+  assets Asset[]
+
+  @@unique([branchId, name])
+  @@index([tenantId, branchId])
+  @@map("rooms")
+}
+
+model Asset {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  branchId         String    @map("branch_id") @db.Uuid
+  roomId           String?   @map("room_id") @db.Uuid
+  name             String
+  category         String?
+  serialNo         String?   @map("serial_no")
+  purchaseDate     DateTime? @map("purchase_date") @db.Date
+  purchaseValue    Decimal   @default(0) @map("purchase_value") @db.Decimal(12, 2)
+  salvagePercent   Decimal   @default(10) @map("salvage_percent") @db.Decimal(5, 2)
+  usefulLifeMonths Int?      @map("useful_life_months")
+  // IN_SERVICE | MAINTENANCE | RETIRED
+  status           String    @default("IN_SERVICE")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  room   Room?  @relation(fields: [roomId], references: [id])
+
+  @@index([tenantId, branchId])
+  @@map("assets")
 }

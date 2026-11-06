@@ -19,7 +19,7 @@ const select = {
 
 const toFeatures = (v: Prisma.JsonValue): Features => {
   const o = typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  return { health: o.health === true, recorded: o.recorded === true };
+  return { health: o.health === true, recorded: o.recorded === true, institute: o.institute === true };
 };
 
 const toRow = (t: Prisma.TenantGetPayload<{ select: typeof select }>): OwnerTenantRow => ({
