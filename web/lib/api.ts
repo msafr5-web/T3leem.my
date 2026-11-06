@@ -674,7 +674,18 @@ export interface InstInstructor { id: string; branch_id: string; user_id: string
 export interface InstStudent { id: string; branch_id: string; program_id: string | null; level_id: string | null; user_id: string | null; full_name: string; phone: string | null; email: string | null; status: 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'WITHDRAWN'; enrolled_on: string | null }
 export interface InstSession { id: string; branch_id: string; subject_id: string; room_id: string; instructor_id: string; starts_at: string; ends_at: string; status: 'SCHEDULED' | 'HELD' | 'CANCELLED'; notes: string | null }
 export interface InstRoster { session: InstSession; students: (InstStudent & { attendance: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | null })[] }
-export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean } }
+export interface FinExpense { id: string; branch_id: string; room_id: string | null; category: string; amount: string; incurred_on: string; vendor: string | null; description: string | null }
+export interface FinBill { id: string; branch_id: string; period_start: string; period_end: string; amount: string; kwh: string | null }
+export interface FinBudget { id: string; branch_id: string; category: string | null; period: string; amount: string; warn_percent: number; spent: string; remaining: string; percent: number | null; level: 'OK' | 'WARNING' | 'EXCEEDED' }
+export interface FinPayment { id: string; invoice_id: string; amount: string; paid_on: string; method: 'CASH' | 'TRANSFER' | 'CARD' | 'OTHER'; reference: string | null; voided: boolean; void_reason: string | null }
+export interface FinInvoice {
+  id: string; branch_id: string; student_id: string; description: string; amount: string; discount: string; net: string; paid: string; outstanding: string; issued_on: string;
+  status: 'OPEN' | 'CANCELLED'; overdue: boolean; installments: { due_on: string; amount: string; paid: string; remaining: string; state: 'PAID' | 'PARTIAL' | 'OVERDUE' | 'UPCOMING' }[]; payments: FinPayment[];
+}
+export interface FinSummary { month: string; branches: { branch_id: string; income: string; spend: string; net: string; by_category: Record<string, string>; closed: boolean }[]; totals: { income: string; spend: string; net: string } }
+export interface FinDues { month: string; total: string; instructors: { instructor_id: string; branch_id: string; name: string; minutes: number; hourly_rate: string; pay: string }[] }
+export interface FinClosed { id: string; branch_id: string; period: string; closed_by: string; closed_at: string }
+export interface InstMe { role: string; branch_id: string | null; can_write: { branch: boolean; member: boolean; room: boolean; asset: boolean; department: boolean; staff: boolean; program: boolean; instructor: boolean; student: boolean; session: boolean; attendance: boolean; expense: boolean; budget: boolean; invoice: boolean; ledger_admin: boolean }; can_read: { finance: boolean } }
 
 export const admin = {
   institutePrograms: (slug: string, token: string) => api<{ programs: InstProgram[] }>(slug, '/admin/institute/programs', { token }),
@@ -683,6 +694,13 @@ export const admin = {
   instituteSessions: (slug: string, token: string, from?: string, to?: string) =>
     api<{ sessions: InstSession[] }>(slug, `/admin/institute/sessions${from ? `?from=${encodeURIComponent(from)}${to ? `&to=${encodeURIComponent(to)}` : ''}` : ''}`, { token }),
   instituteRoster: (slug: string, token: string, id: string) => api<InstRoster>(slug, `/admin/institute/sessions/${encodeURIComponent(id)}/roster`, { token }),
+  finExpenses: (slug: string, token: string, from: string, to: string) => api<{ expenses: FinExpense[] }>(slug, `/admin/institute/finance/expenses?from=${from}&to=${to}`, { token }),
+  finBills: (slug: string, token: string) => api<{ bills: FinBill[] }>(slug, '/admin/institute/finance/bills', { token }),
+  finBudgets: (slug: string, token: string, month: string) => api<{ month: string; budgets: FinBudget[] }>(slug, `/admin/institute/finance/budgets?month=${month}`, { token }),
+  finInvoices: (slug: string, token: string) => api<{ invoices: FinInvoice[] }>(slug, '/admin/institute/finance/invoices', { token }),
+  finSummary: (slug: string, token: string, month: string) => api<FinSummary>(slug, `/admin/institute/finance/summary?month=${month}`, { token }),
+  finDues: (slug: string, token: string, month: string) => api<FinDues>(slug, `/admin/institute/finance/instructor-dues?month=${month}`, { token }),
+  finClosed: (slug: string, token: string) => api<{ closed: FinClosed[] }>(slug, '/admin/institute/finance/closed-periods', { token }),
   instituteMe: (slug: string, token: string) => api<InstMe>(slug, '/admin/institute/me', { token }),
   instituteBranches: (slug: string, token: string) => api<{ branches: InstBranch[] }>(slug, '/admin/institute/branches', { token }),
   instituteRooms: (slug: string, token: string) => api<{ rooms: InstRoom[] }>(slug, '/admin/institute/rooms', { token }),

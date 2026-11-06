@@ -198,7 +198,7 @@ export class AcademicService {
     this.allow(p, 'student', 'write');
     const cur = await this.repo.getStudent(tenantId, id);
     if (!cur || !inScope(p, cur.branchId)) throw AcademicService.missing('student');
-    await this.repo.deleteStudent(tenantId, this.actor(c), id);
+    AcademicService.written(await this.repo.deleteStudent(tenantId, this.actor(c), id), 'student');
   }
   /** The program and level must belong to the student's branch, and the level to that program. */
   private async requireTrack(tenantId: string, s: { branchId: string; programId: string | null; levelId: string | null }): Promise<void> {

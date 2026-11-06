@@ -18,7 +18,7 @@ export interface Principal {
   branchId: string | null;
 }
 
-export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance' | 'program' | 'instructor' | 'student' | 'session' | 'attendance';
+export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance' | 'program' | 'instructor' | 'student' | 'session' | 'attendance' | 'expense' | 'bill' | 'budget' | 'invoice' | 'ledger_admin' | 'dues';
 export type Action = 'read' | 'write';
 
 const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
@@ -35,6 +35,14 @@ const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
   // An instructor reads and records only their own sessions (narrowed in the service by their linked instructor record).
   session: { read: INSTITUTE_ROLES, write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
   attendance: { read: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS', 'INSTRUCTOR'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS', 'INSTRUCTOR'] },
+  // Finance. Student affairs and instructors never see the books.
+  expense: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'BRANCH_MANAGER', 'FINANCE'] },
+  bill: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'BRANCH_MANAGER', 'FINANCE'] },
+  budget: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
+  invoice: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'BRANCH_MANAGER', 'FINANCE'] },
+  // Undoing money: voiding a payment, cancelling an invoice, closing or reopening a month.
+  ledger_admin: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
+  dues: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE'], write: ['HQ', 'FINANCE'] },
 };
 
 export const can = (role: InstituteRole, resource: Resource, action: Action): boolean => MATRIX[resource][action].includes(role);

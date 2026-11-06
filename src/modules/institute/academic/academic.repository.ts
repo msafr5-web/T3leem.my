@@ -113,7 +113,8 @@ export interface AcademicRepository {
   getStudent(tenantId: string, id: string): Promise<StudentRow | null>;
   createStudent(tenantId: string, actor: Actor, input: StudentInput): Promise<AWrite<StudentRow>>;
   updateStudent(tenantId: string, actor: Actor, id: string, input: StudentInput): Promise<AWrite<StudentRow>>;
-  deleteStudent(tenantId: string, actor: Actor, id: string): Promise<boolean>;
+  /** `in_use` once the student has invoices: financial records are never orphaned. */
+  deleteStudent(tenantId: string, actor: Actor, id: string): Promise<AWrite<void>>;
 
   listSessions(tenantId: string, filter: { branchId: string | null; instructorId?: string; from?: Date; to?: Date }): Promise<SessionRow[]>;
   getSession(tenantId: string, id: string): Promise<SessionRow | null>;
@@ -413,11 +414,17 @@ export class PrismaAcademicRepository implements AcademicRepository {
       }
     });
   }
-  deleteStudent(tenantId: string, actor: Actor, id: string): Promise<boolean> {
+  deleteStudent(tenantId: string, actor: Actor, id: string): Promise<AWrite<void>> {
     return withTenantTransaction(tenantId, async (tx) => {
-      const { count } = await tx.student.deleteMany({ where: { tenantId, id } });
-      if (count > 0) await audit(tx, tenantId, actor, 'institute.student_deleted', id, {});
-      return count > 0;
+      try {
+        const { count } = await tx.student.deleteMany({ where: { tenantId, id } });
+        if (count === 0) return { kind: 'not_found' as const };
+        await audit(tx, tenantId, actor, 'institute.student_deleted', id, {});
+        return { kind: 'ok' as const, value: undefined };
+      } catch (e) {
+        if (isFk(e)) return { kind: 'in_use' as const };
+        throw e;
+      }
     });
   }
 

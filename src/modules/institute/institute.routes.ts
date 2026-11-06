@@ -126,7 +126,7 @@ export function buildInstituteRouter(service: InstituteService, jwt: JwtVerifyOp
     const { tenantId, caller } = ctx(req);
     const m = await service.me(tenantId, caller);
     noStore(res);
-    res.json(ok({ role: m.role, branch_id: m.branchId, can_write: m.canWrite }));
+    res.json(ok({ role: m.role, branch_id: m.branchId, can_write: m.canWrite, can_read: m.canRead }));
   });
 
   // ---- branches ----

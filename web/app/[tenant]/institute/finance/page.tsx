@@ -1,0 +1,327 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import {
+  addBillAction,
+  addExpenseAction,
+  cancelInvoiceAction,
+  closeMonthAction,
+  deleteBillAction,
+  deleteBudgetAction,
+  deleteExpenseAction,
+  issueInvoiceAction,
+  receivePaymentAction,
+  reopenMonthAction,
+  saveBudgetAction,
+  voidPaymentAction,
+} from '@/lib/institute-actions';
+import { ApiError, admin } from '@/lib/api';
+import { formatNumber, isValidSlug } from '@/lib/format';
+import { getSession } from '@/lib/session';
+import { ActionForm, ConfirmAction } from '../../dashboard/health/health-forms';
+
+export const metadata: Metadata = { title: 'مالية المعهد' };
+
+const NOTICES: Record<string, string> = {
+  expense: 'تم تحديث المصروفات.',
+  bill: 'تم تحديث فواتير الكهرباء.',
+  budget: 'تم تحديث الميزانيات.',
+  invoice: 'تم تحديث الفواتير.',
+  payment: 'تم تسجيل الدفعة.',
+  void: 'تم إبطال الدفعة (تبقى في السجل).',
+  closed: 'تم إغلاق الشهر.',
+  reopened: 'أُعيد فتح الشهر.',
+};
+const LEVEL: Record<string, { label: string; color: string }> = {
+  OK: { label: 'ضمن الميزانية', color: '#1f7a46' },
+  WARNING: { label: 'اقترب من الحد', color: '#a36a00' },
+  EXCEEDED: { label: 'تجاوز الميزانية', color: '#a3341f' },
+};
+const STATE: Record<string, string> = { PAID: 'مسدد', PARTIAL: 'جزئي', OVERDUE: 'متأخر', UPCOMING: 'قادم' };
+const METHOD: Record<string, string> = { CASH: 'نقداً', TRANSFER: 'تحويل', CARD: 'بطاقة', OTHER: 'أخرى' };
+const ar = (n: string) => Number(n).toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Saudi-time current month, YYYY-MM. */
+const thisMonth = () => new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7);
+const lastDay = (month: string) => {
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+};
+const shift = (month: string, by: number) => {
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  const t = y * 12 + (m - 1) + by;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+};
+
+async function orNull<T>(p: Promise<T>): Promise<T | null> {
+  try {
+    return await p;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) return null;
+    throw err;
+  }
+}
+
+export default async function FinancePage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ month?: string; saved?: string }> }) {
+  const [{ tenant: slug }, sp] = await Promise.all([params, searchParams]);
+  if (!isValidSlug(slug)) redirect('/');
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/institute/finance`)}`);
+  const t = session.token;
+  const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : thisMonth();
+  const today = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+
+  let me;
+  try {
+    me = await admin.instituteMe(slug, t);
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'FEATURE_DISABLED' || err.status === 403)) redirect(`/${slug}/institute`);
+    throw err;
+  }
+  if (!me.can_read.finance) redirect(`/${slug}/institute`);
+
+  const [branches, students, summary, budgets, expenses, bills, invoices, dues, closed, rooms] = await Promise.all([
+    orNull(admin.instituteBranches(slug, t)),
+    orNull(admin.instituteStudents(slug, t)),
+    orNull(admin.finSummary(slug, t, month)),
+    orNull(admin.finBudgets(slug, t, month)),
+    orNull(admin.finExpenses(slug, t, `${month}-01`, lastDay(month))),
+    orNull(admin.finBills(slug, t)),
+    orNull(admin.finInvoices(slug, t)),
+    orNull(admin.finDues(slug, t, month)),
+    orNull(admin.finClosed(slug, t)),
+    orNull(admin.instituteRooms(slug, t)),
+  ]);
+  const w = me.can_write;
+  const branchList = branches?.branches ?? [];
+  const branchName = new Map(branchList.map((b) => [b.id, b.name]));
+  const studentList = students?.students ?? [];
+  const studentName = new Map(studentList.map((s) => [s.id, s.full_name]));
+  const roomList = rooms?.rooms ?? [];
+  const closedHere = new Map((closed?.closed ?? []).filter((c) => c.period === `${month}-01`).map((c) => [c.branch_id, c]));
+  const notice = sp.saved ? NOTICES[sp.saved] : null;
+  const only = branchList.length === 1 ? branchList[0]?.id : '';
+  const monthEnded = shift(month, 1) <= today.slice(0, 7);
+  const BranchSelect = ({ name }: { name: string }) => (
+    <select name={name} required defaultValue={only}>
+      <option value="" disabled>اختر الفرع</option>
+      {branchList.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+    </select>
+  );
+  const Month = () => <input type="hidden" name="month" value={month} />;
+  const openInvoices = (invoices?.invoices ?? []).filter((i) => i.status === 'OPEN');
+  const overdue = openInvoices.filter((i) => i.overdue);
+
+  return (
+    <div className="stack" style={{ gap: 28 }}>
+      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h1>مالية المعهد</h1>
+          <p className="muted">المصروفات وفواتير الكهرباء والميزانيات وفواتير الطلاب ومدفوعاتهم. الأرقام بالريال وبدقة الهللة، وما بعد إغلاق الشهر لا يتغير.</p>
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Link href={`/${slug}/institute/finance?month=${shift(month, -1)}`} className="btn btn-ghost">الشهر السابق</Link>
+          <strong style={{ alignSelf: 'center' }} dir="ltr">{month}</strong>
+          <Link href={`/${slug}/institute/finance?month=${shift(month, 1)}`} className="btn btn-ghost">الشهر التالي</Link>
+          <Link href={`/${slug}/institute`} className="btn btn-ghost">إدارة المعهد</Link>
+        </div>
+      </div>
+      {notice && <div className="notice ok" role="status">{notice}</div>}
+
+      {summary && (
+        <section className="card stack" aria-labelledby="sum-h">
+          <h2 id="sum-h">ملخص الشهر</h2>
+          <table className="table"><thead><tr><th>الفرع</th><th>الإيراد المحصَّل</th><th>المصروفات والكهرباء</th><th>الصافي</th><th>الحالة</th></tr></thead>
+            <tbody>
+              {summary.branches.map((b) => (
+                <tr key={b.branch_id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{ar(b.income)}</td><td>{ar(b.spend)}</td><td style={{ color: Number(b.net) < 0 ? '#a3341f' : undefined }}>{ar(b.net)}</td><td>{closedHere.has(b.branch_id) || b.closed ? 'مغلق' : 'مفتوح'}</td></tr>
+              ))}
+              <tr><th>الإجمالي</th><th>{ar(summary.totals.income)}</th><th>{ar(summary.totals.spend)}</th><th>{ar(summary.totals.net)}</th><th /></tr>
+            </tbody></table>
+          {overdue.length > 0 && <p className="notice" role="status">فواتير بها أقساط متأخرة: {formatNumber(overdue.length)}، والمتبقي عليها {ar(String(overdue.reduce((n, i) => n + Number(i.outstanding), 0)))} ريال.</p>}
+          {w.ledger_admin && branchList.length > 0 && monthEnded && (
+            <details>
+              <summary>إغلاق الشهر</summary>
+              <ActionForm action={closeMonthAction.bind(null, slug)} submitLabel="إغلاق الشهر لهذا الفرع">
+                <Month />
+                <label>الفرع<BranchSelect name="branch_id" /></label>
+                <p className="small muted">بعد الإغلاق لا يمكن إضافة أو تعديل أو حذف أي مصروف أو فاتورة كهرباء أو دفعة تاريخها في هذا الشهر. يمكن لإدارة المعهد أو المالية إعادة فتحه.</p>
+              </ActionForm>
+            </details>
+          )}
+          {w.ledger_admin && (closed?.closed ?? []).filter((c) => c.period === `${month}-01`).map((c) => (
+            <div key={c.id} className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <span>شهر {month} مغلق لفرع {branchName.get(c.branch_id) ?? ''}</span>
+              <ConfirmAction action={reopenMonthAction.bind(null, slug, month, c.id)} label="إعادة الفتح" confirmText="إعادة فتح هذا الشهر للتعديل؟" variant="ghost" />
+            </div>
+          ))}
+        </section>
+      )}
+
+      {budgets && (
+        <section className="card stack" aria-labelledby="bud-h">
+          <h2 id="bud-h">الميزانيات والتنبيهات ({formatNumber(budgets.budgets.length)})</h2>
+          {budgets.budgets.length === 0 ? <p className="muted">لا توجد ميزانيات لهذا الشهر.</p> : (
+            <table className="table"><thead><tr><th>الفرع</th><th>البند</th><th>الميزانية</th><th>المصروف</th><th>المتبقي</th><th>النسبة</th><th>الحالة</th>{w.budget && <th />}</tr></thead>
+              <tbody>{budgets.budgets.map((b) => (
+                <tr key={b.id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{b.category ?? 'الإجمالي'}</td><td>{ar(b.amount)}</td><td>{ar(b.spent)}</td><td>{ar(b.remaining)}</td><td>{b.percent === null ? '—' : `${b.percent}%`}</td>
+                  <td style={{ color: LEVEL[b.level]?.color, fontWeight: 700 }}>{LEVEL[b.level]?.label}</td>
+                  {w.budget && <td><ConfirmAction action={deleteBudgetAction.bind(null, slug, month, b.id)} label="حذف" confirmText="حذف هذه الميزانية؟" variant="ghost" /></td>}</tr>
+              ))}</tbody></table>
+          )}
+          {w.budget && (
+            <details>
+              <summary>تحديد ميزانية</summary>
+              <ActionForm action={saveBudgetAction.bind(null, slug)} submitLabel="حفظ الميزانية">
+                <Month />
+                <label>الفرع<BranchSelect name="branch_id" /></label>
+                <label>البند <span className="hint">(اتركه فارغاً لميزانية الفرع الإجمالية؛ اكتب ELECTRICITY لفواتير الكهرباء)</span><input name="category" maxLength={80} /></label>
+                <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>تنبيه عند % <span className="hint">(الافتراضي 80)</span><input type="number" name="warn_percent" min={1} max={100} defaultValue={80} /></label>
+              </ActionForm>
+            </details>
+          )}
+        </section>
+      )}
+
+      {expenses && (
+        <section className="card stack" aria-labelledby="exp-h">
+          <h2 id="exp-h">المصروفات التشغيلية ({formatNumber(expenses.expenses.length)})</h2>
+          {expenses.expenses.length === 0 ? <p className="muted">لا توجد مصروفات في هذا الشهر.</p> : (
+            <table className="table"><thead><tr><th>التاريخ</th><th>الفرع</th><th>البند</th><th>المبلغ</th><th>المورّد</th>{w.expense && <th />}</tr></thead>
+              <tbody>{expenses.expenses.map((e) => (
+                <tr key={e.id}><td dir="ltr">{e.incurred_on}</td><td>{branchName.get(e.branch_id) ?? '—'}</td><td>{e.category}{e.description ? <span className="muted"> · {e.description}</span> : null}</td><td>{ar(e.amount)}</td><td>{e.vendor ?? '—'}</td>
+                  {w.expense && <td><ConfirmAction action={deleteExpenseAction.bind(null, slug, month, e.id)} label="حذف" confirmText="حذف هذا المصروف؟" variant="danger" /></td>}</tr>
+              ))}</tbody></table>
+          )}
+          {w.expense && (
+            <details>
+              <summary>تسجيل مصروف</summary>
+              <ActionForm action={addExpenseAction.bind(null, slug)} submitLabel="تسجيل المصروف">
+                <Month />
+                <label>الفرع<BranchSelect name="branch_id" /></label>
+                <label>البند <span className="hint">(ورقيات، صيانة مكيفات، أمن، نظافة...)</span><input name="category" required maxLength={80} /></label>
+                <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>التاريخ<input type="date" name="incurred_on" required defaultValue={`${month}-01`} /></label>
+                <label>القاعة <span className="hint">(اختياري، من الفرع نفسه)</span><select name="room_id" defaultValue=""><option value="">بلا قاعة</option>{roomList.map((r) => <option key={r.id} value={r.id}>{branchName.get(r.branch_id)} — {r.name}</option>)}</select></label>
+                <label>المورّد<input name="vendor" maxLength={120} /></label>
+                <label>ملاحظات<input name="description" maxLength={500} /></label>
+              </ActionForm>
+            </details>
+          )}
+        </section>
+      )}
+
+      {bills && (
+        <section className="card stack" aria-labelledby="bill-h">
+          <h2 id="bill-h">فواتير الكهرباء ({formatNumber(bills.bills.length)})</h2>
+          {bills.bills.length === 0 ? <p className="muted">لا توجد فواتير كهرباء مسجلة.</p> : (
+            <table className="table"><thead><tr><th>الفرع</th><th>الفترة</th><th>المبلغ</th><th>الاستهلاك (ك.و.س)</th>{w.expense && <th />}</tr></thead>
+              <tbody>{bills.bills.slice(0, 24).map((b) => (
+                <tr key={b.id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td dir="ltr">{b.period_start} → {b.period_end}</td><td>{ar(b.amount)}</td><td>{b.kwh ? ar(b.kwh) : '—'}</td>
+                  {w.expense && <td><ConfirmAction action={deleteBillAction.bind(null, slug, month, b.id)} label="حذف" confirmText="حذف فاتورة الكهرباء؟" variant="danger" /></td>}</tr>
+              ))}</tbody></table>
+          )}
+          {w.expense && (
+            <details>
+              <summary>تسجيل فاتورة كهرباء</summary>
+              <ActionForm action={addBillAction.bind(null, slug)} submitLabel="تسجيل الفاتورة">
+                <Month />
+                <label>الفرع<BranchSelect name="branch_id" /></label>
+                <label>من<input type="date" name="period_start" required defaultValue={`${month}-01`} /></label>
+                <label>إلى<input type="date" name="period_end" required defaultValue={lastDay(month)} /></label>
+                <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>الاستهلاك بالكيلوواط ساعة <span className="hint">(اختياري)</span><input name="kwh" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+              </ActionForm>
+            </details>
+          )}
+        </section>
+      )}
+
+      {invoices && (
+        <section className="card stack" aria-labelledby="inv-h">
+          <h2 id="inv-h">فواتير الطلاب ({formatNumber(invoices.invoices.length)})</h2>
+          {invoices.invoices.length === 0 ? <p className="muted">لا توجد فواتير.</p> : invoices.invoices.slice(0, 60).map((i) => (
+            <div key={i.id} className="stack" style={{ gap: 6, borderTop: '1px solid var(--line, #d6e3f0)', paddingTop: 10 }}>
+              <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <strong>{studentName.get(i.student_id) ?? 'طالب'} — {i.description} <span className="muted">· {branchName.get(i.branch_id) ?? ''}</span></strong>
+                <span>
+                  صافي {ar(i.net)} · مدفوع {ar(i.paid)} · متبقٍ <strong style={{ color: i.overdue ? '#a3341f' : undefined }}>{ar(i.outstanding)}</strong>
+                  {i.status === 'CANCELLED' ? ' · ملغاة' : i.overdue ? ' · متأخرة' : ''}
+                </span>
+              </div>
+              <ul className="small" style={{ paddingInlineStart: 18 }}>
+                {i.installments.map((x, n) => <li key={n}><span dir="ltr">{x.due_on}</span> — {ar(x.amount)} — {STATE[x.state]}{Number(x.paid) > 0 && x.state !== 'PAID' ? ` (مدفوع ${ar(x.paid)})` : ''}</li>)}
+              </ul>
+              {i.payments.length > 0 && (
+                <ul className="small" style={{ paddingInlineStart: 18 }}>
+                  {i.payments.map((p) => (
+                    <li key={p.id} style={p.voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                      <span dir="ltr">{p.paid_on}</span> — {ar(p.amount)} — {METHOD[p.method]}{p.reference ? ` (${p.reference})` : ''}{p.voided ? ` — مُبطلة: ${p.void_reason ?? ''}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                {w.invoice && i.status === 'OPEN' && Number(i.outstanding) > 0 && (
+                  <details>
+                    <summary>تسجيل دفعة</summary>
+                    <ActionForm action={receivePaymentAction.bind(null, slug)} submitLabel="تسجيل الدفعة">
+                      <Month />
+                      <input type="hidden" name="invoice_id" value={i.id} />
+                      <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" defaultValue={i.outstanding} /></label>
+                      <label>التاريخ<input type="date" name="paid_on" required defaultValue={today} max={today} /></label>
+                      <label>الطريقة<select name="method" defaultValue="CASH">{Object.entries(METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+                      <label>المرجع<input name="reference" maxLength={120} dir="ltr" /></label>
+                    </ActionForm>
+                  </details>
+                )}
+                {w.ledger_admin && i.payments.some((p) => !p.voided) && (
+                  <details>
+                    <summary>إبطال دفعة</summary>
+                    <ActionForm action={voidPaymentAction.bind(null, slug, month)} submitLabel="إبطال الدفعة">
+                      <label>الدفعة<select name="payment_id" required defaultValue="">
+                        <option value="" disabled>اختر الدفعة</option>
+                        {i.payments.filter((p) => !p.voided).map((p) => <option key={p.id} value={p.id}>{p.paid_on} — {ar(p.amount)}</option>)}</select></label>
+                      <label>السبب (مطلوب)<input name="reason" required minLength={3} maxLength={300} /></label>
+                    </ActionForm>
+                  </details>
+                )}
+                {w.ledger_admin && i.status === 'OPEN' && <ConfirmAction action={cancelInvoiceAction.bind(null, slug, month, i.id)} label="إلغاء الفاتورة" confirmText="إلغاء هذه الفاتورة؟ لا تُلغى وعليها دفعات فعّالة." variant="ghost" />}
+              </div>
+            </div>
+          ))}
+          {w.invoice && studentList.length > 0 && (
+            <details>
+              <summary>إصدار فاتورة لطالب</summary>
+              <ActionForm action={issueInvoiceAction.bind(null, slug)} submitLabel="إصدار الفاتورة">
+                <Month />
+                <label>الطالب<select name="student_id" required defaultValue=""><option value="" disabled>اختر الطالب</option>{studentList.map((s) => <option key={s.id} value={s.id}>{branchName.get(s.branch_id)} — {s.full_name}</option>)}</select></label>
+                <label>الوصف<input name="description" required maxLength={200} defaultValue="رسوم الدبلوم" /></label>
+                <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
+                <label>الخصم (ريال)<input name="discount" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" defaultValue="0" /></label>
+                <label>تاريخ الإصدار<input type="date" name="issued_on" required defaultValue={today} /></label>
+                <label>عدد الأقساط الشهرية<input type="number" name="count" min={1} max={60} defaultValue={1} /></label>
+                <label>تاريخ أول قسط <span className="hint">(افتراضياً تاريخ الإصدار)</span><input type="date" name="first_due" /></label>
+                <p className="small muted">تُقسَّم الفاتورة بعد الخصم إلى أقساط شهرية متساوية؛ فرق الهللات في آخر قسط. الضريبة على الرسوم الدراسية تُراجع مع محاسب قانوني قبل الاعتماد.</p>
+              </ActionForm>
+            </details>
+          )}
+        </section>
+      )}
+
+      {dues && (
+        <section className="card stack" aria-labelledby="dues-h">
+          <h2 id="dues-h">مستحقات المدربين عن {month}</h2>
+          <p className="small muted">تُحتسب من الحصص التي سُجّلت «تمّت» فقط (الملغاة والمجدولة لا تُحتسب)، بساعات الحصة الفعلية وبأجر ساعة المدرب، وحدود الشهر بتوقيت السعودية.</p>
+          {dues.instructors.length === 0 ? <p className="muted">لا توجد حصص منفذة في هذا الشهر.</p> : (
+            <table className="table"><thead><tr><th>المدرب</th><th>الفرع</th><th>الساعات</th><th>أجر الساعة</th><th>المستحق</th></tr></thead>
+              <tbody>
+                {dues.instructors.map((d) => <tr key={d.instructor_id}><td>{d.name}</td><td>{branchName.get(d.branch_id) ?? '—'}</td><td>{(d.minutes / 60).toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</td><td>{ar(d.hourly_rate)}</td><td>{ar(d.pay)}</td></tr>)}
+                <tr><th colSpan={4}>الإجمالي</th><th>{ar(dues.total)}</th></tr>
+              </tbody></table>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}

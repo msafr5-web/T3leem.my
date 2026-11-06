@@ -80,7 +80,7 @@ export class InstituteService {
 
   async me(tenantId: string, c: Caller) {
     const p = await this.principal(tenantId, c);
-    return { role: p.role, branchId: p.branchId, canWrite: { branch: can(p.role, 'branch', 'write'), member: can(p.role, 'member', 'write'), room: can(p.role, 'room', 'write'), asset: can(p.role, 'asset', 'write'), department: can(p.role, 'department', 'write'), staff: can(p.role, 'staff', 'write'), program: can(p.role, 'program', 'write'), instructor: can(p.role, 'instructor', 'write'), student: can(p.role, 'student', 'write'), session: can(p.role, 'session', 'write'), attendance: can(p.role, 'attendance', 'write') } };
+    return { role: p.role, branchId: p.branchId, canWrite: { branch: can(p.role, 'branch', 'write'), member: can(p.role, 'member', 'write'), room: can(p.role, 'room', 'write'), asset: can(p.role, 'asset', 'write'), department: can(p.role, 'department', 'write'), staff: can(p.role, 'staff', 'write'), program: can(p.role, 'program', 'write'), instructor: can(p.role, 'instructor', 'write'), student: can(p.role, 'student', 'write'), session: can(p.role, 'session', 'write'), attendance: can(p.role, 'attendance', 'write'), expense: can(p.role, 'expense', 'write'), budget: can(p.role, 'budget', 'write'), invoice: can(p.role, 'invoice', 'write'), ledger_admin: can(p.role, 'ledger_admin', 'write') }, canRead: { finance: can(p.role, 'invoice', 'read') } };
   }
 
   // ---- branches ----

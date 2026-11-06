@@ -41,6 +41,24 @@ const MESSAGES: Record<string, string> = {
   IMPORT_INVALID: 'في الملف صفوف لا يمكن استيرادها، ولم يُستورد شيء. صحّحها وأعد الرفع.',
   PAYLOAD_TOO_LARGE: 'حجم الملف أكبر من المسموح (٢ ميغابايت).',
   VALIDATION_FAILED: 'تحقق من الحقول: القيم غير صحيحة.',
+  PERIOD_CLOSED: 'هذا الشهر مغلق: لا يمكن إضافة أو تعديل أو حذف ما تاريخه فيه. أعد فتحه أولاً إن لزم.',
+  PERIOD_NOT_ENDED: 'لا يُغلق الشهر إلا بعد انتهائه.',
+  PERIOD_EXISTS: 'هذا الشهر مغلق مسبقاً.',
+  PERIOD_NOT_FOUND: 'الفترة غير موجودة.',
+  USE_UTILITY_BILL: 'سجّل الكهرباء كفاتورة كهرباء لا كمصروف، حتى لا تُحسب مرتين.',
+  BILL_EXISTS: 'سُجلت فاتورة كهرباء لهذا الفرع في هذا الشهر.',
+  BILL_NOT_FOUND: 'الفاتورة غير موجودة.',
+  EXPENSE_NOT_FOUND: 'المصروف غير موجود أو خارج صلاحيتك.',
+  BUDGET_NOT_FOUND: 'الميزانية غير موجودة.',
+  INVOICE_NOT_FOUND: 'الفاتورة غير موجودة أو خارج صلاحيتك.',
+  PAYMENT_NOT_FOUND: 'الدفعة غير موجودة.',
+  OVERPAID: 'المبلغ أكبر من المتبقي على الفاتورة.',
+  PAID_IN_FUTURE: 'لا يمكن تأريخ دفعة بتاريخ مستقبلي.',
+  INVOICE_CANCELLED: 'الفاتورة ملغاة ولا تقبل دفعات.',
+  INVOICE_HAS_PAYMENTS: 'ألغِ دفعات الفاتورة (إبطالها) قبل إلغائها.',
+  DISCOUNT_TOO_LARGE: 'الخصم يجب أن يكون أقل من المبلغ.',
+  INSTALLMENTS_MISMATCH: 'مجموع الأقساط لا يساوي صافي الفاتورة.',
+  STUDENT_IN_USE: 'للطالب فواتير مالية. لا يمكن حذفه.',
   PROGRAM_EXISTS: 'يوجد برنامج بهذا الاسم في الفرع.',
   PROGRAM_NOT_FOUND: 'البرنامج غير موجود أو خارج صلاحيتك.',
   PROGRAM_IN_USE: 'في هذا البرنامج طلاب أو حصص. انقلهم أو ألغها أولاً.',
@@ -266,4 +284,66 @@ export async function saveAttendanceAction(slug: string, sessionId: string, _pre
   }
   revalidatePath(`/${slug}/institute/session/${sessionId}`);
   return { done: `تم حفظ حضور ${records.length} طالباً.` };
+}
+
+// ---- finance ----
+/** Saves, then returns to the finance page on the same month so the figures the user is watching stay on screen. */
+async function saveFin(slug: string, path: string, method: 'POST' | 'PUT' | 'DELETE', body: unknown, month: string, notice: string): Promise<InstState> {
+  const t = await token(slug);
+  try {
+    await api(slug, `/admin/institute${path}`, { method, token: t, body });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'OVERPAID') {
+      const outstanding = (err.details as unknown as { outstanding?: string } | undefined)?.outstanding;
+      return { error: outstanding ? `المبلغ أكبر من المتبقي على الفاتورة (${outstanding} ريال).` : MESSAGES.OVERPAID };
+    }
+    return describe(err);
+  }
+  revalidatePath(`/${slug}/institute/finance`);
+  redirect(`/${slug}/institute/finance?month=${encodeURIComponent(month)}&saved=${notice}`);
+}
+const monthOf = (form: FormData): string => /^\d{4}-(0[1-9]|1[0-2])$/.test(str(form, 'month')) ? str(form, 'month') : '';
+
+export async function addExpenseAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, '/finance/expenses', 'POST', { branch_id: str(form, 'branch_id'), room_id: optional(form, 'room_id'), category: str(form, 'category'), amount: str(form, 'amount'), incurred_on: str(form, 'incurred_on'), vendor: optional(form, 'vendor'), description: optional(form, 'description') }, monthOf(form), 'expense');
+}
+export async function deleteExpenseAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveFin(slug, `/finance/expenses/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'expense');
+}
+export async function addBillAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, '/finance/bills', 'POST', { branch_id: str(form, 'branch_id'), period_start: str(form, 'period_start'), period_end: str(form, 'period_end'), amount: str(form, 'amount'), kwh: optional(form, 'kwh') }, monthOf(form), 'bill');
+}
+export async function deleteBillAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveFin(slug, `/finance/bills/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'bill');
+}
+export async function saveBudgetAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, '/finance/budgets', 'PUT', { branch_id: str(form, 'branch_id'), month: monthOf(form), category: optional(form, 'category'), amount: str(form, 'amount'), warn_percent: num(form, 'warn_percent') }, monthOf(form), 'budget');
+}
+export async function deleteBudgetAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveFin(slug, `/finance/budgets/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'budget');
+}
+export async function issueInvoiceAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(
+    slug,
+    '/finance/invoices',
+    'POST',
+    { student_id: str(form, 'student_id'), description: str(form, 'description'), amount: str(form, 'amount'), discount: optional(form, 'discount') ?? '0', issued_on: str(form, 'issued_on'), plan: { count: num(form, 'count') ?? 1, first_due: str(form, 'first_due') || str(form, 'issued_on') } },
+    monthOf(form),
+    'invoice',
+  );
+}
+export async function receivePaymentAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, `/finance/invoices/${encodeURIComponent(str(form, 'invoice_id'))}/payments`, 'POST', { amount: str(form, 'amount'), paid_on: str(form, 'paid_on'), method: str(form, 'method') || 'CASH', reference: optional(form, 'reference') }, monthOf(form), 'payment');
+}
+export async function voidPaymentAction(slug: string, month: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, `/finance/payments/${encodeURIComponent(str(form, 'payment_id'))}/void`, 'POST', { reason: str(form, 'reason') }, month, 'void');
+}
+export async function cancelInvoiceAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveFin(slug, `/finance/invoices/${encodeURIComponent(id)}/cancel`, 'POST', undefined, month, 'invoice');
+}
+export async function closeMonthAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {
+  return saveFin(slug, '/finance/closed-periods', 'POST', { branch_id: str(form, 'branch_id'), month: monthOf(form) }, monthOf(form), 'closed');
+}
+export async function reopenMonthAction(slug: string, month: string, id: string, _prev: InstState): Promise<InstState> {
+  return saveFin(slug, `/finance/closed-periods/${encodeURIComponent(id)}`, 'DELETE', undefined, month, 'reopened');
 }
