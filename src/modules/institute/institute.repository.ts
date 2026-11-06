@@ -58,6 +58,36 @@ export interface AssetRow {
 }
 export type AssetInput = Omit<AssetRow, 'id'>;
 
+export interface DepartmentRow {
+  id: string;
+  branchId: string | null;
+  name: string;
+}
+export interface StaffRow {
+  id: string;
+  branchId: string;
+  departmentId: string | null;
+  fullName: string;
+  jobTitle: string | null;
+  phone: string | null;
+  email: string | null;
+  active: boolean;
+}
+export type StaffInput = Omit<StaffRow, 'id'>;
+
+export type MaintenanceKind = 'INSPECTION' | 'REPAIR' | 'SERVICE';
+export interface MaintenanceRow {
+  id: string;
+  assetId: string;
+  branchId: string;
+  performedOn: string;
+  kind: MaintenanceKind;
+  cost: string;
+  notes: string | null;
+  nextDueOn: string | null;
+}
+export type MaintenanceInput = Omit<MaintenanceRow, 'id'>;
+
 export type Write<T> = { kind: 'ok'; value: T } | { kind: 'not_found' } | { kind: 'duplicate' } | { kind: 'in_use' };
 
 export interface InstituteRepository {
@@ -84,6 +114,25 @@ export interface InstituteRepository {
   createAsset(tenantId: string, actor: Actor, input: AssetInput): Promise<Write<AssetRow>>;
   updateAsset(tenantId: string, actor: Actor, id: string, input: AssetInput): Promise<Write<AssetRow>>;
   deleteAsset(tenantId: string, actor: Actor, id: string): Promise<boolean>;
+  /** Imports many assets in ONE transaction: all or nothing. */
+  createAssets(tenantId: string, actor: Actor, inputs: AssetInput[]): Promise<number>;
+
+  /** For a branch-bound caller: institute-wide departments plus their own branch's. */
+  listDepartments(tenantId: string, branchId: string | null): Promise<DepartmentRow[]>;
+  getDepartment(tenantId: string, id: string): Promise<DepartmentRow | null>;
+  createDepartment(tenantId: string, actor: Actor, input: { branchId: string | null; name: string }): Promise<Write<DepartmentRow>>;
+  deleteDepartment(tenantId: string, actor: Actor, id: string): Promise<Write<void>>;
+
+  listStaff(tenantId: string, branchId: string | null): Promise<StaffRow[]>;
+  getStaff(tenantId: string, id: string): Promise<StaffRow | null>;
+  createStaff(tenantId: string, actor: Actor, input: StaffInput): Promise<Write<StaffRow>>;
+  updateStaff(tenantId: string, actor: Actor, id: string, input: StaffInput): Promise<Write<StaffRow>>;
+  deleteStaff(tenantId: string, actor: Actor, id: string): Promise<boolean>;
+
+  listMaintenance(tenantId: string, assetId: string): Promise<MaintenanceRow[]>;
+  addMaintenance(tenantId: string, actor: Actor, input: MaintenanceInput): Promise<Write<MaintenanceRow>>;
+  /** The most recent maintenance entry of each asset (inside the branch scope). */
+  latestMaintenance(tenantId: string, branchId: string | null): Promise<{ assetId: string; performedOn: string; nextDueOn: string | null }[]>;
 }
 
 const audit = (tx: Prisma.TransactionClient, tenantId: string, actor: Actor, action: string, entityId: string, metadata: Prisma.InputJsonValue) =>
@@ -133,6 +182,27 @@ const toAsset = (a: {
   usefulLifeMonths: a.usefulLifeMonths,
   status: a.status as AssetStatus,
   notes: a.notes,
+});
+const toDepartment = (d: { id: string; branchId: string | null; name: string }): DepartmentRow => ({ id: d.id, branchId: d.branchId, name: d.name });
+const toStaff = (s: { id: string; branchId: string; departmentId: string | null; fullName: string; jobTitle: string | null; phone: string | null; email: string | null; active: boolean }): StaffRow => ({
+  id: s.id,
+  branchId: s.branchId,
+  departmentId: s.departmentId,
+  fullName: s.fullName,
+  jobTitle: s.jobTitle,
+  phone: s.phone,
+  email: s.email,
+  active: s.active,
+});
+const toMaintenance = (m: { id: string; assetId: string; branchId: string; performedOn: Date; kind: string; cost: Prisma.Decimal; notes: string | null; nextDueOn: Date | null }): MaintenanceRow => ({
+  id: m.id,
+  assetId: m.assetId,
+  branchId: m.branchId,
+  performedOn: dateOnly(m.performedOn) as string,
+  kind: m.kind as MaintenanceKind,
+  cost: m.cost.toFixed(2),
+  notes: m.notes,
+  nextDueOn: dateOnly(m.nextDueOn),
 });
 const assetData = (i: AssetInput) => ({
   branchId: i.branchId,
@@ -312,5 +382,137 @@ export class PrismaInstituteRepository implements InstituteRepository {
       if (count > 0) await audit(tx, tenantId, actor, 'institute.asset_deleted', id, {});
       return count > 0;
     });
+  }
+
+  createAssets(tenantId: string, actor: Actor, inputs: AssetInput[]): Promise<number> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.asset.createMany({ data: inputs.map((i) => ({ tenantId, ...assetData(i) })) });
+      await audit(tx, tenantId, actor, 'institute.assets_imported', tenantId, { count });
+      return count;
+    });
+  }
+
+  async listDepartments(tenantId: string, branchId: string | null) {
+    const rows = await forTenant(tenantId).department.findMany({
+      where: { tenantId, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) },
+      orderBy: [{ branchId: 'asc' }, { name: 'asc' }],
+    });
+    return rows.map(toDepartment);
+  }
+  async getDepartment(tenantId: string, id: string) {
+    const d = await forTenant(tenantId).department.findFirst({ where: { tenantId, id } });
+    return d ? toDepartment(d) : null;
+  }
+  createDepartment(tenantId: string, actor: Actor, input: { branchId: string | null; name: string }): Promise<Write<DepartmentRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const d = await tx.department.create({ data: { tenantId, ...input } });
+        await audit(tx, tenantId, actor, 'institute.department_created', d.id, { name: d.name, branchId: d.branchId });
+        return { kind: 'ok' as const, value: toDepartment(d) };
+      } catch (e) {
+        if (isUnique(e)) return { kind: 'duplicate' as const };
+        if (isFk(e)) return { kind: 'not_found' as const };
+        throw e;
+      }
+    });
+  }
+  deleteDepartment(tenantId: string, actor: Actor, id: string): Promise<Write<void>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const { count } = await tx.department.deleteMany({ where: { tenantId, id } });
+        if (count === 0) return { kind: 'not_found' as const };
+        await audit(tx, tenantId, actor, 'institute.department_deleted', id, {});
+        return { kind: 'ok' as const, value: undefined };
+      } catch (e) {
+        if (isFk(e)) return { kind: 'in_use' as const };
+        throw e;
+      }
+    });
+  }
+
+  async listStaff(tenantId: string, branchId: string | null) {
+    const rows = await forTenant(tenantId).staff.findMany({ where: { tenantId, ...(branchId ? { branchId } : {}) }, orderBy: [{ branchId: 'asc' }, { fullName: 'asc' }] });
+    return rows.map(toStaff);
+  }
+  async getStaff(tenantId: string, id: string) {
+    const s = await forTenant(tenantId).staff.findFirst({ where: { tenantId, id } });
+    return s ? toStaff(s) : null;
+  }
+  createStaff(tenantId: string, actor: Actor, input: StaffInput): Promise<Write<StaffRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const s = await tx.staff.create({ data: { tenantId, ...input } });
+        await audit(tx, tenantId, actor, 'institute.staff_created', s.id, { branchId: s.branchId });
+        return { kind: 'ok' as const, value: toStaff(s) };
+      } catch (e) {
+        if (isFk(e)) return { kind: 'not_found' as const };
+        throw e;
+      }
+    });
+  }
+  updateStaff(tenantId: string, actor: Actor, id: string, input: StaffInput): Promise<Write<StaffRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const { branchId: _b, ...rest } = input; // staff never change branch through an edit
+        const { count } = await tx.staff.updateMany({ where: { tenantId, id }, data: rest });
+        if (count === 0) return { kind: 'not_found' as const };
+        const s = await tx.staff.findFirstOrThrow({ where: { tenantId, id } });
+        await audit(tx, tenantId, actor, 'institute.staff_updated', id, { active: s.active });
+        return { kind: 'ok' as const, value: toStaff(s) };
+      } catch (e) {
+        if (isFk(e)) return { kind: 'not_found' as const };
+        throw e;
+      }
+    });
+  }
+  deleteStaff(tenantId: string, actor: Actor, id: string): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.staff.deleteMany({ where: { tenantId, id } });
+      if (count > 0) await audit(tx, tenantId, actor, 'institute.staff_deleted', id, {});
+      return count > 0;
+    });
+  }
+
+  async listMaintenance(tenantId: string, assetId: string) {
+    const rows = await forTenant(tenantId).assetMaintenance.findMany({ where: { tenantId, assetId }, orderBy: [{ performedOn: 'desc' }, { createdAt: 'desc' }] });
+    return rows.map(toMaintenance);
+  }
+  addMaintenance(tenantId: string, actor: Actor, input: MaintenanceInput): Promise<Write<MaintenanceRow>> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      try {
+        const m = await tx.assetMaintenance.create({
+          data: {
+            tenantId,
+            branchId: input.branchId,
+            assetId: input.assetId,
+            performedOn: new Date(`${input.performedOn}T00:00:00Z`),
+            kind: input.kind,
+            cost: new Prisma.Decimal(input.cost),
+            notes: input.notes,
+            nextDueOn: input.nextDueOn ? new Date(`${input.nextDueOn}T00:00:00Z`) : null,
+          },
+        });
+        await audit(tx, tenantId, actor, 'institute.maintenance_logged', m.id, { assetId: m.assetId, kind: m.kind });
+        return { kind: 'ok' as const, value: toMaintenance(m) };
+      } catch (e) {
+        if (isFk(e)) return { kind: 'not_found' as const };
+        throw e;
+      }
+    });
+  }
+  async latestMaintenance(tenantId: string, branchId: string | null) {
+    const rows = await forTenant(tenantId).assetMaintenance.findMany({
+      where: { tenantId, ...(branchId ? { branchId } : {}) },
+      orderBy: [{ performedOn: 'desc' }, { createdAt: 'desc' }],
+      select: { assetId: true, performedOn: true, nextDueOn: true },
+    });
+    const seen = new Set<string>();
+    const out: { assetId: string; performedOn: string; nextDueOn: string | null }[] = [];
+    for (const m of rows) {
+      if (seen.has(m.assetId)) continue;
+      seen.add(m.assetId);
+      out.push({ assetId: m.assetId, performedOn: dateOnly(m.performedOn) as string, nextDueOn: dateOnly(m.nextDueOn) });
+    }
+    return out;
   }
 }

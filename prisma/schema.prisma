@@ -764,9 +764,11 @@ model Branch {
   active    Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at")
 
-  members InstituteMember[]
-  rooms   Room[]
-  assets  Asset[]
+  members     InstituteMember[]
+  rooms       Room[]
+  assets      Asset[]
+  departments Department[]
+  staff       Staff[]
 
   @@unique([tenantId, name])
   @@map("branches")
@@ -826,9 +828,64 @@ model Asset {
   notes            String?
   createdAt        DateTime  @default(now()) @map("created_at")
 
-  branch Branch @relation(fields: [branchId], references: [id])
-  room   Room?  @relation(fields: [roomId], references: [id])
+  branch      Branch             @relation(fields: [branchId], references: [id])
+  room        Room?              @relation(fields: [roomId], references: [id])
+  maintenance AssetMaintenance[]
 
   @@index([tenantId, branchId])
   @@map("assets")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  // Null = institute-wide department.
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+  staff  Staff[]
+
+  @@index([tenantId, branchId])
+  @@map("departments")
+}
+
+model Staff {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  departmentId String?  @map("department_id") @db.Uuid
+  fullName     String   @map("full_name")
+  jobTitle     String?  @map("job_title")
+  phone        String?
+  email        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  branch     Branch      @relation(fields: [branchId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@index([tenantId, branchId])
+  @@map("staff")
+}
+
+model AssetMaintenance {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  branchId    String    @map("branch_id") @db.Uuid
+  assetId     String    @map("asset_id") @db.Uuid
+  performedOn DateTime  @map("performed_on") @db.Date
+  // INSPECTION | REPAIR | SERVICE
+  kind        String    @default("SERVICE")
+  cost        Decimal   @default(0) @db.Decimal(12, 2)
+  notes       String?
+  nextDueOn   DateTime? @map("next_due_on") @db.Date
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, performedOn])
+  @@index([tenantId, branchId])
+  @@map("asset_maintenance")
 }

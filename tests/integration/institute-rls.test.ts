@@ -43,6 +43,9 @@ describeDb('Institute tables: RLS and database-level integrity', () => {
   afterAll(async () => {
     for (const tenantId of [tenantA, tenantB]) {
       await db.withTenantTransaction(tenantId, async (tx) => {
+        await tx.assetMaintenance.deleteMany({ where: { tenantId } });
+        await tx.staff.deleteMany({ where: { tenantId } });
+        await tx.department.deleteMany({ where: { tenantId } });
         await tx.asset.deleteMany({ where: { tenantId } });
         await tx.room.deleteMany({ where: { tenantId } });
         await tx.instituteMember.deleteMany({ where: { tenantId } });
@@ -105,5 +108,37 @@ describeDb('Institute tables: RLS and database-level integrity', () => {
     // a branch from another institute is refused
     await db.withTenantTransaction(tenantA, (tx) => tx.instituteMember.deleteMany({ where: { tenantId: tenantA } }));
     await expect(member({ role: 'BRANCH_MANAGER', branchId: branchB })).rejects.toThrow();
+  });
+
+  it('departments: an institute-wide name is unique too (NULL branches compare equal), and isolated per tenant', async () => {
+    const dep = (tenantId: string, data: object) => db.withTenantTransaction(tenantId, (tx) => tx.department.create({ data: { tenantId, ...data } as never }));
+    await expect(dep(tenantA, { name: 'Finance', branchId: null })).resolves.toBeDefined();
+    await expect(dep(tenantA, { name: 'Finance', branchId: null })).rejects.toThrow();
+    await expect(dep(tenantA, { name: 'Finance', branchId: branchA1 })).resolves.toBeDefined();
+    await expect(dep(tenantB, { name: 'Finance', branchId: null })).resolves.toBeDefined(); // another institute, same name
+    expect(await db.forTenant(tenantB).department.count()).toBe(1);
+    await expect(dep(tenantA, { name: 'X', branchId: branchB })).rejects.toThrow(); // branch of another institute
+  });
+
+  it('staff: the department must be in the same institute; a department with staff cannot be deleted', async () => {
+    const depB = await db.withTenantTransaction(tenantB, (tx) => tx.department.findFirstOrThrow({ where: { tenantId: tenantB } }));
+    await expect(db.withTenantTransaction(tenantA, (tx) => tx.staff.create({ data: { tenantId: tenantA, branchId: branchA1, departmentId: depB.id, fullName: 'X' } }))).rejects.toThrow();
+    const depA = await db.withTenantTransaction(tenantA, (tx) => tx.department.findFirstOrThrow({ where: { tenantId: tenantA, branchId: null } }));
+    await expect(db.withTenantTransaction(tenantA, (tx) => tx.staff.create({ data: { tenantId: tenantA, branchId: branchA1, departmentId: depA.id, fullName: 'Sara' } }))).resolves.toBeDefined();
+    await expect(db.withTenantTransaction(tenantA, (tx) => tx.department.delete({ where: { id: depA.id } }))).rejects.toThrow();
+  });
+
+  it('maintenance: tied to an asset of the same branch and institute, with sane dates and cost; deleted with its asset', async () => {
+    const asset = await db.withTenantTransaction(tenantA, (tx) => tx.asset.findFirstOrThrow({ where: { tenantId: tenantA, roomId: roomA1 } }));
+    const log = (data: object) => db.withTenantTransaction(tenantA, (tx) => tx.assetMaintenance.create({ data: { tenantId: tenantA, branchId: asset.branchId, assetId: asset.id, performedOn: new Date('2026-03-01'), ...data } as never }));
+    await expect(log({})).resolves.toBeDefined();
+    await expect(log({ branchId: branchA2 })).rejects.toThrow(); // asset is not in that branch
+    await expect(log({ cost: '-1' })).rejects.toThrow();
+    await expect(log({ kind: 'WASH' })).rejects.toThrow();
+    await expect(log({ nextDueOn: new Date('2026-02-01') })).rejects.toThrow(); // before the work date
+    await expect(db.withTenantTransaction(tenantB, (tx) => tx.assetMaintenance.create({ data: { tenantId: tenantB, branchId: asset.branchId, assetId: asset.id, performedOn: new Date('2026-03-01') } }))).rejects.toThrow();
+    expect(await db.forTenant(tenantB).assetMaintenance.count()).toBe(0);
+    await db.withTenantTransaction(tenantA, (tx) => tx.asset.delete({ where: { id: asset.id } }));
+    expect(await db.forTenant(tenantA).assetMaintenance.count()).toBe(0);
   });
 });

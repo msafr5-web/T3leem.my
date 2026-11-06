@@ -18,7 +18,7 @@ export interface Principal {
   branchId: string | null;
 }
 
-export type Resource = 'branch' | 'member' | 'room' | 'asset';
+export type Resource = 'branch' | 'member' | 'room' | 'asset' | 'department' | 'staff' | 'maintenance';
 export type Action = 'read' | 'write';
 
 const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
@@ -26,6 +26,9 @@ const MATRIX: Record<Resource, Record<Action, readonly InstituteRole[]>> = {
   member: { read: ['HQ'], write: ['HQ'] },
   room: { read: INSTITUTE_ROLES, write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
   asset: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
+  maintenance: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER', 'STUDENT_AFFAIRS'] },
+  department: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER'] },
+  staff: { read: ['HQ', 'BRANCH_MANAGER', 'FINANCE', 'STUDENT_AFFAIRS'], write: ['HQ', 'BRANCH_MANAGER'] },
 };
 
 export const can = (role: InstituteRole, resource: Resource, action: Action): boolean => MATRIX[resource][action].includes(role);
@@ -37,3 +40,9 @@ export const canSeeValues = (role: InstituteRole): boolean => role === 'HQ' || r
 export const inScope = (p: Principal, branchId: string): boolean => p.branchId === null || p.branchId === branchId;
 
 export const isInstituteRole = (v: unknown): v is InstituteRole => typeof v === 'string' && (INSTITUTE_ROLES as readonly string[]).includes(v);
+
+/**
+ * A department with no branch belongs to the whole institute: everyone allowed to read departments sees it,
+ * but only a principal with no branch restriction may change it.
+ */
+export const canTouchBranchOrWide = (p: Principal, branchId: string | null): boolean => (branchId === null ? p.branchId === null : inScope(p, branchId));

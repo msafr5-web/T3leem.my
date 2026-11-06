@@ -1,15 +1,18 @@
-import { Router, type Request, type Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
 import { authenticate, requireAuthContext, requireFeature, type JwtVerifyOptions } from '../../shared/middlewares/auth.middleware';
 import { validate } from '../../shared/middlewares/validate.middleware';
 import { ok } from '../../shared/utils/api-response';
+import { HttpError } from '../../shared/utils/http-error';
+import { ASSET_SHEET_LIMITS } from './institute.excel';
 import { INSTITUTE_ROLES, isInstituteRole } from './institute.access';
-import type { AssetInput, AssetRow, AssetStatus, BranchRow, MemberRow, RoomInput, RoomKind, RoomRow } from './institute.repository';
+import type { AssetInput, AssetRow, AssetStatus, BranchRow, DepartmentRow, MaintenanceKind, MaintenanceRow, MemberRow, RoomInput, RoomKind, RoomRow, StaffInput, StaffRow } from './institute.repository';
 import type { InstituteService, PublicAsset } from './institute.service';
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const MONEY = /^\d{1,10}(\.\d{1,2})?$/;
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const branchJson = (b: BranchRow) => ({ id: b.id, name: b.name, city: b.city, address: b.address, active: b.active });
 const memberJson = (m: MemberRow) => ({ id: m.id, user_id: m.userId, email: m.email, full_name: m.fullName, role: m.role, branch_id: m.branchId });
@@ -26,6 +29,36 @@ const assetJson = (a: PublicAsset) => ({
   notes: a.notes,
   // Absent (not null) for roles that may not see money, so the UI can tell "hidden" from "zero".
   ...(a.purchaseValue !== undefined ? { purchase_value: a.purchaseValue, salvage_percent: a.salvagePercent, useful_life_months: a.usefulLifeMonths } : {}),
+});
+
+const departmentJson = (d: DepartmentRow) => ({ id: d.id, branch_id: d.branchId, name: d.name });
+const staffJson = (s: StaffRow) => ({ id: s.id, branch_id: s.branchId, department_id: s.departmentId, full_name: s.fullName, job_title: s.jobTitle, phone: s.phone, email: s.email, active: s.active });
+const maintenanceJson = (m: Omit<MaintenanceRow, 'cost'> & { cost?: string }) => ({
+  id: m.id,
+  asset_id: m.assetId,
+  performed_on: m.performedOn,
+  kind: m.kind,
+  notes: m.notes,
+  next_due_on: m.nextDueOn,
+  // Absent for roles that may not see money.
+  ...(m.cost !== undefined ? { cost: m.cost } : {}),
+});
+const staffRules = [
+  body('full_name').isString().trim().isLength({ min: 1, max: 120 }).withMessage('full_name is required'),
+  body('department_id').optional({ values: 'null' }).isUUID(),
+  body('job_title').optional({ values: 'null' }).isString().isLength({ max: 80 }),
+  body('phone').optional({ values: 'null' }).isString().isLength({ max: 30 }),
+  body('email').optional({ values: 'null' }).isEmail(),
+  body('active').optional().isBoolean(),
+];
+const staffInput = (b: Record<string, unknown>, branchId: string): StaffInput => ({
+  branchId,
+  departmentId: str(b.department_id),
+  fullName: String(b.full_name).trim(),
+  jobTitle: str(b.job_title),
+  phone: str(b.phone),
+  email: str(b.email),
+  active: b.active === undefined ? true : b.active === true || b.active === 'true',
 });
 
 const branchRules = [
@@ -195,6 +228,101 @@ export function buildInstituteRouter(service: InstituteService, jwt: JwtVerifyOp
     const { tenantId, caller } = ctx(req);
     await service.deleteAsset(tenantId, caller, req.params.id as string);
     res.status(204).end();
+  });
+
+
+  // ---- departments ----
+  router.get('/institute/departments', auth, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    noStore(res);
+    res.json(ok({ departments: (await service.listDepartments(tenantId, caller)).map(departmentJson) }));
+  });
+  router.post('/institute/departments', auth, body('name').isString().trim().isLength({ min: 1, max: 80 }), body('branch_id').optional({ values: 'null' }).isUUID(), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    const b = req.body as Record<string, unknown>;
+    res.status(201).json(ok(departmentJson(await service.createDepartment(tenantId, caller, { branchId: str(b.branch_id), name: String(b.name).trim() }))));
+  });
+  router.delete('/institute/departments/:id', auth, uuid('id'), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    await service.deleteDepartment(tenantId, caller, req.params.id as string);
+    res.status(204).end();
+  });
+
+  // ---- staff ----
+  router.get('/institute/staff', auth, query('branch_id').optional().isUUID(), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    noStore(res);
+    res.json(ok({ staff: (await service.listStaff(tenantId, caller, str(req.query.branch_id) ?? undefined)).map(staffJson) }));
+  });
+  router.post('/institute/staff', auth, body('branch_id').isUUID(), ...staffRules, validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    const b = req.body as Record<string, unknown>;
+    res.status(201).json(ok(staffJson(await service.createStaff(tenantId, caller, staffInput(b, String(b.branch_id))))));
+  });
+  router.put('/institute/staff/:id', auth, uuid('id'), ...staffRules, validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    res.json(ok(staffJson(await service.updateStaff(tenantId, caller, req.params.id as string, staffInput(req.body as Record<string, unknown>, '')))));
+  });
+  router.delete('/institute/staff/:id', auth, uuid('id'), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    await service.deleteStaff(tenantId, caller, req.params.id as string);
+    res.status(204).end();
+  });
+
+  // ---- asset maintenance and inventory ----
+  router.get('/institute/assets/:id/maintenance', auth, uuid('id'), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    noStore(res);
+    res.json(ok({ maintenance: (await service.listMaintenance(tenantId, caller, req.params.id as string)).map(maintenanceJson) }));
+  });
+  router.post(
+    '/institute/assets/:id/maintenance',
+    auth,
+    uuid('id'),
+    body('performed_on').isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('performed_on must be YYYY-MM-DD'),
+    body('kind').optional().isIn(['INSPECTION', 'REPAIR', 'SERVICE']),
+    body('cost').optional({ values: 'null' }).custom((v) => MONEY.test(String(v))).withMessage('cost must be an amount with at most 2 decimals'),
+    body('next_due_on').optional({ values: 'null' }).isISO8601({ strict: true }).isLength({ min: 10, max: 10 }).withMessage('next_due_on must be YYYY-MM-DD'),
+    body('notes').optional({ values: 'null' }).isString().isLength({ max: 500 }),
+    validate,
+    async (req: Request, res: Response) => {
+      const { tenantId, caller } = ctx(req);
+      const b = req.body as Record<string, unknown>;
+      const performedOn = String(b.performed_on);
+      const nextDueOn = str(b.next_due_on);
+      if (nextDueOn && nextDueOn < performedOn) throw HttpError.unprocessable('INVALID_PERIOD', 'next_due_on must not be before performed_on');
+      const saved = await service.logMaintenance(tenantId, caller, req.params.id as string, {
+        performedOn,
+        kind: (typeof b.kind === 'string' ? b.kind : 'SERVICE') as MaintenanceKind,
+        cost: b.cost === undefined || b.cost === null ? '0.00' : Number(b.cost).toFixed(2),
+        notes: str(b.notes),
+        nextDueOn,
+      });
+      res.status(201).json(ok(maintenanceJson(saved)));
+    },
+  );
+  router.get('/institute/inventory/attention', auth, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    // Saudi date (UTC+3, no daylight saving): overdue and end-of-life are judged by the local day.
+    const today = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+    noStore(res);
+    res.json(ok({ today, items: (await service.inventoryAttention(tenantId, caller, today)).map((i) => ({ asset_id: i.assetId, reasons: i.reasons })) }));
+  });
+
+  // ---- Excel (assets) ----
+  router.get('/institute/assets-export', auth, query('template').optional().isIn(['0', '1']), validate, async (req: Request, res: Response) => {
+    const { tenantId, caller } = ctx(req);
+    const file = await service.exportAssets(tenantId, caller, req.query.template === '1');
+    res.setHeader('Content-Type', XLSX_TYPE);
+    res.setHeader('Content-Disposition', 'attachment; filename="institute-assets.xlsx"');
+    noStore(res);
+    res.send(file);
+  });
+  // The workbook arrives as the raw request body (application/octet-stream), like the health question import.
+  router.post('/institute/assets-import', auth, express.raw({ type: () => true, limit: ASSET_SHEET_LIMITS.maxFileBytes }), async (req: Request, res: Response) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw HttpError.unprocessable('FILE_REQUIRED', 'Upload an Excel or CSV file');
+    const { tenantId, caller } = ctx(req);
+    res.status(201).json(ok(await service.importAssets(tenantId, caller, req.body)));
   });
 
   return router;
