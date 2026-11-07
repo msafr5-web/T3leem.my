@@ -250,3 +250,17 @@ main.container:has(.ix) { max-width: 1400px; }
 .ix-chip.mute { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
 
 @media print { .ix-side, .ix-tools { display: none; } .ix { display: block; } }
+
+/* ---------- academy dashboard pages inside the same shell (plain tables, tiles, page heads) ---------- */
+.ix-main .page-head { align-items: flex-end; }
+.ix-main .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 560px) { .ix-main .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ix-main .tile { border-radius: var(--ix-radius); padding: 18px; gap: 6px; }
+.ix-main .tile strong { font-family: inherit; font-weight: 700; font-size: 26px; color: var(--ink); }
+.ix-main a.tile:hover { border-color: color-mix(in srgb, var(--brand) 55%, var(--line)); }
+.ix-main .table-wrap { border-radius: var(--ix-radius); }
+.ix-main .table-wrap table { font-size: 14px; }
+.ix-main .table-wrap thead th { background: var(--bg); color: var(--muted); font-weight: 700; font-size: 13px; text-align: start; padding: 10px 14px; white-space: nowrap; }
+.ix-main .table-wrap td { padding: 12px 14px; font-variant-numeric: tabular-nums; }
+.ix-main .table-wrap tbody tr:hover td { background: color-mix(in srgb, var(--brand) 5%, transparent); }
+.ix-main .card, .ix-main .empty { border-radius: var(--ix-radius); }

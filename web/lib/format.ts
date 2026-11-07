@@ -1,15 +1,16 @@
-const sar = new Intl.NumberFormat('ar-SA', { style: 'currency', currency: 'SAR', minimumFractionDigits: 2 });
+// Latin digits across the whole site: readable, tabular and consistent with the amounts in the workspace shells.
+const sar = new Intl.NumberFormat('ar-SA-u-nu-latn', { style: 'currency', currency: 'SAR', minimumFractionDigits: 2 });
 
 /** 1150 -> "١٬١٥٠٫٠٠ ر.س." */
 export const formatSar = (amount: number): string => sar.format(amount);
 
 /** 1150 -> "١٬١٥٠" (whole riyals, for stat tiles). */
-export const formatNumber = (n: number): string => new Intl.NumberFormat('ar-SA', { maximumFractionDigits: 1 }).format(n);
+export const formatNumber = (n: number): string => new Intl.NumberFormat('ar-SA-u-nu-latn', { maximumFractionDigits: 1 }).format(n);
 
 // ar-SA defaults to the Umm al-Qura (Hijri) calendar; providers enter Gregorian dates, so pin
 // the Gregorian calendar and Riyadh time explicitly — otherwise dates would display shifted.
-const dateFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
-const dateTimeFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', {
+const dateFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Riyadh' });
+const dateTimeFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
@@ -25,7 +26,7 @@ export const formatDate = (value: string | null): string => {
   return Number.isNaN(d.getTime()) ? '—' : dateFmt.format(d);
 };
 
-const dayMonthFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { day: 'numeric', month: 'short', timeZone: 'Asia/Riyadh' });
+const dayMonthFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'short', timeZone: 'Asia/Riyadh' });
 /** ISO -> "٢٥ أكتوبر" (for compact date badges) */
 export const formatDayMonth = (iso: string): string => dayMonthFmt.format(new Date(iso));
 
@@ -61,12 +62,12 @@ export const riyadhInputs = (iso: string | null): { date: string; time: string }
   return { date: local.slice(0, 10), time: local.slice(11, 16) };
 };
 
-const timeFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Riyadh' });
+const timeFmt = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Riyadh' });
 /** ISO -> "٧:٠٠ م" (Riyadh time) */
 export const formatTime = (iso: string): string => timeFmt.format(new Date(iso));
 
 /** 1265 -> "٢١ دقيقة" */
-export const formatMinutes = (seconds: number): string => `${new Intl.NumberFormat('ar-SA').format(Math.max(1, Math.round(seconds / 60)))} دقيقة`;
+export const formatMinutes = (seconds: number): string => `${new Intl.NumberFormat('ar-SA-u-nu-latn').format(Math.max(1, Math.round(seconds / 60)))} دقيقة`;
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 export const isValidSlug = (slug: string): boolean => SLUG_RE.test(slug);
