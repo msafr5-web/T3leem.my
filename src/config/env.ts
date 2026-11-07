@@ -73,7 +73,8 @@ const envSchema = z
       .enum(['true', 'false'])
       .default('true')
       .transform((v) => v === 'true'),
-    RATE_LIMIT_POINTS: z.coerce.number().int().positive().default(100),
+    // Per tenant and client IP per window. The web app forwards the real client IP, and a workspace page reads a few dozen panels.
+    RATE_LIMIT_POINTS: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_DURATION_SEC: z.coerce.number().int().positive().default(60),
   })
   .refine((cfg) => !(cfg.APP_ENV === 'production' && cfg.PAYMENT_GATEWAY === 'sandbox'), {

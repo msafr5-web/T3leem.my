@@ -17,10 +17,13 @@ import {
   voidPaymentAction,
   voidPayoutAction,
 } from '@/lib/institute-actions';
-import { ApiError, admin } from '@/lib/api';
-import { formatNumber, isValidSlug } from '@/lib/format';
+import { ApiError, admin, type FinInvoice } from '@/lib/api';
+import { isValidSlug } from '@/lib/format';
+/** Counts use Latin digits in the institute workspace (readable and tabular, like the amounts). */
+const formatNumber = (n: number) => n.toLocaleString('ar-SA-u-nu-latn');
 import { getSession } from '@/lib/session';
 import { ActionForm, ConfirmAction } from '../../dashboard/health/health-forms';
+import { getInstituteMe } from '../ix-data';
 
 export const metadata: Metadata = { title: 'مالية المعهد' };
 
@@ -43,9 +46,18 @@ const STATE: Record<string, string> = { PAID: 'مسدد', PARTIAL: 'جزئي', O
 const METHOD: Record<string, string> = { CASH: 'نقداً', TRANSFER: 'تحويل', CARD: 'بطاقة', OTHER: 'أخرى' };
 const PAYOUT_METHOD: Record<string, string> = { TRANSFER: 'تحويل', CASH: 'نقداً', CHEQUE: 'شيك', OTHER: 'أخرى' };
 const VAT_LABEL: Record<string, string> = { NONE: 'بلا ضريبة', STANDARD: 'ضريبة بالنسبة الأساسية', STATE_BORNE: 'مواطن: تتحمل الدولة الضريبة' };
-const ar = (n: string) => Number(n).toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ar = (n: string) => Number(n).toLocaleString('ar-SA-u-nu-latn', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** Saudi-time current month, YYYY-MM. */
 const thisMonth = () => new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7);
+const monthName = (m: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', month: 'long', year: 'numeric' }).format(new Date(`${m}-15T12:00:00+03:00`));
+/** In the first ten days of a month its figures are barely formed: open the month that just ended. */
+const defaultMonth = () => {
+  const now = new Date(Date.now() + 3 * 3_600_000).toISOString();
+  const m = now.slice(0, 7);
+  if (Number(now.slice(8, 10)) > 10) return m;
+  const [y, mo] = m.split('-').map(Number) as [number, number];
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+};
 const lastDay = (month: string) => {
   const [y, m] = month.split('-').map(Number) as [number, number];
   return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -65,18 +77,18 @@ async function orNull<T>(p: Promise<T>): Promise<T | null> {
   }
 }
 
-export default async function FinancePage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ month?: string; saved?: string }> }) {
+export default async function FinancePage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ month?: string; saved?: string; inv?: string; ip?: string }> }) {
   const [{ tenant: slug }, sp] = await Promise.all([params, searchParams]);
   if (!isValidSlug(slug)) redirect('/');
   const session = await getSession(slug);
   if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/institute/finance`)}`);
   const t = session.token;
-  const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : thisMonth();
+  const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : defaultMonth();
   const today = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
 
   let me;
   try {
-    me = await admin.instituteMe(slug, t);
+    me = await getInstituteMe(slug, t);
   } catch (err) {
     if (err instanceof ApiError && (err.code === 'FEATURE_DISABLED' || err.status === 403)) redirect(`/${slug}/institute`);
     throw err;
@@ -117,19 +129,18 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
   const overdue = openInvoices.filter((i) => i.overdue);
 
   return (
-    <div className="stack" style={{ gap: 28 }}>
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div className="stack" style={{ gap: 4 }}>
+    <div className="stack">
+      <header className="ix-head">
+        <div>
           <h1>مالية المعهد</h1>
-          <p className="muted">المصروفات وفواتير الكهرباء والميزانيات وفواتير الطلاب ومدفوعاتهم. الأرقام بالريال وبدقة الهللة، وما بعد إغلاق الشهر لا يتغير.</p>
+          <p>المصروفات وفواتير الكهرباء والميزانيات وفواتير الطلاب ومدفوعاتهم. الأرقام بالريال وبدقة الهللة، وما بعد إغلاق الشهر لا يتغير.</p>
         </div>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <Link href={`/${slug}/institute/finance?month=${shift(month, -1)}`} className="btn btn-ghost">الشهر السابق</Link>
-          <strong style={{ alignSelf: 'center' }} dir="ltr">{month}</strong>
-          <Link href={`/${slug}/institute/finance?month=${shift(month, 1)}`} className="btn btn-ghost">الشهر التالي</Link>
-          <Link href={`/${slug}/institute`} className="btn btn-ghost">إدارة المعهد</Link>
-        </div>
-      </div>
+        <nav className="ix-seg" aria-label="الشهر">
+          <Link href={`/${slug}/institute/finance?month=${shift(month, -1)}`}>{monthName(shift(month, -1))}</Link>
+          <Link href={`/${slug}/institute/finance?month=${month}`} aria-current="true">{monthName(month)}</Link>
+          {month < thisMonth() && <Link href={`/${slug}/institute/finance?month=${shift(month, 1)}`}>{monthName(shift(month, 1))}</Link>}
+        </nav>
+      </header>
       {notice && <div className="notice ok" role="status">{notice}</div>}
 
       {summary && (
@@ -138,7 +149,7 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
           <table className="table"><thead><tr><th>الفرع</th><th>الإيراد المحصَّل</th><th>المصروفات والكهرباء</th><th>الصافي</th><th>الحالة</th></tr></thead>
             <tbody>
               {summary.branches.map((b) => (
-                <tr key={b.branch_id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{ar(b.income)}</td><td>{ar(b.spend)}</td><td style={{ color: Number(b.net) < 0 ? '#a3341f' : undefined }}>{ar(b.net)}</td><td>{closedHere.has(b.branch_id) || b.closed ? 'مغلق' : 'مفتوح'}</td></tr>
+                <tr key={b.branch_id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{ar(b.income)}</td><td>{ar(b.spend)}</td><td style={{ color: Number(b.net) < 0 ? '#a3341f' : undefined }}>{ar(b.net)}</td><td><span className={`ix-chip ${closedHere.has(b.branch_id) || b.closed ? 'mute' : 'ok'}`}>{closedHere.has(b.branch_id) || b.closed ? 'مغلق' : 'مفتوح'}</span></td></tr>
               ))}
               <tr><th>الإجمالي</th><th>{ar(summary.totals.income)}</th><th>{ar(summary.totals.spend)}</th><th>{ar(summary.totals.net)}</th><th /></tr>
             </tbody></table>
@@ -168,8 +179,8 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
           {budgets.budgets.length === 0 ? <p className="muted">لا توجد ميزانيات لهذا الشهر.</p> : (
             <table className="table"><thead><tr><th>الفرع</th><th>البند</th><th>الميزانية</th><th>المصروف</th><th>المتبقي</th><th>النسبة</th><th>الحالة</th>{w.budget && <th />}</tr></thead>
               <tbody>{budgets.budgets.map((b) => (
-                <tr key={b.id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{b.category ?? 'الإجمالي'}</td><td>{ar(b.amount)}</td><td>{ar(b.spent)}</td><td>{ar(b.remaining)}</td><td>{b.percent === null ? '—' : `${b.percent}%`}</td>
-                  <td style={{ color: LEVEL[b.level]?.color, fontWeight: 700 }}>{LEVEL[b.level]?.label}</td>
+                <tr key={b.id}><td>{branchName.get(b.branch_id) ?? '—'}</td><td>{b.category === 'ELECTRICITY' ? 'الكهرباء' : b.category === 'INSTRUCTOR_PAY' ? 'أجور المدربين' : b.category ?? 'الإجمالي'}</td><td>{ar(b.amount)}</td><td>{ar(b.spent)}</td><td>{ar(b.remaining)}</td><td>{b.percent === null ? '—' : `${b.percent}%`}</td>
+                  <td><span className={`ix-chip ${b.level === 'EXCEEDED' ? 'bad' : b.level === 'WARNING' ? 'warn' : 'ok'}`}>{LEVEL[b.level]?.label}</span></td>
                   {w.budget && <td><ConfirmAction action={deleteBudgetAction.bind(null, slug, month, b.id)} label="حذف" confirmText="حذف هذه الميزانية؟" variant="ghost" /></td>}</tr>
               ))}</tbody></table>
           )}
@@ -243,36 +254,72 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
         </section>
       )}
 
-      {invoices && (
-        <section className="card stack" aria-labelledby="inv-h">
-          <h2 id="inv-h">فواتير الطلاب ({formatNumber(invoices.invoices.length)})</h2>
-          {invoices.invoices.length === 0 ? <p className="muted">لا توجد فواتير.</p> : invoices.invoices.slice(0, 60).map((i) => (
-            <div key={i.id} className="stack" style={{ gap: 6, borderTop: '1px solid var(--line, #d6e3f0)', paddingTop: 10 }}>
-              <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <strong>{studentName.get(i.student_id) ?? 'طالب'} — {i.description} <span className="muted">· {branchName.get(i.branch_id) ?? ''}</span></strong>
-                <span>
-                  صافي {ar(i.net)}{i.vat_treatment === 'STANDARD' ? ` + ضريبة ${i.vat_rate_percent}٪ ${ar(i.vat)} = ${ar(i.total)}` : ''} · مدفوع {ar(i.paid)} · متبقٍ <strong style={{ color: i.overdue ? '#a3341f' : undefined }}>{ar(i.outstanding)}</strong>
-                  {i.status === 'CANCELLED' ? ' · ملغاة' : i.overdue ? ' · متأخرة' : ''}
-                </span>
-              </div>
-              {i.vat_treatment === 'STATE_BORNE' && <p className="small muted">{VAT_LABEL.STATE_BORNE} (هوية المستفيد ••••{i.beneficiary_id_last4}). لا تُحمَّل ضريبة على الطالب.</p>}
-              <ul className="small" style={{ paddingInlineStart: 18 }}>
-                {i.installments.map((x, n) => <li key={n}><span dir="ltr">{x.due_on}</span> — {ar(x.amount)} — {STATE[x.state]}{Number(x.paid) > 0 && x.state !== 'PAID' ? ` (مدفوع ${ar(x.paid)})` : ''}</li>)}
-              </ul>
-              {i.payments.length > 0 && (
-                <ul className="small" style={{ paddingInlineStart: 18 }}>
-                  {i.payments.map((p) => (
-                    <li key={p.id} style={p.voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
-                      <span dir="ltr">{p.paid_on}</span> — {ar(p.amount)} — {METHOD[p.method]}{p.reference ? ` (${p.reference})` : ''}{p.voided ? ` — مُبطلة: ${p.void_reason ?? ''}` : ''}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                {w.invoice && i.status === 'OPEN' && Number(i.outstanding) > 0 && (
-                  <details>
-                    <summary>تسجيل دفعة</summary>
-                    <ActionForm action={receivePaymentAction.bind(null, slug)} submitLabel="تسجيل الدفعة">
+      {invoices && (() => {
+        const all = invoices.invoices;
+        const kindOf = (i: FinInvoice) => (i.status === 'CANCELLED' ? 'cancelled' : Number(i.outstanding) === 0 ? 'paid' : i.overdue ? 'overdue' : 'open');
+        const FILTERS: [string, string][] = [['all', 'الكل'], ['overdue', 'متأخرة'], ['open', 'مفتوحة'], ['paid', 'مسددة'], ['cancelled', 'ملغاة']];
+        const count = (k: string) => (k === 'all' ? all.length : all.filter((i) => kindOf(i) === k).length);
+        const f = FILTERS.some(([k]) => k === sp.inv) ? (sp.inv as string) : 'all';
+        const rank = { overdue: 0, open: 1, paid: 2, cancelled: 3 } as const;
+        const list = (f === 'all' ? [...all] : all.filter((i) => kindOf(i) === f)).sort((a, b) => rank[kindOf(a)] - rank[kindOf(b)]);
+        const PAGE = 12;
+        const pages = Math.max(1, Math.ceil(list.length / PAGE));
+        const pg = Math.min(pages, Math.max(1, Number(sp.ip) || 1));
+        const shown = list.slice((pg - 1) * PAGE, pg * PAGE);
+        const href = (extra: { inv?: string; ip?: number }) => {
+          const u = new URLSearchParams({ month });
+          const inv = 'inv' in extra ? extra.inv : f;
+          if (inv && inv !== 'all') u.set('inv', inv);
+          if (extra.ip && extra.ip > 1) u.set('ip', String(extra.ip));
+          return `/${slug}/institute/finance?${u.toString()}#invoices`;
+        };
+        const CHIP: Record<string, [string, string]> = { overdue: ['bad', 'متأخرة'], open: ['', 'مفتوحة'], paid: ['ok', 'مسددة'], cancelled: ['mute', 'ملغاة'] };
+        return (
+          <section className="card stack" aria-labelledby="inv-h" id="invoices">
+            <div className="ix-head">
+              <h2 id="inv-h">فواتير الطلاب</h2>
+              <nav className="ix-seg" aria-label="حالة الفاتورة">
+                {FILTERS.map(([k, label]) => <Link key={k} href={href({ inv: k })} aria-current={f === k ? 'true' : undefined}>{label} <span className="muted">{formatNumber(count(k))}</span></Link>)}
+              </nav>
+            </div>
+            {list.length === 0 ? <p className="muted">لا توجد فواتير في هذه الحالة.</p> : (
+              <div className="ix-inv-list">
+                {shown.map((i) => {
+                  const kind = kindOf(i);
+                  const [tone, word] = CHIP[kind] as [string, string];
+                  return (
+                    <details key={i.id} className="ix-inv">
+                      <summary>
+                        <span className="ix-inv-main"><b>{studentName.get(i.student_id) ?? 'طالب'}</b><small>{i.description} · {branchName.get(i.branch_id) ?? ''}</small></span>
+                        <span className="ix-inv-num"><small>الإجمالي</small>{ar(i.total)}</span>
+                        <span className="ix-inv-num"><small>المدفوع</small>{ar(i.paid)}</span>
+                        <span className="ix-inv-num"><small>المتبقي</small><b>{ar(i.outstanding)}</b></span>
+                        <span className={`ix-chip ${tone}`}>{word}</span>
+                      </summary>
+                      <div className="ix-inv-body">
+                        <p className="small muted">
+                          صافي {ar(i.net)}{i.vat_treatment === 'STANDARD' ? ` + ضريبة ${i.vat_rate_percent}٪ (${ar(i.vat)}) = ${ar(i.total)}` : ''}. {VAT_LABEL[i.vat_treatment]}{i.vat_treatment === 'STATE_BORNE' ? ` (هوية المستفيد ••••${i.beneficiary_id_last4 ?? ''})، ولا تُحمَّل ضريبة على الطالب` : ''}.
+                        </p>
+                        <table className="table">
+                          <thead><tr><th>القسط</th><th>الاستحقاق</th><th>المبلغ</th><th>المسدد</th><th>الحالة</th></tr></thead>
+                          <tbody>
+                            {i.installments.map((x, n) => <tr key={n}><td>{formatNumber(n + 1)}</td><td dir="ltr">{x.due_on}</td><td>{ar(x.amount)}</td><td>{ar(x.paid)}</td><td><span className={`ix-chip ${x.state === 'PAID' ? 'ok' : x.state === 'OVERDUE' ? 'bad' : x.state === 'PARTIAL' ? 'warn' : 'mute'}`}>{STATE[x.state]}</span></td></tr>)}
+                          </tbody>
+                        </table>
+                        {i.payments.length > 0 && (
+                          <ul className="small" style={{ paddingInlineStart: 18, margin: 0 }}>
+                            {i.payments.map((p) => (
+                              <li key={p.id} style={p.voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                                <span dir="ltr">{p.paid_on}</span> — {ar(p.amount)} — {METHOD[p.method]}{p.reference ? ` (${p.reference})` : ''}{p.voided ? ` — مُبطلة: ${p.void_reason ?? ''}` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="ix-inv-actions">
+                          {w.invoice && i.status === 'OPEN' && Number(i.outstanding) > 0 && (
+                            <details>
+                              <summary>تسجيل دفعة</summary>
+                              <ActionForm action={receivePaymentAction.bind(null, slug)} submitLabel="تسجيل الدفعة">
                       <Month />
                       <input type="hidden" name="invoice_id" value={i.id} />
                       <label>المبلغ (ريال)<input name="amount" required inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" defaultValue={i.outstanding} /></label>
@@ -280,23 +327,34 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
                       <label>الطريقة<select name="method" defaultValue="CASH">{Object.entries(METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
                       <label>المرجع<input name="reference" maxLength={120} dir="ltr" /></label>
                     </ActionForm>
-                  </details>
-                )}
-                {w.ledger_admin && i.payments.some((p) => !p.voided) && (
-                  <details>
-                    <summary>إبطال دفعة</summary>
-                    <ActionForm action={voidPaymentAction.bind(null, slug, month)} submitLabel="إبطال الدفعة">
+                            </details>
+                          )}
+                          {w.ledger_admin && i.payments.some((p) => !p.voided) && (
+                            <details>
+                              <summary>إبطال دفعة</summary>
+                              <ActionForm action={voidPaymentAction.bind(null, slug, month)} submitLabel="إبطال الدفعة">
                       <label>الدفعة<select name="payment_id" required defaultValue="">
                         <option value="" disabled>اختر الدفعة</option>
                         {i.payments.filter((p) => !p.voided).map((p) => <option key={p.id} value={p.id}>{p.paid_on} — {ar(p.amount)}</option>)}</select></label>
                       <label>السبب (مطلوب)<input name="reason" required minLength={3} maxLength={300} /></label>
                     </ActionForm>
-                  </details>
-                )}
-                {w.ledger_admin && i.status === 'OPEN' && <ConfirmAction action={cancelInvoiceAction.bind(null, slug, month, i.id)} label="إلغاء الفاتورة" confirmText="إلغاء هذه الفاتورة؟ لا تُلغى وعليها دفعات فعّالة." variant="ghost" />}
+                            </details>
+                          )}
+                          {w.ledger_admin && i.status === 'OPEN' && <ConfirmAction action={cancelInvoiceAction.bind(null, slug, month, i.id)} label="إلغاء الفاتورة" confirmText="إلغاء هذه الفاتورة؟ لا تُلغى وعليها دفعات فعّالة." variant="ghost" />}
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
-            </div>
-          ))}
+            )}
+            {pages > 1 && (
+              <nav className="ix-pager" aria-label="صفحات الفواتير">
+                {pg > 1 && <Link href={href({ ip: pg - 1 })} className="btn btn-ghost">السابقة</Link>}
+                <span className="small muted">صفحة {formatNumber(pg)} من {formatNumber(pages)}</span>
+                {pg < pages && <Link href={href({ ip: pg + 1 })} className="btn btn-ghost">التالية</Link>}
+              </nav>
+            )}
           {w.invoice && studentList.length > 0 && (
             <details>
               <summary>إصدار فاتورة لطالب</summary>
@@ -313,8 +371,9 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
               </ActionForm>
             </details>
           )}
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {vat && vat.rows.length > 0 && (
         <section className="card stack" aria-labelledby="vat-h">
@@ -332,7 +391,7 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
           {dues.instructors.length === 0 ? <p className="muted">لا توجد حصص منفذة في هذا الشهر.</p> : (
             <table className="table"><thead><tr><th>المدرب</th><th>الفرع</th><th>الساعات</th><th>أجر الساعة</th><th>المستحق</th><th>المصروف</th><th>المتبقي</th></tr></thead>
               <tbody>
-                {dues.instructors.map((d) => <tr key={d.instructor_id}><td>{d.name}</td><td>{branchName.get(d.branch_id) ?? '—'}</td><td>{(d.minutes / 60).toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</td><td>{ar(d.hourly_rate)}</td><td>{ar(d.pay)}</td><td>{ar(d.paid)}</td><td style={{ color: Number(d.outstanding) > 0 ? '#a36a00' : '#1f7a46', fontWeight: 700 }}>{ar(d.outstanding)}</td></tr>)}
+                {dues.instructors.map((d) => <tr key={d.instructor_id}><td>{d.name}</td><td>{branchName.get(d.branch_id) ?? '—'}</td><td>{(d.minutes / 60).toLocaleString('ar-SA-u-nu-latn', { maximumFractionDigits: 2 })}</td><td>{ar(d.hourly_rate)}</td><td>{ar(d.pay)}</td><td>{ar(d.paid)}</td><td style={{ color: Number(d.outstanding) > 0 ? '#a36a00' : '#1f7a46', fontWeight: 700 }}>{ar(d.outstanding)}</td></tr>)}
                 <tr><th colSpan={4}>الإجمالي</th><th>{ar(dues.total)}</th><th>{ar(dues.paid)}</th><th>{ar(dues.outstanding)}</th></tr>
               </tbody></table>
           )}

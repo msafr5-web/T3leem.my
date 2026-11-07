@@ -16,16 +16,19 @@ import {
   setSessionStatusAction,
 } from '@/lib/institute-actions';
 import { ApiError, admin } from '@/lib/api';
-import { formatNumber, isValidSlug } from '@/lib/format';
+import { isValidSlug } from '@/lib/format';
+/** Counts use Latin digits in the institute workspace (readable and tabular, like the amounts). */
+const formatNumber = (n: number) => n.toLocaleString('ar-SA-u-nu-latn');
 import { getSession } from '@/lib/session';
 import { ActionForm, ConfirmAction } from '../../dashboard/health/health-forms';
+import { getInstituteMe } from '../ix-data';
 
 export const metadata: Metadata = { title: 'الدبلومات والطلاب والجداول' };
 
 const NOTICES: Record<string, string> = { program: 'تم تحديث البرامج.', instructor: 'تم تحديث المدربين.', student: 'تم تحديث الطلاب.', session: 'تم تحديث الجدول.' };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: 'منتظم', GRADUATED: 'متخرج', SUSPENDED: 'موقوف', WITHDRAWN: 'منسحب' };
 const SESSION_LABEL: Record<string, string> = { SCHEDULED: 'مجدولة', HELD: 'نُفِّذت', CANCELLED: 'ملغاة' };
-const fmt = (iso: string) => new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+const fmt = (iso: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
 /** A read the role may not make (403) just hides that section. */
 async function orNull<T>(p: Promise<T>): Promise<T | null> {
@@ -37,7 +40,7 @@ async function orNull<T>(p: Promise<T>): Promise<T | null> {
   }
 }
 
-export default async function AcademicPage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ saved?: string }> }) {
+export default async function AcademicPage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ saved?: string; ss?: string; sp?: string }> }) {
   const [{ tenant: slug }, sp] = await Promise.all([params, searchParams]);
   if (!isValidSlug(slug)) redirect('/');
   const session = await getSession(slug);
@@ -46,12 +49,12 @@ export default async function AcademicPage({ params, searchParams }: { params: P
 
   let me;
   try {
-    me = await admin.instituteMe(slug, t);
+    me = await getInstituteMe(slug, t);
   } catch (err) {
     if (err instanceof ApiError && (err.code === 'FEATURE_DISABLED' || err.status === 403)) redirect(`/${slug}/institute`);
     throw err;
   }
-  const from = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const from = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
   const to = new Date(Date.now() + 45 * 24 * 3_600_000).toISOString();
   const [branches, rooms, programs, instructors, students, sessions] = await Promise.all([
     orNull(admin.instituteBranches(slug, t)),
@@ -84,37 +87,85 @@ export default async function AcademicPage({ params, searchParams }: { params: P
     </select>
   );
 
+  // Sessions: upcoming ones by default (grouped by day, a page at a time); the past month on its own tab, newest first.
+  const dayKey = (iso: string) => new Date(new Date(iso).getTime() + 3 * 3_600_000).toISOString().slice(0, 10);
+  const todayKey = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+  const allSessions = sessions?.sessions ?? [];
+  const upcomingSessions = allSessions.filter((x) => dayKey(x.starts_at) >= todayKey);
+  const pastSessions = allSessions.filter((x) => dayKey(x.starts_at) < todayKey).reverse();
+  const tab = sp.ss === 'past' ? 'past' : 'next';
+  const tabList = tab === 'past' ? pastSessions : upcomingSessions;
+  const PAGE = 20;
+  const sPages = Math.max(1, Math.ceil(tabList.length / PAGE));
+  const sPage = Math.min(sPages, Math.max(1, Number(sp.sp) || 1));
+  const pageList = tabList.slice((sPage - 1) * PAGE, sPage * PAGE);
+  const dayGroups: { key: string; items: typeof pageList }[] = [];
+  for (const x of pageList) {
+    const k = dayKey(x.starts_at);
+    const g = dayGroups[dayGroups.length - 1];
+    if (g && g.key === k) g.items.push(x);
+    else dayGroups.push({ key: k, items: [x] });
+  }
+  const dayTitle = (k: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${k}T12:00:00+03:00`));
+  const timeOnly = (iso: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  const sLink = (extra: { ss?: string; sp?: number }) => `/${slug}/institute/academic?${new URLSearchParams({ ...(extra.ss ?? tab) === 'past' ? { ss: 'past' } : {}, ...(extra.sp && extra.sp > 1 ? { sp: String(extra.sp) } : {}) }).toString()}#sessions`;
+  const CHIP: Record<string, string> = { SCHEDULED: '', HELD: 'ok', CANCELLED: 'mute' };
+
   return (
-    <div className="stack" style={{ gap: 28 }}>
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <h1>الدبلومات والطلاب والجداول</h1>
-          <p className="muted">البرامج ومستوياتها ومواد كل مستوى، والمدربون والطلاب، وجدول الحصص. النظام يمنع حجز القاعة أو المدرب في وقتين متداخلين.</p>
+    <div className="stack">
+      <header className="ix-head">
+        <div>
+          <h1>الطلاب والجدول</h1>
+          <p>البرامج ومستوياتها ومواد كل مستوى، والمدربون والطلاب، وجدول الحصص. النظام يمنع حجز القاعة أو المدرب في وقتين متداخلين.</p>
         </div>
-        <Link href={`/${slug}/institute`} className="btn btn-ghost">الفروع والقاعات والأصول</Link>
-      </div>
+      </header>
       {notice && <div className="notice ok" role="status">{notice}</div>}
 
       {sessions && (
-        <section className="card stack" aria-labelledby="sess-h">
-          <h2 id="sess-h">جدول الحصص (من أمس وخلال ٤٥ يوماً) ({formatNumber(sessions.sessions.length)})</h2>
-          {sessions.sessions.length === 0 ? <p className="muted">لا توجد حصص في هذه الفترة.</p> : (
-            <table className="table"><thead><tr><th>الوقت</th><th>المادة</th><th>القاعة</th><th>المدرب</th><th>الحالة</th><th /></tr></thead>
-              <tbody>{sessions.sessions.map((s) => (
-                <tr key={s.id}>
-                  <td>{fmt(s.starts_at)} ← {new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', timeStyle: 'short' }).format(new Date(s.ends_at))}</td>
-                  <td>{subjectName.get(s.subject_id) ?? '—'}</td><td>{roomName.get(s.room_id) ?? '—'}</td><td>{instrName.get(s.instructor_id) ?? '—'}</td><td>{SESSION_LABEL[s.status]}</td>
-                  <td className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                    {s.status !== 'CANCELLED' && <Link href={`/${slug}/institute/session/${s.id}`} className="btn btn-ghost">الحضور</Link>}
-                    {w.session && s.status === 'SCHEDULED' && (
-                      <>
-                        <ConfirmAction action={setSessionStatusAction.bind(null, slug, s, 'HELD')} label="تمّت" confirmText="تسجيل الحصة كمنفذة؟ لن يمكن نقلها بعد ذلك." variant="ghost" />
-                        <ConfirmAction action={setSessionStatusAction.bind(null, slug, s, 'CANCELLED')} label="إلغاء" confirmText="إلغاء هذه الحصة؟" variant="danger" />
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}</tbody></table>
+        <section className="card stack" aria-labelledby="sess-h" id="sessions">
+          <div className="ix-head">
+            <h2 id="sess-h">جدول الحصص</h2>
+            <nav className="ix-seg" aria-label="الحصص">
+              <Link href={sLink({ ss: 'next' })} aria-current={tab === 'next' ? 'true' : undefined}>القادمة <span className="muted">{formatNumber(upcomingSessions.length)}</span></Link>
+              <Link href={sLink({ ss: 'past' })} aria-current={tab === 'past' ? 'true' : undefined}>آخر ٣٠ يوماً <span className="muted">{formatNumber(pastSessions.length)}</span></Link>
+            </nav>
+          </div>
+          {tabList.length === 0 ? <p className="muted">{tab === 'next' ? 'لا توجد حصص قادمة خلال ٤٥ يوماً. جدوِل حصة من الزر أدناه.' : 'لا توجد حصص في آخر ٣٠ يوماً.'}</p> : (
+            <div className="ix-days">
+              {dayGroups.map((g) => (
+                <div key={g.key} className="ix-day">
+                  <h3>{dayTitle(g.key)}{g.key === todayKey ? <span className="ix-chip">اليوم</span> : null}<small>{formatNumber(g.items.length)} {g.items.length === 1 ? 'حصة' : 'حصص'}</small></h3>
+                  <ul>
+                    {g.items.map((x) => (
+                      <li key={x.id} className={x.status === 'CANCELLED' ? 'gone' : undefined}>
+                        <span className="ix-sess-time" dir="ltr">{timeOnly(x.starts_at)} – {timeOnly(x.ends_at)}</span>
+                        <span className="ix-sess-main"><b>{subjectName.get(x.subject_id) ?? '—'}</b><small>{roomName.get(x.room_id) ?? '—'} · {instrName.get(x.instructor_id) ?? '—'}</small></span>
+                        <span className={`ix-chip ${CHIP[x.status]}`}>{SESSION_LABEL[x.status]}</span>
+                        <span className="ix-sess-actions">
+                          {x.status !== 'CANCELLED' && <Link href={`/${slug}/institute/session/${x.id}`} className="btn btn-ghost">الحضور</Link>}
+                          {w.session && x.status === 'SCHEDULED' && (
+                            <details className="ix-more">
+                              <summary aria-label="المزيد">المزيد</summary>
+                              <div>
+                                <ConfirmAction action={setSessionStatusAction.bind(null, slug, x, 'HELD')} label="تسجيل كمنفذة" confirmText="تسجيل الحصة كمنفذة؟ لن يمكن نقلها بعد ذلك." variant="ghost" />
+                                <ConfirmAction action={setSessionStatusAction.bind(null, slug, x, 'CANCELLED')} label="إلغاء الحصة" confirmText="إلغاء هذه الحصة؟" variant="danger" />
+                              </div>
+                            </details>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+          {sPages > 1 && (
+            <nav className="ix-pager" aria-label="صفحات الحصص">
+              {sPage > 1 && <Link href={sLink({ sp: sPage - 1 })} className="btn btn-ghost">السابقة</Link>}
+              <span className="small muted">صفحة {formatNumber(sPage)} من {formatNumber(sPages)}</span>
+              {sPage < sPages && <Link href={sLink({ sp: sPage + 1 })} className="btn btn-ghost">التالية</Link>}
+            </nav>
           )}
           {w.session && subjects.length > 0 && (
             <details>

@@ -3,9 +3,12 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { approveCostPolicyAction, deleteReadingAction, discardCostDraftAction, saveCostPolicyAction, saveReadingAction } from '@/lib/institute-actions';
 import { ApiError, admin, type CostPolicy, type CostPolicyParams } from '@/lib/api';
-import { formatNumber, isValidSlug } from '@/lib/format';
+import { isValidSlug } from '@/lib/format';
+/** Counts use Latin digits in the institute workspace (readable and tabular, like the amounts). */
+const formatNumber = (n: number) => n.toLocaleString('ar-SA-u-nu-latn');
 import { getSession } from '@/lib/session';
 import { ActionForm, ConfirmAction } from '../../dashboard/health/health-forms';
+import { getInstituteMe } from '../ix-data';
 
 export const metadata: Metadata = { title: 'تكاليف المعهد' };
 
@@ -28,8 +31,9 @@ const WARNING: Record<string, string> = {
   NO_PROGRAM_HOURS: 'برنامج بلا ساعات مواد: لا يمكن إثبات إيراده عبر الزمن.',
 };
 const BILL_FAILURE: Record<string, string> = { PERIOD_STRADDLES_TARIFF_CHANGE: 'فترة الفاتورة تعبر تاريخ تغيير التعرفة: لا تقدير.', NO_TARIFF_ON_RECORD: 'لا تعرفة مسجلة لهذه الفئة والفترة.', INVALID_PERIOD: 'فترة غير صحيحة.' };
-const ar = (n: string) => Number(n).toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ar = (n: string) => Number(n).toLocaleString('ar-SA-u-nu-latn', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const thisMonth = () => new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7);
+const monthName = (m: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', month: 'long', year: 'numeric' }).format(new Date(`${m}-15T12:00:00+03:00`));
 const shift = (month: string, by: number) => {
   const [y, m] = month.split('-').map(Number) as [number, number];
   const t = y * 12 + (m - 1) + by;
@@ -85,7 +89,7 @@ export default async function CostPage({ params, searchParams }: { params: Promi
 
   let me;
   try {
-    me = await admin.instituteMe(slug, t);
+    me = await getInstituteMe(slug, t);
   } catch (err) {
     if (err instanceof ApiError && (err.code === 'FEATURE_DISABLED' || err.status === 403)) redirect(`/${slug}/institute`);
     throw err;
@@ -120,19 +124,20 @@ export default async function CostPage({ params, searchParams }: { params: Promi
   const formBase: CostPolicyParams = (draft ?? approved)?.params ?? policies?.defaults ?? { electricity: { tariffCategory: 'COMMERCIAL', allocation: 'METER', vatRatePercent: 15, vatRegistered: true, vatRecoveryPercent: 100, breakerAmps: {} }, depreciation: { start: 'PURCHASE_MONTH', defaultLifeMonths: 60 }, overhead: { basis: 'AREA' }, occupancy: { availableHoursPerMonth: 176 }, revenue: { basis: 'OVER_TIME' } };
 
   return (
-    <div className="stack" style={{ gap: 28 }}>
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <h1>تكاليف المعهد</h1>
-          <p className="muted">تكلفة القاعة والساعة والبرنامج والطالب وربحية البرنامج، بالهللة، وفق سياسة تكلفة معتمدة ومجمّدة بإصدار. لا تُصدر أرقام بلا سياسة معتمدة.</p>
+    <div className="stack">
+      <header className="ix-head">
+        <div>
+          <h1>التكاليف والربحية</h1>
+          <p>تكلفة القاعة والساعة والبرنامج والطالب وربحية البرنامج، بالهللة، وفق سياسة تكلفة معتمدة ومجمّدة بإصدار. لا تُصدر أرقام بلا سياسة معتمدة.</p>
         </div>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <Link href={link(shift(month, -1))} className="btn btn-ghost">الشهر السابق</Link>
-          <strong style={{ alignSelf: 'center' }} dir="ltr">{month}</strong>
-          <Link href={link(shift(month, 1))} className="btn btn-ghost">الشهر التالي</Link>
-          <Link href={`/${slug}/institute/finance?month=${month}`} className="btn btn-ghost">المالية</Link>
+        <div className="ix-tools">
+          <nav className="ix-seg" aria-label="الشهر">
+            <Link href={link(shift(month, -1))}>{monthName(shift(month, -1))}</Link>
+            <Link href={link(month)} aria-current="true">{monthName(month)}</Link>
+            {month < thisMonth() && <Link href={link(shift(month, 1))}>{monthName(shift(month, 1))}</Link>}
+          </nav>
         </div>
-      </div>
+      </header>
       {notice && <div className="notice ok" role="status">{notice}</div>}
 
       {branchList.length > 1 && (
@@ -152,7 +157,7 @@ export default async function CostPage({ params, searchParams }: { params: Promi
             <table className="table"><thead><tr><th>القاعة</th><th>كهرباء</th><th>إهلاك</th><th>مصروفات مباشرة</th><th>عامة</th><th>الإجمالي</th><th>ساعات</th><th>تكلفة الساعة</th><th>الإشغال</th></tr></thead>
               <tbody>
                 {report.rooms.map((r) => (
-                  <tr key={r.room_id}><td>{r.name}</td><td>{ar(r.electricity)}</td><td>{ar(r.depreciation)}</td><td>{ar(r.direct_expenses)}</td><td>{ar(r.overhead)}</td><td><strong>{ar(r.total)}</strong></td><td>{(r.held_minutes / 60).toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</td><td>{r.cost_per_hour ? ar(r.cost_per_hour) : '—'}</td><td>{r.occupancy_percent.toLocaleString('ar-SA')}٪</td></tr>
+                  <tr key={r.room_id}><td>{r.name}</td><td>{ar(r.electricity)}</td><td>{ar(r.depreciation)}</td><td>{ar(r.direct_expenses)}</td><td>{ar(r.overhead)}</td><td><strong>{ar(r.total)}</strong></td><td>{(r.held_minutes / 60).toLocaleString('ar-SA-u-nu-latn', { maximumFractionDigits: 2 })}</td><td>{r.cost_per_hour ? ar(r.cost_per_hour) : '—'}</td><td>{r.occupancy_percent.toLocaleString('ar-SA-u-nu-latn')}٪</td></tr>
                 ))}
                 <tr><th colSpan={5}>الإجمالي</th><th>{ar(report.total_room_cost)}</th><th colSpan={3} /></tr>
               </tbody></table>
@@ -164,7 +169,7 @@ export default async function CostPage({ params, searchParams }: { params: Promi
             {report.programs.length === 0 ? <p className="muted">لا توجد برامج.</p> : (
               <table className="table"><thead><tr><th>البرنامج</th><th>ساعات منفذة</th><th>تكلفة القاعات</th><th>أجور المدربين</th><th>إجمالي التكلفة</th><th>الإيراد</th><th>الربح</th><th>طلاب</th><th>تكلفة الطالب</th></tr></thead>
                 <tbody>{report.programs.map((p) => (
-                  <tr key={p.program_id}><td>{p.name}</td><td>{(p.held_minutes / 60).toLocaleString('ar-SA', { maximumFractionDigits: 2 })}</td><td>{ar(p.facility_cost)}</td><td>{ar(p.instructor_cost)}</td><td>{ar(p.total_cost)}</td><td>{ar(p.revenue)}</td><td style={{ color: Number(p.profit) < 0 ? '#a3341f' : '#1f7a46', fontWeight: 700 }}>{ar(p.profit)}</td><td>{formatNumber(p.active_students)}</td><td>{p.cost_per_student ? ar(p.cost_per_student) : '—'}</td></tr>
+                  <tr key={p.program_id}><td>{p.name}</td><td>{(p.held_minutes / 60).toLocaleString('ar-SA-u-nu-latn', { maximumFractionDigits: 2 })}</td><td>{ar(p.facility_cost)}</td><td>{ar(p.instructor_cost)}</td><td>{ar(p.total_cost)}</td><td>{ar(p.revenue)}</td><td style={{ color: Number(p.profit) < 0 ? '#a3341f' : '#1f7a46', fontWeight: 700 }}>{ar(p.profit)}</td><td>{formatNumber(p.active_students)}</td><td>{p.cost_per_student ? ar(p.cost_per_student) : '—'}</td></tr>
                 ))}</tbody></table>
             )}
             <p className="small muted">الإيراد حسب السياسة المعتمدة ({approved?.params.revenue.basis === 'OVER_TIME' ? 'يُثبَّت عبر الزمن بنسبة الساعات المنفذة' : 'المحصَّل في الشهر'}) وهو صافي الخصم، ولا يشمل ضريبة القيمة المضافة. الربح هنا قبل المصروفات الإدارية الأخرى.</p>
@@ -223,7 +228,7 @@ export default async function CostPage({ params, searchParams }: { params: Promi
       {policies && (
         <section className="card stack" aria-labelledby="pol-h">
           <h2 id="pol-h">سياسة التكلفة</h2>
-          {approved ? <p>المعتمدة: <strong>الإصدار {approved.version}</strong> — اعتُمدت {approved.approved_at ? new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', dateStyle: 'medium' }).format(new Date(approved.approved_at)) : ''}{approved.note ? ` — ${approved.note}` : ''}. لا تُعدَّل بعد الاعتماد؛ التعديل مسودة بإصدار جديد.</p> : <p className="muted">لا توجد سياسة معتمدة.</p>}
+          {approved ? <p>المعتمدة: <strong>الإصدار {approved.version}</strong> — اعتُمدت {approved.approved_at ? new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', dateStyle: 'medium' }).format(new Date(approved.approved_at)) : ''}{approved.note ? ` — ${approved.note}` : ''}. لا تُعدَّل بعد الاعتماد؛ التعديل مسودة بإصدار جديد.</p> : <p className="muted">لا توجد سياسة معتمدة.</p>}
           {policies.history.length > 0 && <p className="small muted">إصدارات سابقة محفوظة للمراجعة: {policies.history.map((h) => h.version).join('، ')}.</p>}
           {draft && (
             <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

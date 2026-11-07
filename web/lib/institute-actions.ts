@@ -124,8 +124,10 @@ async function save(slug: string, path: string, method: 'POST' | 'PUT' | 'DELETE
   } catch (err) {
     return describe(err);
   }
-  revalidatePath(`/${slug}/institute`);
-  redirect(`/${slug}/institute?saved=${notice}`);
+  revalidatePath(`/${slug}/institute`, 'layout');
+  // Programmes, instructors, students and sessions live on the academic page; branches, rooms, assets, staff and roles on the setup page.
+  const area = ['program', 'instructor', 'student', 'session'].includes(notice) ? 'academic' : 'setup';
+  redirect(`/${slug}/institute/${area}?saved=${notice}`);
 }
 
 export async function addBranchAction(slug: string, _prev: InstState, form: FormData): Promise<InstState> {

@@ -30,7 +30,7 @@ export default async function SessionAttendance({ params }: { params: Promise<{ 
     throw err;
   }
   const { session: s, students } = roster;
-  const when = new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', dateStyle: 'full', timeStyle: 'short' }).format(new Date(s.starts_at));
+  const when = new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', dateStyle: 'full', timeStyle: 'short' }).format(new Date(s.starts_at));
 
   return (
     <div className="stack" style={{ gap: 20 }}>

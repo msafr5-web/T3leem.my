@@ -604,9 +604,25 @@ export function platformApi<T>(path: string, opts: RequestOptions = {}): Promise
   return request<T>(`/platform${path}`, {}, opts);
 }
 
+/**
+ * The visitor's address as the reverse proxy saw it. The API rate-limits per tenant and client IP; without this every visitor of an
+ * academy would reach it from the web server's own address and share one bucket.
+ */
+async function clientIp(): Promise<string | null> {
+  try {
+    const { headers } = await import('next/headers');
+    const h = await headers();
+    const v = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? h.get('x-real-ip');
+    return v && /^[0-9a-fA-F:.]{3,45}$/.test(v) ? v : null;
+  } catch {
+    return null; // outside a request (build time, cached fetch): nothing to forward
+  }
+}
+
 async function request<T>(path: string, scope: Record<string, string>, opts: RequestOptions): Promise<T> {
   const base = process.env.API_URL;
   if (!base) throw new ApiUnavailableError('API_URL is not configured');
+  const ip = opts.token ? await clientIp() : null;
 
   let res: Response;
   try {
@@ -618,6 +634,7 @@ async function request<T>(path: string, scope: Record<string, string>, opts: Req
         ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(opts.raw ? { 'Content-Type': opts.raw.contentType } : {}),
         ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
+        ...(ip ? { 'X-Forwarded-For': ip } : {}),
       },
       body: opts.raw ? (opts.raw.data as BodyInit) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       ...(opts.revalidate !== undefined && !opts.token ? { next: { revalidate: opts.revalidate } } : { cache: 'no-store' }),

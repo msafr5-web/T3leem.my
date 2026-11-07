@@ -1,66 +1,37 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import {
-  addAssetAction,
-  addBranchAction,
-  addDepartmentAction,
-  addRoomAction,
-  addStaffAction,
-  deleteAssetAction,
-  deleteDepartmentAction,
-  deleteRoomAction,
-  deleteStaffAction,
-  importAssetsAction,
-  logMaintenanceAction,
-  removeMemberAction,
-  saveMemberAction,
-} from '@/lib/institute-actions';
-import { ApiError, admin, type InstAttention } from '@/lib/api';
-import { formatNumber, isValidSlug } from '@/lib/format';
+import { ApiError, admin, type CostReport, type FinBudget, type FinSummary, type InstSession } from '@/lib/api';
+import { isValidSlug } from '@/lib/format';
 import { getSession } from '@/lib/session';
-import { ActionForm, ConfirmAction } from '../dashboard/health/health-forms';
-import { AssetImportForm } from './institute-forms';
+import { BranchBars, DayLegend, DayMap, Sparkline, type DayRoom, type DaySession } from './ix-charts';
+import { getInstituteMe } from './ix-data';
 
-export const metadata: Metadata = { title: 'إدارة المعهد' };
+export const metadata: Metadata = { title: 'لوحة اليوم' };
 
-const NOTICES: Record<string, string> = {
-  branch: 'تم حفظ الفرع.',
-  room: 'تم تحديث القاعات.',
-  asset: 'تم تحديث الأصول.',
-  member: 'تم تحديث الأدوار.',
-  department: 'تم تحديث الأقسام.',
-  staff: 'تم تحديث الموظفين.',
-  maintenance: 'تم تسجيل الصيانة.',
+const ar = (n: number, digits = 0) => n.toLocaleString('ar-SA-u-nu-latn', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const KIND: Record<string, string> = { CLASSROOM: 'فصل', LAB: 'معمل', HALL: 'قاعة كبرى' };
+const dayLong = (d: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', dateStyle: 'full' }).format(new Date(`${d}T12:00:00+03:00`));
+const monthLong = (m: string) => new Intl.DateTimeFormat('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', month: 'long', year: 'numeric' }).format(new Date(`${m}-15T12:00:00+03:00`));
+const shiftMonth = (m: string, by: number) => {
+  const [y, mo] = m.split('-').map(Number) as [number, number];
+  const t = y * 12 + (mo - 1) + by;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
 };
-const ROLE_LABEL: Record<string, string> = {
-  HQ: 'الإدارة العليا (كل الفروع)',
-  BRANCH_MANAGER: 'مدير فرع',
-  FINANCE: 'المالية (كل الفروع)',
-  STUDENT_AFFAIRS: 'شؤون الطلاب (فرع)',
-  INSTRUCTOR: 'مدرب (قراءة القاعات)',
-};
-const KIND_LABEL: Record<string, string> = { CLASSROOM: 'قاعة', LAB: 'معمل', HALL: 'قاعة كبرى' };
-const STATUS_LABEL: Record<string, string> = { IN_SERVICE: 'في الخدمة', MAINTENANCE: 'في الصيانة', RETIRED: 'خارج الخدمة' };
-const REASON_LABEL: Record<InstAttention['items'][number]['reasons'][number], string> = {
-  IN_MAINTENANCE: 'في الصيانة',
-  MAINTENANCE_OVERDUE: 'صيانة متأخرة',
-  END_OF_LIFE: 'انتهى عمره النافع',
-  NO_ROOM: 'بلا قاعة',
-};
-const MAINT_KIND: Record<string, string> = { INSPECTION: 'فحص', REPAIR: 'إصلاح', SERVICE: 'صيانة دورية' };
+const shiftDay = (d: string, by: number) => new Date(new Date(`${d}T00:00:00Z`).getTime() + by * 86_400_000).toISOString().slice(0, 10);
+const riyadhNow = () => new Date(Date.now() + 3 * 3_600_000);
 
-/** A read the role is not allowed to make (403) just hides that section; any other failure is a real error. */
-async function orNull<T>(p: Promise<T>): Promise<T | null> {
+/** Anything the person's role may not read, or a hiccup in one panel, leaves that panel out instead of failing the page. */
+async function safe<T>(p: Promise<T>): Promise<T | null> {
   try {
     return await p;
   } catch (err) {
-    if (err instanceof ApiError && err.status === 403) return null;
+    if (err instanceof ApiError) return null;
     throw err;
   }
 }
 
-export default async function InstitutePage({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ saved?: string }> }) {
+export default async function InstituteOverview({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ branch?: string; day?: string; m?: string }> }) {
   const [{ tenant: slug }, sp] = await Promise.all([params, searchParams]);
   if (!isValidSlug(slug)) redirect('/');
   const session = await getSession(slug);
@@ -69,260 +40,306 @@ export default async function InstitutePage({ params, searchParams }: { params: 
 
   let me;
   try {
-    me = await admin.instituteMe(slug, t);
+    me = await getInstituteMe(slug, t);
   } catch (err) {
     if (err instanceof ApiError && (err.code === 'FEATURE_DISABLED' || err.status === 403)) {
       return (
         <div className="stack">
           <h1>إدارة المعهد</h1>
-          <p className="notice" role="status">
-            {err.code === 'FEATURE_DISABLED' ? 'هذه الوحدة غير مفعّلة لأكاديميتك. تواصل مع إدارة المنصة لتفعيلها.' : 'ليس لديك دور في إدارة المعهد. اطلب من إدارة الأكاديمية إضافتك.'}
-          </p>
+          <p className="notice" role="status">{err.code === 'FEATURE_DISABLED' ? 'هذه الوحدة غير مفعّلة لأكاديميتك. تواصل مع إدارة المنصة لتفعيلها.' : 'ليس لديك دور في إدارة المعهد. اطلب من إدارة الأكاديمية إضافتك.'}</p>
         </div>
       );
     }
     throw err;
   }
 
-  const [branches, rooms, assets, members, departments, staff, attention] = await Promise.all([
-    orNull(admin.instituteBranches(slug, t)),
-    orNull(admin.instituteRooms(slug, t)),
-    orNull(admin.instituteAssets(slug, t)),
-    orNull(admin.instituteMembers(slug, t)),
-    orNull(admin.instituteDepartments(slug, t)),
-    orNull(admin.instituteStaff(slug, t)),
-    orNull(admin.instituteAttention(slug, t)),
-  ]);
-  const w = me.can_write;
-  const branchList = branches?.branches ?? [];
-  const roomList = rooms?.rooms ?? [];
-  const assetList = assets?.assets ?? [];
-  const branchName = new Map(branchList.map((b) => [b.id, b.name]));
-  const roomName = new Map(roomList.map((r) => [r.id, r.name]));
-  const deptName = new Map((departments?.departments ?? []).map((d) => [d.id, d.name]));
-  const assetName = new Map(assetList.map((a) => [a.id, a.name]));
-  const notice = sp.saved ? NOTICES[sp.saved] : null;
-  const wideBranch = me.branch_id === null; // HQ and finance span every branch
-  const showMoney = assetList.some((a) => a.purchase_value !== undefined);
+  const now = riyadhNow();
+  const today = now.toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+  const canMoney = me.can_read.finance;
 
-  const BranchSelect = ({ name, required = true, wide = false }: { name: string; required?: boolean; wide?: boolean }) => (
-    <select name={name} required={required} defaultValue={!wide && branchList.length === 1 ? branchList[0]?.id : ''}>
-      <option value="" disabled={required}>{required ? 'اختر الفرع' : wide ? 'كل الفروع (مستوى المعهد)' : 'كل الفروع'}</option>
-      {branchList.map((b) => (
-        <option key={b.id} value={b.id}>{b.name}</option>
-      ))}
-    </select>
-  );
+  // The month in focus: the one asked for, else this month; but in the first ten days of a month its figures are barely formed, so the
+  // month that just ended is shown instead (if it saw activity), with a note and a way back.
+  const requested = sp.m && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.m) ? sp.m : undefined;
+  const hasActivity = (s: FinSummary | null) => (s ? s.branches.some((b) => Number(b.income) > 0 || Number(b.spend) > 0) : false);
+  const monthsEnding = (end: string, count: number) => Array.from({ length: count }, (_, i) => shiftMonth(end, i - (count - 1)));
+  let month = requested ?? currentMonth;
+  let series: (FinSummary | null)[] = [];
+  let autoPicked = false;
+  if (canMoney) {
+    if (requested) series = await Promise.all(monthsEnding(requested, 6).map((m) => safe(admin.finSummary(slug, t, m))));
+    else {
+      const seven = await Promise.all(monthsEnding(currentMonth, 7).map((m) => safe(admin.finSummary(slug, t, m))));
+      if (Number(today.slice(8, 10)) <= 10 && hasActivity(seven[5] ?? null)) {
+        month = shiftMonth(currentMonth, -1);
+        series = seven.slice(0, 6);
+        autoPicked = true;
+      } else series = seven.slice(1);
+    }
+  }
+  const prevMonth = shiftMonth(month, -1);
+  const monthStartIso = `${month}-01T00:00:00+03:00`;
+  const monthEndIso = `${shiftMonth(month, 1)}-01T00:00:00+03:00`;
+
+  const [branchesR, roomsR, programsR, instructorsR, studentsR, attentionR, policiesR, monthSessionsR, upcomingR] = await Promise.all([
+    safe(admin.instituteBranches(slug, t)),
+    safe(admin.instituteRooms(slug, t)),
+    safe(admin.institutePrograms(slug, t)),
+    safe(admin.instituteInstructors(slug, t)),
+    safe(admin.instituteStudents(slug, t)),
+    safe(admin.instituteAttention(slug, t)),
+    safe(admin.costPolicies(slug, t)),
+    safe(admin.instituteSessions(slug, t, new Date(monthStartIso).toISOString(), new Date(monthEndIso).toISOString())),
+    safe(admin.instituteSessions(slug, t, new Date(`${today}T00:00:00+03:00`).toISOString(), new Date(`${shiftDay(today, 15)}T00:00:00+03:00`).toISOString())),
+  ]);
+  const branches = branchesR?.branches ?? [];
+  const branch = sp.branch && branches.some((b) => b.id === sp.branch) ? sp.branch : undefined;
+  const inBranch = (id: string) => !branch || id === branch;
+  const branchName = new Map(branches.map((b) => [b.id, b.name]));
+
+  // money: six months of summaries (oldest first) for the trend lines, plus invoices and budgets
+  const summaries = series;
+  const [invoicesR, budgetsR, duesR] = canMoney ? await Promise.all([safe(admin.finInvoices(slug, t)), safe(admin.finBudgets(slug, t, month)), safe(admin.finDues(slug, t, prevMonth))]) : [null, null, null];
+  const pick = (s: FinSummary | null, key: 'income' | 'spend') => (s ? s.branches.filter((b) => inBranch(b.branch_id)).reduce((n, b) => n + Number(b[key]), 0) : 0);
+  const income = summaries.map((s) => pick(s, 'income'));
+  const spend = summaries.map((s) => pick(s, 'spend'));
+  const net = income.map((v, i) => v - (spend[i] ?? 0));
+
+  // rooms, sessions, occupancy
+  const rooms = (roomsR?.rooms ?? []).filter((r) => r.active && inBranch(r.branch_id));
+  const roomIds = new Set(rooms.map((r) => r.id));
+  const monthSessions = (monthSessionsR?.sessions ?? []).filter((s) => roomIds.has(s.room_id));
+  const heldMinutes = monthSessions.filter((s) => s.status === 'HELD').reduce((n, s) => n + (new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()) / 60_000, 0);
+  const availableHours = policiesR?.approved?.params.occupancy.availableHoursPerMonth ?? 176;
+  const occupancy = rooms.length > 0 ? Math.min(100, (heldMinutes / 60 / (rooms.length * availableHours)) * 100) : 0;
+  const students = (studentsR?.students ?? []).filter((s) => inBranch(s.branch_id));
+  const activeStudents = students.filter((s) => s.status === 'ACTIVE').length;
+
+  // the day map: the requested day, else today, else the next day that has a session
+  const upcoming = (upcomingR?.sessions ?? []).filter((s) => roomIds.has(s.room_id));
+  const dayOf = (s: InstSession) => new Date(new Date(s.starts_at).getTime() + 3 * 3_600_000).toISOString().slice(0, 10);
+  const firstBusy = [...upcoming].map(dayOf).sort()[0];
+  const day = sp.day && /^\d{4}-\d{2}-\d{2}$/.test(sp.day) ? sp.day : upcoming.some((s) => dayOf(s) === today) ? today : firstBusy ?? today;
+  const daySessionsRaw = day === today || upcoming.some((s) => dayOf(s) === day) ? upcoming.filter((s) => dayOf(s) === day) : [];
+  const dayData = daySessionsRaw.length > 0 || (day >= today && day <= shiftDay(today, 14))
+    ? daySessionsRaw
+    : ((await safe(admin.instituteSessions(slug, t, new Date(`${day}T00:00:00+03:00`).toISOString(), new Date(`${shiftDay(day, 1)}T00:00:00+03:00`).toISOString())))?.sessions ?? []).filter((s) => roomIds.has(s.room_id));
+  const subjectLabel = new Map((programsR?.programs ?? []).flatMap((p) => p.levels.flatMap((l) => l.subjects.map((s) => [s.id, s.name] as const))));
+  const instructorName = new Map((instructorsR?.instructors ?? []).map((i) => [i.id, i.full_name]));
+  const dayRooms: DayRoom[] = rooms.map((r) => ({ id: r.id, name: r.name, detail: `${branches.length > 1 && !branch ? `${branchName.get(r.branch_id) ?? ''} · ` : ''}${KIND[r.kind]} · ${ar(r.capacity)} مقعد` }));
+  const daySessions: DaySession[] = dayData.map((s) => ({
+    id: s.id, roomId: s.room_id, startsAt: s.starts_at, endsAt: s.ends_at, status: s.status,
+    title: subjectLabel.get(s.subject_id) ?? 'حصة', who: instructorName.get(s.instructor_id) ?? '', href: `/${slug}/institute/session/${s.id}`,
+  }));
+  const nowHour = day === today ? now.getUTCHours() + now.getUTCMinutes() / 60 : null;
+
+  // what needs a person's attention
+  const invoices = (invoicesR?.invoices ?? []).filter((i) => inBranch(i.branch_id));
+  const overdue = invoices.filter((i) => i.status === 'OPEN' && i.overdue);
+  const overdueSum = overdue.reduce((n, i) => n + Number(i.outstanding), 0);
+  const budgets: FinBudget[] = (budgetsR?.budgets ?? []).filter((b) => inBranch(b.branch_id));
+  const exceeded = budgets.filter((b) => b.level === 'EXCEEDED');
+  const warned = budgets.filter((b) => b.level === 'WARNING');
+  const duesOutstanding = duesR ? Number(duesR.outstanding) : 0;
+  const attentionCount = attentionR?.items.length ?? 0;
+  const billReports: (CostReport | null)[] =
+    canMoney && me.can_read.cost && policiesR?.approved ? await Promise.all(branches.filter((b) => inBranch(b.id)).map((b) => safe(admin.costReport(slug, t, b.id, month === currentMonth ? prevMonth : month)))) : [];
+  const billsToReview = billReports.filter((r) => r?.bill_check?.level === 'REVIEW');
+
+  // first three, then a count: a long run of budgets is read as "many", not as a paragraph
+  const listBudgets = (bs: FinBudget[]) => {
+    const line = (b: FinBudget) => `${branchName.get(b.branch_id) ?? ''}: ${b.category === 'ELECTRICITY' ? 'الكهرباء' : b.category ?? 'الإجمالي'} ${ar(b.percent ?? 0)}٪`;
+    return bs.slice(0, 3).map(line).join('، ') + (bs.length > 3 ? `، و${ar(bs.length - 3)} أخرى` : '');
+  };
+  type Todo = { tone: 'bad' | 'warn' | 'ok'; title: string; note: string; href: string; action: string };
+  const todos: Todo[] = [];
+  if (overdue.length > 0) todos.push({ tone: 'bad', title: `${ar(overdue.length)} فاتورة طالب فيها أقساط متأخرة`, note: `المتبقي عليها ${ar(overdueSum)} ريال`, href: `/${slug}/institute/finance?month=${month}`, action: 'متابعة التحصيل' });
+  if (exceeded.length > 0) todos.push({ tone: 'bad', title: `${ar(exceeded.length)} ${exceeded.length === 1 ? 'ميزانية تجاوزت حدّها' : 'ميزانيات تجاوزت حدّها'} هذا الشهر`, note: listBudgets(exceeded), href: `/${slug}/institute/finance?month=${month}`, action: 'مراجعة الميزانيات' });
+  if (warned.length > 0) todos.push({ tone: 'warn', title: `${ar(warned.length)} ${warned.length === 1 ? 'ميزانية اقتربت من حدّها' : 'ميزانيات اقتربت من حدّها'}`, note: listBudgets(warned), href: `/${slug}/institute/finance?month=${month}`, action: 'عرض' });
+  if (duesOutstanding > 0) todos.push({ tone: 'warn', title: `مستحقات مدربين غير مصروفة عن ${monthLong(prevMonth)}`, note: `${ar(duesOutstanding)} ريال متبقية`, href: `/${slug}/institute/finance?month=${prevMonth}`, action: 'صرف المستحقات' });
+  if (billsToReview.length > 0) todos.push({ tone: 'warn', title: 'فاتورة كهرباء تختلف عن التعرفة', note: `في ${billsToReview.map((r) => branchName.get(r!.branch_id) ?? '').join('، ')} عن ${monthLong(month === currentMonth ? prevMonth : month)}`, href: `/${slug}/institute/cost?month=${month === currentMonth ? prevMonth : month}`, action: 'مقارنة بالتعرفة' });
+  if (attentionCount > 0) todos.push({ tone: 'warn', title: `${ar(attentionCount)} أصول تحتاج متابعة`, note: 'صيانة متأخرة أو انتهى عمرها النافع أو بلا قاعة', href: `/${slug}/institute/setup`, action: 'عرض الأصول' });
+  if (canMoney && me.can_read.cost && policiesR && !policiesR.approved) todos.push({ tone: 'warn', title: 'لا توجد سياسة تكلفة معتمدة', note: 'تقارير التكلفة والربحية لا تصدر إلا بسياسة معتمدة', href: `/${slug}/institute/cost`, action: 'إعداد السياسة' });
+
+  const q = (extra: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    const b = 'branch' in extra ? extra.branch : branch;
+    if (b) p.set('branch', b);
+    const d = 'day' in extra ? extra.day : sp.day;
+    if (d) p.set('day', d);
+    const m = 'm' in extra ? extra.m : requested;
+    if (m) p.set('m', m);
+    const s = p.toString();
+    return `/${slug}/institute${s ? `?${s}` : ''}`;
+  };
+
+  const noBranches = branches.length === 0;
+  const noBranchesEarly = noBranches;
+  const steps = [
+    { done: branches.length > 0, title: 'أضف فرعاً', note: 'مثل الرياض أو جدة. لكل فرع قاعاته وفريقه وميزانيته.', href: `/${slug}/institute/setup`, action: 'إضافة فرع' },
+    { done: (roomsR?.rooms.length ?? 0) > 0, title: 'سجّل القاعات والمعامل', note: 'بمساحتها وسعتها وقدرة أجهزتها؛ تُبنى عليها تكلفة الساعة.', href: `/${slug}/institute/setup`, action: 'إضافة قاعة' },
+    { done: (programsR?.programs.length ?? 0) > 0, title: 'أنشئ برنامجاً بمستوياته ومواده', note: 'الدبلوم ثم المستوى ثم المادة بساعاتها.', href: `/${slug}/institute/academic`, action: 'إضافة برنامج' },
+    { done: (instructorsR?.instructors.length ?? 0) > 0 && students.length > 0, title: 'أضف المدربين والطلاب', note: 'المدرب بأجر الساعة، والطالب بالبرنامج والمستوى.', href: `/${slug}/institute/academic`, action: 'إضافة' },
+    { done: (upcomingR?.sessions.length ?? 0) + (monthSessionsR?.sessions.length ?? 0) > 0, title: 'جدوِل الحصص', note: 'النظام يمنع حجز القاعة أو المدرب في وقتين متداخلين.', href: `/${slug}/institute/academic`, action: 'جدولة حصة' },
+  ];
+
+  const delta = (cur: number, prev: number) => (prev === 0 ? null : ((cur - prev) / Math.abs(prev)) * 100);
+  const last = income.length - 1;
 
   return (
-    <div className="stack" style={{ gap: 28 }}>
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <h1>إدارة المعهد</h1>
-          <p className="muted">
-            دورك: <strong>{ROLE_LABEL[me.role] ?? me.role}</strong>
-            {me.branch_id ? ` · فرع ${branchName.get(me.branch_id) ?? ''}` : ''}. ترى هنا ما يسمح به دورك فقط.
-          </p>
+    <div className="stack">
+      <header className="ix-head">
+        <div>
+          <h1>لوحة اليوم</h1>
+          <p>{dayLong(today)}{branch ? `، فرع ${branchName.get(branch) ?? ''}` : branches.length > 1 ? '، كل الفروع' : ''}.</p>
         </div>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <Link href={`/${slug}/institute/academic`} className="btn btn-primary">الدبلومات والطلاب والجداول</Link>
-          {me.can_read.finance && <Link href={`/${slug}/institute/finance`} className="btn btn-primary">المالية</Link>}
-          {me.can_read.cost && <Link href={`/${slug}/institute/cost`} className="btn btn-primary">التكاليف</Link>}
-          {session.role === 'TENANT_ADMIN' && <Link href={`/${slug}/dashboard`} className="btn btn-ghost">لوحة التحكم</Link>}
+        <div className="ix-tools">
+        {canMoney && !noBranchesEarly && (
+          <nav className="ix-seg" aria-label="الشهر">
+            <Link href={q({ m: shiftMonth(month, -1) })}>{monthLong(shiftMonth(month, -1))}</Link>
+            <Link href={q({ m: month })} aria-current="true">{monthLong(month)}</Link>
+            {month < currentMonth && <Link href={q({ m: shiftMonth(month, 1) })}>{monthLong(shiftMonth(month, 1))}</Link>}
+          </nav>
+        )}
+        {branches.length > 1 && (
+          <nav className="ix-seg" aria-label="الفرع">
+            <Link href={q({ branch: undefined })} aria-current={!branch ? 'true' : undefined}>كل الفروع</Link>
+            {branches.map((b) => <Link key={b.id} href={q({ branch: b.id })} aria-current={branch === b.id ? 'true' : undefined}>{b.name}</Link>)}
+          </nav>
+        )}
         </div>
-      </div>
-      {notice && <div className="notice ok" role="status">{notice}</div>}
+      </header>
 
-      {attention && attention.items.length > 0 && (
-        <section className="card stack" aria-labelledby="attn-h">
-          <h2 id="attn-h">أصول تحتاج متابعة ({formatNumber(attention.items.length)})</h2>
-          <ul className="stack" style={{ gap: 6 }}>
-            {attention.items.map((i) => (
-              <li key={i.asset_id}>
-                {assetName.get(i.asset_id) ?? 'أصل'}: {i.reasons.map((r) => REASON_LABEL[r]).join('، ')}
+      {autoPicked && (
+        <p className="ix-note" role="status">
+          <span>في الأيام العشرة الأولى من الشهر نعرض الشهر المكتمل ({monthLong(month)}) لأن أرقام {monthLong(currentMonth)} لم تتكوّن بعد.</span>
+          <Link href={q({ m: currentMonth })}>عرض {monthLong(currentMonth)}</Link>
+        </p>
+      )}
+
+      {noBranches ? (
+        <section className="card" aria-labelledby="start-h">
+          <h2 id="start-h">ابدأ بإعداد المعهد</h2>
+          <p className="muted">خمس خطوات تكفي لتظهر هذه اللوحة بأرقامها. كل خطوة تفتح الصفحة المناسبة.</p>
+          <ol className="ix-steps">
+            {steps.map((s) => (
+              <li key={s.title} className={s.done ? 'done' : undefined}>
+                <div><b>{s.title}</b><p>{s.note}</p></div>
+                {!s.done && <Link href={s.href} className="btn btn-ghost">{s.action}</Link>}
               </li>
             ))}
-          </ul>
+          </ol>
         </section>
-      )}
-
-      {branches && (
-        <section className="card stack" aria-labelledby="branches-h">
-          <h2 id="branches-h">الفروع ({formatNumber(branchList.length)})</h2>
-          {branchList.length === 0 ? <p className="muted">لم تُضف فروع بعد.</p> : (
-            <table className="table"><thead><tr><th>الفرع</th><th>المدينة</th><th>العنوان</th></tr></thead>
-              <tbody>{branchList.map((b) => <tr key={b.id}><td>{b.name}</td><td>{b.city ?? '—'}</td><td>{b.address ?? '—'}</td></tr>)}</tbody></table>
-          )}
-          {w.branch && (
-            <details>
-              <summary>إضافة فرع</summary>
-              <ActionForm action={addBranchAction.bind(null, slug)} submitLabel="إضافة الفرع">
-                <label>اسم الفرع<input name="name" required maxLength={80} /></label>
-                <label>المدينة<input name="city" maxLength={80} /></label>
-                <label>العنوان<input name="address" maxLength={200} /></label>
-              </ActionForm>
-            </details>
-          )}
-        </section>
-      )}
-
-      {rooms && (
-        <section className="card stack" aria-labelledby="rooms-h">
-          <h2 id="rooms-h">القاعات والمعامل ({formatNumber(roomList.length)})</h2>
-          {roomList.length === 0 ? <p className="muted">لا توجد قاعات.</p> : (
-            <table className="table"><thead><tr><th>القاعة</th><th>الفرع</th><th>النوع</th><th>المساحة م²</th><th>السعة</th><th>القدرة كيلوواط</th>{w.room && <th />}</tr></thead>
-              <tbody>{roomList.map((r) => (
-                <tr key={r.id}><td>{r.name}</td><td>{branchName.get(r.branch_id) ?? '—'}</td><td>{KIND_LABEL[r.kind]}</td><td>{r.area_m2}</td><td>{formatNumber(r.capacity)}</td><td>{r.power_kw}</td>
-                  {w.room && <td><ConfirmAction action={deleteRoomAction.bind(null, slug, r.id)} label="حذف" confirmText={`حذف القاعة ${r.name}؟`} variant="danger" /></td>}</tr>
-              ))}</tbody></table>
-          )}
-          {w.room && (
-            <details>
-              <summary>إضافة قاعة أو معمل</summary>
-              <ActionForm action={addRoomAction.bind(null, slug)} submitLabel="إضافة القاعة">
-                <label>الفرع<BranchSelect name="branch_id" /></label>
-                <label>الاسم<input name="name" required maxLength={80} /></label>
-                <label>النوع<select name="kind" defaultValue="CLASSROOM">{Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-                <label>المساحة (م²)<input type="number" name="area_m2" required min={1} step="0.01" inputMode="decimal" /></label>
-                <label>السعة (طالب)<input type="number" name="capacity" required min={1} /></label>
-                <label>قدرة الأجهزة (كيلوواط) <span className="hint">تُستعمل لتوزيع الكهرباء</span><input type="number" name="power_kw" min={0} step="0.01" inputMode="decimal" defaultValue={0} /></label>
-              </ActionForm>
-            </details>
-          )}
-        </section>
-      )}
-
-      {assets && (
-        <section className="card stack" aria-labelledby="assets-h">
-          <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <h2 id="assets-h">الأصول والأجهزة ({formatNumber(assetList.length)})</h2>
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <a href={`/${slug}/institute/export`} className="btn btn-ghost">تصدير Excel</a>
-              {w.asset && <a href={`/${slug}/institute/export?template=1`} className="btn btn-ghost">قالب الاستيراد</a>}
+      ) : (
+        <>
+          <section className="ix-pulse" aria-label="أرقام الشهر">
+            {canMoney ? (
+              <>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">المحصَّل في {monthLong(month)}</span>
+                  <span className="ix-fig-value">{ar(income[last] ?? 0)}<small>ريال</small></span>
+                  <span className="ix-fig-note">الشهر الماضي <b>{ar(income[last - 1] ?? 0)}</b>{delta(income[last] ?? 0, income[last - 1] ?? 0) !== null && <> · <span className={(delta(income[last] ?? 0, income[last - 1] ?? 0) ?? 0) >= 0 ? 'ix-pos' : 'ix-neg'}>{ar(Math.abs(delta(income[last] ?? 0, income[last - 1] ?? 0) ?? 0))}٪ {(delta(income[last] ?? 0, income[last - 1] ?? 0) ?? 0) >= 0 ? 'أعلى' : 'أقل'}</span></>}</span>
+                  <Sparkline values={income} label="المحصَّل خلال ستة أشهر" />
+                </div>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">المصروفات والكهرباء</span>
+                  <span className="ix-fig-value">{ar(spend[last] ?? 0)}<small>ريال</small></span>
+                  <span className="ix-fig-note">الشهر الماضي <b>{ar(spend[last - 1] ?? 0)}</b></span>
+                  <Sparkline values={spend} tone="spend" label="المصروفات خلال ستة أشهر" />
+                </div>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">الصافي النقدي</span>
+                  <span className={`ix-fig-value ${(net[last] ?? 0) < 0 ? 'ix-neg' : ''}`}>{ar(net[last] ?? 0)}<small>ريال</small></span>
+                  <span className="ix-fig-note">المحصَّل ناقص المصروف في الشهر. يشمل ضريبة الفواتير المحصَّلة.</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">الطلاب المنتظمون</span>
+                  <span className="ix-fig-value">{ar(activeStudents)}</span>
+                  <span className="ix-fig-note">من {ar(students.length)} طالباً مسجلاً</span>
+                </div>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">حصص منفذة هذا الشهر</span>
+                  <span className="ix-fig-value">{ar(monthSessions.filter((s) => s.status === 'HELD').length)}</span>
+                  <span className="ix-fig-note">وحصص قادمة <b>{ar(upcoming.filter((s) => s.status === 'SCHEDULED').length)}</b> خلال أسبوعين</span>
+                </div>
+                <div className="ix-fig">
+                  <span className="ix-fig-label">القاعات النشطة</span>
+                  <span className="ix-fig-value">{ar(rooms.length)}</span>
+                  <span className="ix-fig-note">في {ar(new Set(rooms.map((r) => r.branch_id)).size)} {new Set(rooms.map((r) => r.branch_id)).size === 1 ? 'فرع' : 'فروع'}</span>
+                </div>
+              </>
+            )}
+            <div className="ix-fig">
+              <span className="ix-fig-label">إشغال القاعات</span>
+              <span className="ix-fig-value">{ar(occupancy, 1)}<small>٪</small></span>
+              <span className="ix-fig-note">{ar(Math.round(heldMinutes / 60))} ساعة منفذة من {ar(rooms.length * availableHours)} ساعة متاحة هذا الشهر</span>
+              <div className="ix-meter" role="img" aria-label={`الإشغال ${ar(occupancy, 1)} بالمئة`}><i style={{ width: `${occupancy}%` }} /></div>
             </div>
-          </div>
-          {assetList.length === 0 ? <p className="muted">لا توجد أصول مسجلة.</p> : (
-            <table className="table"><thead><tr><th>الأصل</th><th>الفرع</th><th>القاعة</th><th>الحالة</th>{showMoney && <th>قيمة الشراء</th>}{w.asset && <th />}</tr></thead>
-              <tbody>{assetList.map((a) => (
-                <tr key={a.id}><td>{a.name}{a.serial_no ? <span className="muted"> · {a.serial_no}</span> : null}</td><td>{branchName.get(a.branch_id) ?? '—'}</td><td>{a.room_id ? roomName.get(a.room_id) ?? '—' : '—'}</td><td>{STATUS_LABEL[a.status]}</td>
-                  {showMoney && <td>{a.purchase_value ?? '—'}</td>}
-                  {w.asset && <td><ConfirmAction action={deleteAssetAction.bind(null, slug, a.id)} label="حذف" confirmText={`حذف الأصل ${a.name}؟`} variant="danger" /></td>}</tr>
-              ))}</tbody></table>
-          )}
-          {w.asset && (
-            <>
-              <details>
-                <summary>إضافة أصل</summary>
-                <ActionForm action={addAssetAction.bind(null, slug)} submitLabel="إضافة الأصل">
-                  <label>الفرع<BranchSelect name="branch_id" /></label>
-                  <label>القاعة <span className="hint">(من الفرع نفسه، اختياري)</span>
-                    <select name="room_id" defaultValue=""><option value="">بلا قاعة</option>{roomList.map((r) => <option key={r.id} value={r.id}>{branchName.get(r.branch_id)} — {r.name}</option>)}</select></label>
-                  <label>اسم الأصل<input name="name" required maxLength={120} /></label>
-                  <label>التصنيف<input name="category" maxLength={80} /></label>
-                  <label>الرقم التسلسلي<input name="serial_no" maxLength={80} dir="ltr" /></label>
-                  <label>تاريخ الشراء<input type="date" name="purchase_date" /></label>
-                  {showMoney || me.role !== 'STUDENT_AFFAIRS' ? (
-                    <>
-                      <label>قيمة الشراء (ريال)<input name="purchase_value" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>
-                      <label>القيمة المتبقية % <span className="hint">(الافتراضي 10)</span><input type="number" name="salvage_percent" min={0} max={100} step="0.01" /></label>
-                      <label>العمر النافع (شهر)<input type="number" name="useful_life_months" min={1} max={1200} /></label>
-                    </>
-                  ) : null}
-                </ActionForm>
-              </details>
-              <details>
-                <summary>استيراد أصول من Excel</summary>
-                <AssetImportForm action={importAssetsAction.bind(null, slug)} />
-              </details>
-              {assetList.length > 0 && (
-                <details>
-                  <summary>تسجيل صيانة أو فحص</summary>
-                  <ActionForm action={logMaintenanceAction.bind(null, slug)} submitLabel="تسجيل">
-                    <label>الأصل<select name="asset_id" required defaultValue=""><option value="" disabled>اختر الأصل</option>{assetList.map((a) => <option key={a.id} value={a.id}>{branchName.get(a.branch_id)} — {a.name}</option>)}</select></label>
-                    <label>النوع<select name="kind" defaultValue="SERVICE">{Object.entries(MAINT_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-                    <label>تاريخ العمل<input type="date" name="performed_on" required /></label>
-                    <label>الاستحقاق التالي <span className="hint">(اختياري)</span><input type="date" name="next_due_on" /></label>
-                    {showMoney && <label>التكلفة (ريال)<input name="cost" inputMode="decimal" pattern="\d{1,10}(\.\d{1,2})?" dir="ltr" /></label>}
-                    <label>ملاحظات<input name="notes" maxLength={500} /></label>
-                  </ActionForm>
-                </details>
+          </section>
+
+          <section className="card" aria-labelledby="map-h">
+            <div className="ix-head">
+              <div>
+                <h2 id="map-h">القاعات في {dayLong(day)}</h2>
+                <p className="small muted">{daySessions.length === 0 ? 'لا توجد حصص في هذا اليوم.' : `${ar(daySessions.length)} ${daySessions.length === 1 ? 'حصة' : 'حصص'} على ${ar(new Set(daySessions.map((s) => s.roomId)).size)} قاعات. اضغط حصة لفتح كشف الحضور.`}</p>
+              </div>
+              <div className="ix-tools">
+                <Link href={q({ day: shiftDay(day, -1) })} className="btn btn-ghost" aria-label="اليوم السابق">اليوم السابق</Link>
+                {day !== today && <Link href={q({ day: undefined })} className="btn btn-ghost">اليوم</Link>}
+                <Link href={q({ day: shiftDay(day, 1) })} className="btn btn-ghost" aria-label="اليوم التالي">اليوم التالي</Link>
+              </div>
+            </div>
+            {rooms.length === 0 ? <p className="muted">لا توجد قاعات نشطة. أضفها من صفحة الإعداد.</p> : <DayMap rooms={dayRooms} sessions={daySessions} nowHour={nowHour} />}
+            <DayLegend />
+          </section>
+
+          <div className="ix-cols">
+            <section className="card" aria-labelledby="todo-h">
+              <h2 id="todo-h">يحتاج متابعتك</h2>
+              {todos.length === 0 ? (
+                <ul className="ix-todo"><li className="ok"><i /><div><b>لا شيء يحتاج متابعة الآن</b><p>الفواتير والميزانيات والأصول والمستحقات ضمن المعتاد.</p></div><span /></li></ul>
+              ) : (
+                <ul className="ix-todo">
+                  {todos.map((x) => (
+                    <li key={x.title} className={x.tone}>
+                      <i />
+                      <div><b>{x.title}</b><p>{x.note}</p></div>
+                      <Link href={x.href} className="btn btn-ghost">{x.action}</Link>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </>
-          )}
-        </section>
-      )}
+            </section>
 
-      {departments && (
-        <section className="card stack" aria-labelledby="dept-h">
-          <h2 id="dept-h">الأقسام ({formatNumber(departments.departments.length)})</h2>
-          {departments.departments.length === 0 ? <p className="muted">لا توجد أقسام.</p> : (
-            <table className="table"><thead><tr><th>القسم</th><th>المستوى</th>{w.department && <th />}</tr></thead>
-              <tbody>{departments.departments.map((d) => (
-                <tr key={d.id}><td>{d.name}</td><td>{d.branch_id ? branchName.get(d.branch_id) ?? '—' : 'المعهد كله'}</td>
-                  {w.department && (wideBranch || d.branch_id) && <td><ConfirmAction action={deleteDepartmentAction.bind(null, slug, d.id)} label="حذف" confirmText={`حذف القسم ${d.name}؟`} variant="danger" /></td>}</tr>
-              ))}</tbody></table>
-          )}
-          {w.department && (
-            <details>
-              <summary>إضافة قسم</summary>
-              <ActionForm action={addDepartmentAction.bind(null, slug)} submitLabel="إضافة القسم">
-                <label>اسم القسم<input name="name" required maxLength={80} /></label>
-                <label>المستوى<BranchSelect name="branch_id" required={!wideBranch} wide={wideBranch} /></label>
-              </ActionForm>
-            </details>
-          )}
-        </section>
-      )}
-
-      {staff && (
-        <section className="card stack" aria-labelledby="staff-h">
-          <h2 id="staff-h">الموظفون ({formatNumber(staff.staff.length)})</h2>
-          {staff.staff.length === 0 ? <p className="muted">لا يوجد موظفون مسجلون.</p> : (
-            <table className="table"><thead><tr><th>الاسم</th><th>المسمى</th><th>الفرع</th><th>القسم</th><th>التواصل</th>{w.staff && <th />}</tr></thead>
-              <tbody>{staff.staff.map((s) => (
-                <tr key={s.id}><td>{s.full_name}{!s.active ? <span className="muted"> (غير نشط)</span> : null}</td><td>{s.job_title ?? '—'}</td><td>{branchName.get(s.branch_id) ?? '—'}</td><td>{s.department_id ? deptName.get(s.department_id) ?? '—' : '—'}</td><td dir="ltr">{s.phone ?? s.email ?? '—'}</td>
-                  {w.staff && <td><ConfirmAction action={deleteStaffAction.bind(null, slug, s.id)} label="حذف" confirmText={`حذف ${s.full_name}؟`} variant="danger" /></td>}</tr>
-              ))}</tbody></table>
-          )}
-          {w.staff && (
-            <details>
-              <summary>إضافة موظف</summary>
-              <ActionForm action={addStaffAction.bind(null, slug)} submitLabel="إضافة الموظف">
-                <label>الفرع<BranchSelect name="branch_id" /></label>
-                <label>القسم <span className="hint">(من الفرع أو من المعهد كله)</span>
-                  <select name="department_id" defaultValue=""><option value="">بلا قسم</option>{(departments?.departments ?? []).map((d) => <option key={d.id} value={d.id}>{d.branch_id ? branchName.get(d.branch_id) : 'المعهد كله'} — {d.name}</option>)}</select></label>
-                <label>الاسم الكامل<input name="full_name" required maxLength={120} /></label>
-                <label>المسمى الوظيفي<input name="job_title" maxLength={80} /></label>
-                <label>الجوال<input name="phone" maxLength={30} dir="ltr" inputMode="tel" /></label>
-                <label>البريد<input type="email" name="email" dir="ltr" /></label>
-              </ActionForm>
-            </details>
-          )}
-        </section>
-      )}
-
-      {members && (
-        <section className="card stack" aria-labelledby="members-h">
-          <h2 id="members-h">أدوار الفريق ({formatNumber(members.members.length)})</h2>
-          <p className="small muted">مدير الأكاديمية هو الإدارة العليا تلقائياً. أضف هنا من يعمل على فرع أو مالية؛ يجب أن يكون لديه حساب في أكاديميتك أولاً، ثم يدخل بعدها ويجد هذه الصفحة.</p>
-          {members.members.length > 0 && (
-            <table className="table"><thead><tr><th>المستخدم</th><th>الدور</th><th>الفرع</th><th /></tr></thead>
-              <tbody>{members.members.map((m) => (
-                <tr key={m.id}><td>{m.full_name ?? m.email}<span className="muted" dir="ltr"> {m.email}</span></td><td>{ROLE_LABEL[m.role] ?? m.role}</td><td>{m.branch_id ? branchName.get(m.branch_id) ?? '—' : 'كل الفروع'}</td>
-                  <td><ConfirmAction action={removeMemberAction.bind(null, slug, m.user_id)} label="إزالة" confirmText="إزالة هذا الدور؟" variant="ghost" /></td></tr>
-              ))}</tbody></table>
-          )}
-          {w.member && (
-            <details>
-              <summary>إضافة أو تعديل دور</summary>
-              <ActionForm action={saveMemberAction.bind(null, slug)} submitLabel="حفظ الدور">
-                <label>بريد المستخدم<input type="email" name="email" required dir="ltr" /></label>
-                <label>الدور<select name="role" defaultValue="BRANCH_MANAGER">{members.roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}</select></label>
-                <label>الفرع <span className="hint">(مطلوب لمدير الفرع وشؤون الطلاب)</span><BranchSelect name="branch_id" required={false} /></label>
-              </ActionForm>
-            </details>
-          )}
-        </section>
+            {canMoney && !branch && branches.length > 1 && summaries[last] && (
+              <section className="card" aria-labelledby="cmp-h">
+                <h2 id="cmp-h">مقارنة الفروع في {monthLong(month)}</h2>
+                <BranchBars rows={branches.map((b) => ({ name: b.name, income: Number(summaries[last]!.branches.find((x) => x.branch_id === b.id)?.income ?? 0), spend: Number(summaries[last]!.branches.find((x) => x.branch_id === b.id)?.spend ?? 0) }))} />
+                <p className="small muted">بالريال، والمقياس واحد لكل الفروع.</p>
+              </section>
+            )}
+            {(!canMoney || branch || branches.length <= 1) && (
+              <section className="card" aria-labelledby="go-h">
+                <h2 id="go-h">اختصارات</h2>
+                <ul className="ix-links">
+                  {[
+                    { title: 'جدوِل حصة', note: 'قاعة ومدرب ووقت، مع منع التعارض.', href: `/${slug}/institute/academic`, action: 'الجدول' },
+                    { title: 'سجّل طالباً', note: 'بالبرنامج والمستوى والجنسية.', href: `/${slug}/institute/academic`, action: 'الطلاب' },
+                    ...(canMoney ? [{ title: 'أصدر فاتورة أو سجّل دفعة', note: 'بالضريبة المناسبة وأقساط شهرية.', href: `/${slug}/institute/finance`, action: 'المالية' }] : []),
+                  ].map((s) => (
+                    <li key={s.title}>
+                      <div><b>{s.title}</b><p>{s.note}</p></div>
+                      <Link href={s.href} className="btn btn-ghost">{s.action}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
