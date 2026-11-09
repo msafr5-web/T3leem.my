@@ -33,7 +33,8 @@ export default async function EditCourse({
           <p className="muted small">{course.enrollment_count} متدرب مسجّل</p>
         </div>
         <div className="cta-row">
-          <Link href={`/${slug}/dashboard/courses/${course.id}/content`} className="btn btn-primary">إدارة المحتوى والفيديو</Link>
+          <Link href={`/${slug}/dashboard/courses/${course.id}/enrollments`} className="btn btn-primary">تسجيل الموظفين</Link>
+          <Link href={`/${slug}/dashboard/courses/${course.id}/content`} className="btn btn-ghost">إدارة المحتوى والفيديو</Link>
           {course.is_published && (
             <Link href={`/${slug}/courses/${course.id}`} className="btn btn-ghost">عرض صفحة الدورة</Link>
           )}

@@ -156,6 +156,27 @@ export interface Trainee {
   created_at: string;
 }
 
+/** One employee enrolled in a course (the roster the academy's admin follows). */
+export interface CourseRosterRow {
+  enrollment_id: string;
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  phone: string | null;
+  employee_no: string | null;
+  progress_percentage: number;
+  completion_status: 'ENROLLED' | 'COMPLETED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
+  /** SELF = enrolled by the learner; ADMIN = added by the academy's admin. */
+  source: 'SELF' | 'ADMIN';
+  enrolled_at: string;
+}
+
+export interface EnrollmentOutcome {
+  summary: { enrolled: number; already_enrolled: number; accounts_created: number; errors: number };
+  results: { email: string; full_name: string; status: 'enrolled' | 'already_enrolled' | 'error'; account_created: boolean; message: string | null }[];
+}
+
 export interface MyEnrollment {
   enrollment_id: string;
   course_id: string;
@@ -759,6 +780,7 @@ export const admin = {
   course: (slug: string, token: string, id: string) => api<AdminCourse>(slug, `/admin/courses/${encodeURIComponent(id)}`, { token }),
   trainers: (slug: string, token: string) => api<AdminTrainer[]>(slug, '/admin/trainers', { token }),
   trainees: (slug: string, token: string) => api<Trainee[]>(slug, '/admin/trainees', { token }),
+  courseRoster: (slug: string, token: string, courseId: string) => api<CourseRosterRow[]>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments`, { token }),
   plans: (slug: string, token: string) => api<Plan[]>(slug, '/admin/plans', { token }),
   classrooms: (slug: string, token: string) => api<Classroom[]>(slug, '/admin/classrooms', { token }),
   classroom: (slug: string, token: string, id: string) => api<Classroom>(slug, `/admin/classrooms/${encodeURIComponent(id)}`, { token }),

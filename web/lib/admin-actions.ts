@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { ApiError, ApiUnavailableError, api } from './api';
+import { ApiError, ApiUnavailableError, api, type EnrollmentOutcome } from './api';
 import { isValidSlug } from './format';
 import { getSession } from './session';
 
@@ -116,6 +116,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_QUESTION_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُستورد شيء).',
   FILE_TOO_LARGE: 'حجم الملف يجب ألا يتجاوز ٢ ميغابايت.',
   FILE_REQUIRED: 'اختر ملف Excel أو CSV.',
+  INVALID_TRAINEES: 'في بيانات الموظفين أخطاء. صحّحها ثم أعد المحاولة (لم يُسجَّل أحد).',
+  INVALID_TRAINEE_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُسجَّل أحد).',
+  NO_TRAINEES: 'أضف موظفاً واحداً على الأقل.',
+  TOO_MANY_TRAINEES: 'الحد الأقصى ٥٠٠ موظف في المرة الواحدة.',
   SECTOR_EXISTS: 'يوجد قطاع بهذا الرمز.',
   SECTOR_NOT_FOUND: 'القطاع غير موجود.',
   SECTOR_NOT_EMPTY: 'لا يمكن حذف قطاع فيه أسئلة. انقل أسئلته أو احذفها، أو أخفِ القطاع بدلاً من حذفه.',
@@ -743,5 +747,82 @@ export async function importHealthAction(slug: string, _prev: QuizImportState, f
       return { error: ERROR_MESSAGES.INVALID_QUESTION_SHEET, rowErrors: d?.errors ?? [], totalErrors: d?.total_errors ?? d?.errors?.length ?? 0 };
     }
     return describeError(err);
+  }
+}
+
+// ---- Corporate trainees: enroll employees into a course --------------------------------------
+
+export interface EnrollState extends AdminFormState {
+  /** Row-level problems (nothing was enrolled). `row` is the row as the admin sees it (form row or sheet row). */
+  rowErrors?: { row: number; message: string }[];
+  outcome?: EnrollmentOutcome;
+}
+
+const MAX_TRAINEE_SHEET = 1024 * 1024;
+const MAX_TRAINEES = 500;
+
+type EnrollRowError = { row: number; message: string };
+const rowErrorsOf = (err: unknown): EnrollRowError[] => {
+  const d = (err as { details?: unknown }).details as { errors?: EnrollRowError[] } | undefined;
+  return d?.errors ?? [];
+};
+
+function enrollFailure(err: unknown, map: (row: number) => number = (r) => r): EnrollState {
+  if (err instanceof ApiError && (err.code === 'INVALID_TRAINEES' || err.code === 'INVALID_TRAINEE_SHEET')) {
+    return { error: ERROR_MESSAGES[err.code], rowErrors: rowErrorsOf(err).map((e) => ({ row: e.row > 0 ? map(e.row) : 0, message: e.message })) };
+  }
+  return describeError(err);
+}
+
+/** Employees typed into the form: parallel lists full_name / email / phone / employee_no; fully empty rows are ignored. */
+export async function enrollTraineesAction(slug: string, courseId: string, _prev: EnrollState, form: FormData): Promise<EnrollState> {
+  const token = await adminToken(slug);
+  const cell = (key: string) => form.getAll(key).map((v) => String(v ?? '').trim());
+  const names = cell('full_name');
+  const emails = cell('email');
+  const phones = cell('phone');
+  const staffNos = cell('employee_no');
+
+  const trainees: { full_name: string; email: string; phone: string | null; employee_no: string | null }[] = [];
+  const visualRow: number[] = []; // position in the API list -> row number on the admin's screen
+  names.forEach((name, i) => {
+    const email = emails[i] ?? '';
+    const phone = phones[i] ?? '';
+    const staffNo = staffNos[i] ?? '';
+    if (!name && !email && !phone && !staffNo) return;
+    trainees.push({ full_name: name, email, phone: phone || null, employee_no: staffNo || null });
+    visualRow.push(i + 1);
+  });
+  if (trainees.length === 0) return { error: ERROR_MESSAGES.NO_TRAINEES };
+  if (trainees.length > MAX_TRAINEES) return { error: ERROR_MESSAGES.TOO_MANY_TRAINEES };
+
+  try {
+    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments`, { method: 'POST', token, body: { trainees } });
+    revalidatePath(`/${slug}/dashboard/courses/${courseId}/enrollments`);
+    revalidatePath(`/${slug}/dashboard/courses`);
+    return { outcome };
+  } catch (err) {
+    return enrollFailure(err, (row) => visualRow[row - 1] ?? row);
+  }
+}
+
+/** Employees from an Excel / CSV file (the API reads the sheet; row numbers in errors are the sheet's own). */
+export async function importTraineesAction(slug: string, courseId: string, _prev: EnrollState, form: FormData): Promise<EnrollState> {
+  const token = await adminToken(slug);
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) return { error: ERROR_MESSAGES.FILE_REQUIRED };
+  if (file.size > MAX_TRAINEE_SHEET) return { error: 'حجم الملف يجب ألا يتجاوز ١ ميغابايت.' };
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments/import`, {
+      method: 'POST',
+      token,
+      raw: { data, contentType: 'application/octet-stream' },
+    });
+    revalidatePath(`/${slug}/dashboard/courses/${courseId}/enrollments`);
+    revalidatePath(`/${slug}/dashboard/courses`);
+    return { outcome };
+  } catch (err) {
+    return enrollFailure(err);
   }
 }

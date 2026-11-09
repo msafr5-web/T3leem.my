@@ -55,7 +55,9 @@ export default async function DashboardCourses({ params }: { params: Promise<{ t
                   </td>
                   <td className="ltr">{c.accreditation_number ?? '—'}</td>
                   <td className="num">{formatSar(c.price.total)}</td>
-                  <td className="num">{formatNumber(c.enrollment_count)}</td>
+                  <td className="num">
+                    <Link href={`${base}/${c.id}/enrollments`}>{formatNumber(c.enrollment_count)}</Link>
+                  </td>
                   <td>{c.is_published ? <span className="badge ok">منشورة</span> : <span className="badge draft">مسودة</span>}</td>
                 </tr>
               ))}
