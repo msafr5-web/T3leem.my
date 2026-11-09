@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>مواصفة التدريب المؤسسي والحضور والانصراف</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm; }
+  :root { --ink:#1b2430; --muted:#5b6675; --line:#d8dee6; --brand:#0f5c4d; --soft:#eef5f3; --warn:#9a5b00; --warnbg:#fff4e0; --bad:#a32727; --badbg:#fdeaea; --good:#14663a; --goodbg:#e6f5ec; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: var(--ink); font-size: 11pt; line-height: 1.75; margin: 0; }
+  h1 { font-size: 21pt; margin: 0 0 4px; color: var(--brand); line-height: 1.35; }
+  h2 { font-size: 15pt; color: var(--brand); border-right: 5px solid var(--brand); padding-right: 10px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 12px 0 4px; break-after: avoid; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 4px 0 6px; padding-right: 22px; }
+  li { margin: 2px 0; }
+  .sub { color: var(--muted); }
+  .meta { margin-top: 10px; font-size: 9.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9.6pt; }
+  th { background: var(--brand); color: #fff; text-align: right; padding: 6px 8px; }
+  td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: top; }
+  tr { break-inside: avoid; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .box { border-radius: 6px; padding: 9px 12px; margin: 10px 0; break-inside: avoid; }
+  .key { background: var(--soft); border: 1px solid #bcd9d1; }
+  .warn { background: var(--warnbg); border: 1px solid #f0d49a; }
+  .tag { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 8.8pt; font-weight: 700; white-space: nowrap; }
+  .y { background: var(--goodbg); color: var(--good); }
+  .p { background: var(--warnbg); color: var(--warn); }
+  .n { background: var(--badbg); color: var(--bad); }
+  code, .en { direction: ltr; unicode-bidi: embed; font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #f2f4f7; padding: 0 4px; border-radius: 3px; }
+  .flow { counter-reset: s; list-style: none; padding: 0; }
+  .flow li { counter-increment: s; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; margin: 4px 0; break-inside: avoid; }
+  .flow li::before { content: counter(s); display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; text-align: center; line-height: 22px; font-size: 9.5pt; margin-left: 8px; }
+  .pb { break-before: page; }
+  .foot { font-size: 9pt; color: var(--muted); margin-top: 16px; border-top: 1px solid var(--line); padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="sub">مواصفة للاعتماد</div>
+<h1>التدريب المؤسسي لموظفي الشركات: الحضور والانصراف والفصول الإلكترونية</h1>
+<div class="sub">إضافة على هيكل T3leem الحالي دون تغيير في بنيته</div>
+<div class="meta">التاريخ: 2026-11-10 &nbsp;|&nbsp; مبنية على إجاباتك المسجلة في المحادثة وعلى فحص مخطط المشروع ومساراته. ما لم تحسمه بعد معلَّم «افتراض للتأكيد».</div>
+
+<h2>1. المبدأ والتدفق</h2>
+<div class="box key">
+  <b>الشركة = أكاديمية (مستأجر) بكل ما للأكاديمية.</b> لا كيانات «شركات» جديدة، ولا عزل إضافي: العزل الحالي (<span class="en">tenant_id + RLS</span>) يفصل موظفي كل شركة عن غيرها.
+</div>
+<ol class="flow">
+  <li><b>التسجيل والاعتماد:</b> الشركة (مثل «هيلة») تُسجَّل كأكاديمية، وتعتمدها إدارة المعهد كما هو معمول به.</li>
+  <li><b>الاتفاق على الدورات:</b> يتم بين الشركة وإدارة المعهد خارج النظام.</li>
+  <li><b>الإعداد:</b> مدير أكاديمية الشركة يضيف دوراتها ومدربيها (الموجود حالياً).</li>
+  <li><b>تسجيل الموظفين:</b> يضيف المدير الأسماء في كل دورة (يدوياً أو بملف Excel) مع الجوال والرقم الوظيفي. <span class="tag n">جديد</span></li>
+  <li><b>الجدول:</b> يُحدَّد موعد الدورة ومدتها بالاتفاق مع المعهد، وتُرسَل الدعوات إلى المتدربين بالبريد. <span class="tag p">جزئي</span></li>
+  <li><b>التنفيذ:</b> دخول المتدرب بـ OTP، وتسجيل الحضور والانصراف، وتنبيه المدير عند التأخر. <span class="tag n">جديد</span></li>
+  <li><b>التقارير:</b> مدير الشركة يرى موظفيه، والمعهد يرى كل الأكاديميات من لوحة المالك. <span class="tag n">جديد</span></li>
+</ol>
+
+<h2>2. القرارات المحسومة</h2>
+<table>
+  <tr><th style="width:30%">الموضوع</th><th>القرار</th></tr>
+  <tr><td>نوع الدورة</td><td>مباشرة أو مسجلة بحسب الاتفاق. إثبات الحضور اليومي مطلوب في الحالتين.</td></tr>
+  <tr><td>مستويات التقارير</td><td>مشرف/موارد بشرية (مدير الأكاديمية) ← إدارة المعهد.</td></tr>
+  <tr><td>اعتماد الشركة</td><td>من إدارة المعهد.</td></tr>
+  <tr><td>إضافة الدورات والمدربين</td><td>يضيفها مدير أكاديمية الشركة بنفسه. لا نسخ من المعهد.</td></tr>
+  <tr><td>التحقق من المتدرب</td><td>رمز OTP إلى الجوال أو البريد عند تسجيل الحضور.</td></tr>
+  <tr><td>تنبيه التأخر</td><td>إذا لم يسجل المتدرب حضوره بعد 25 دقيقة من موعد البدء، يُنبَّه مدير أكاديمية الشركة بالبريد.</td></tr>
+  <tr><td>الحد الأدنى لحضور الدورة</td><td>85%.</td></tr>
+  <tr><td>الدعوات</td><td>بالبريد. أضفتَ «مع رسائل واتساب»: انظر القسم 6، فهو يحتاج قراراً.</td></tr>
+</table>
+
+<h2>3. قواعد الحضور</h2>
+<h3>3.1 حالة المحاضرة الواحدة (ما حدّدتَه)</h3>
+<table>
+  <tr><th style="width:18%">الحالة</th><th>الشرط</th></tr>
+  <tr><td><span class="tag y">حاضر</span></td><td>دخل في الوقت وبقي حتى نهاية المحاضرة.</td></tr>
+  <tr><td><span class="tag p">متأخر</span></td><td>دخل بعد مرور حد التأخر من وقت المحاضرة وبقي حتى نهايتها.</td></tr>
+  <tr><td><span class="tag n">غائب</span></td><td>لم يدخل، أو دخل وخرج قبل النهاية.</td></tr>
+</table>
+<h3>3.2 قيم افتراضية للتأكيد</h3>
+<table>
+  <tr><th style="width:27%">النقطة</th><th>الافتراض المقترح</th><th style="width:25%">سبب الحاجة للتأكيد</th></tr>
+  <tr><td>حد التأخر</td><td>10% من مدة المحاضرة (ساعة = 6 دقائق)، قابل للضبط لكل دورة.</td><td>مثالك «ساعة بعد عشر دقائق» لا يطابق 10% (10 دقائق = 16.7%).</td></tr>
+  <tr><td>الخروج المبكر</td><td>يُعتمد وقت <b>آخر خروج</b>. يُحتسب غياباً إن كان قبل نهاية المحاضرة بأكثر من 5 دقائق. الانقطاع الذي تعقبه عودة لا يُعدّ خروجاً.</td><td>لم تحدد الهامش ولا حكم الانقطاع.</td></tr>
+  <tr><td>احتساب 85%</td><td>نسبة الدورة = (حاضر + متأخر) ÷ كل المحاضرات. المتأخر يُحسب حاضراً.</td><td>لم تحدد حكم المتأخر في النسبة.</td></tr>
+  <tr><td>الانصراف في الدورة المسجلة</td><td>حاضر = OTP الحضور + إكمال دروس اليوم في وقته. بلا إكمال يُعدّ غائباً.</td><td>لم تحدد ما يُثبت الانصراف في المسجلة.</td></tr>
+</table>
+<div class="box warn"><b>مثال محسوب:</b> محاضرة 10:00–11:00. دخل 10:04 وبقي للنهاية: حاضر (التأخر يبدأ بعد 10:06). دخل 10:08: متأخر. دخل 10:00 وخرج 10:40 ولم يعد: غائب. دخل 10:00 وانقطع 3 دقائق ثم عاد وبقي للنهاية: حاضر. دورة من 8 محاضرات: يلزم 7 محاضرات (حاضر أو متأخر) ليبلغ 87.5%؛ 6 محاضرات = 75% غير كافية.</div>
+
+<h2>4. التغييرات على قاعدة البيانات (الحد الأدنى)</h2>
+<table>
+  <tr><th style="width:27%">العنصر</th><th>التغيير</th></tr>
+  <tr><td class="en">users</td><td>الجوال موجود (فريد داخل المستأجر). يُضاف <span class="en">employee_no</span> اختيارياً، ولا يُعاد تصميم المستخدم.</td></tr>
+  <tr><td class="en">enrollments</td><td>مسار تسجيل من المدير (<span class="en">source = ADMIN</span>) دون دفع، مع بقاء التسجيل الذاتي والدفع كما هما.</td></tr>
+  <tr><td class="en">attendance_intervals (جديد)</td><td><span class="en">tenant_id, user_id, session_ref, joined_at, left_at</span>. يخزّن كل دخول وخروج، فيمكن حساب المدة عند الانقطاع والعودة. يُغذّى من Zoom (<span class="en">participant_joined / participant_left</span>).</td></tr>
+  <tr><td class="en">session_attendance (جديد)</td><td><span class="en">tenant_id, user_id, course_id, session_ref, session_date, status, first_join_at, last_leave_at, attended_seconds, otp_verified_at, source</span>. مفتاح فريد (متدرب، محاضرة). الحالة تُحسب من الفترات ومن OTP.</td></tr>
+  <tr><td class="en">attendance_alerts (جديد)</td><td><span class="en">tenant_id, user_id, session_ref, sent_at</span> بمفتاح فريد، لمنع تكرار التنبيه لنفس المتدرب والمحاضرة.</td></tr>
+  <tr><td class="en">classroom_attendance</td><td>يبقى كما هو للتوافق، ويُستبدل تدريجياً بالجدولين الجديدين.</td></tr>
+  <tr><td class="en">login_otps</td><td>إضافة غرض <span class="en">attendance</span> إلى <span class="en">purpose</span> الموجود (الآن <span class="en">login</span> و<span class="en">health_exam</span>).</td></tr>
+</table>
+<p>كل جدول جديد يحمل <span class="en">tenant_id</span> وسياسة <span class="en">RLS</span> بنفس نمط الجداول الحالية.</p>
+
+<h2>5. التدفقات</h2>
+<h3>5.1 تسجيل الحضور</h3>
+<ol class="flow">
+  <li>قبل موعد المحاضرة يفتح المتدرب صفحة الدورة في الموقع.</li>
+  <li>يضغط «تسجيل الحضور» فيُرسَل OTP إلى جواله أو بريده، ويُدخله.</li>
+  <li>عند النجاح يُسجَّل <span class="en">otp_verified_at</span> وأول دخول، وتُحسب حالة التأخر بالمقارنة مع موعد البدء.</li>
+  <li><b>مباشرة:</b> يُحوَّل إلى رابط الاجتماع، ويُغذّي Zoom فترات الدخول والخروج. <b>مسجلة:</b> يُفتح درس اليوم، ويُسجَّل الإكمال.</li>
+  <li>بعد نهاية المحاضرة تُحسب الحالة النهائية (حاضر/متأخر/غائب) وتُحدَّث نسبة الدورة.</li>
+</ol>
+<h3>5.2 تنبيه الـ25 دقيقة</h3>
+<ol class="flow">
+  <li>عند جدولة المحاضرة تُنشأ مهمة مؤجلة (<span class="en">BullMQ</span>) لموعد البدء + 25 دقيقة، بتوقيت الرياض.</li>
+  <li>عند التنفيذ يُستعلم عمّن لم يُسجَّل له حضور (لم يُدخل OTP) من المتدربين المسجلين.</li>
+  <li>يُرسَل لمدير الأكاديمية بريد واحد يضم أسماء المتأخرين، ويُسجَّل في <span class="en">attendance_alerts</span> لعدم التكرار.</li>
+  <li>إن عُدّل موعد المحاضرة أو أُلغيت، تُلغى المهمة القديمة وتُنشأ جديدة.</li>
+</ol>
+<h3>5.3 تسجيل الموظفين في دورة</h3>
+<p>المدير يختار الدورة ثم يضيف الموظفين يدوياً أو برفع Excel (اسم، بريد، جوال، رقم وظيفي). يُنشأ حساب لمن لا حساب له، ويُسجَّل في الدورة، وتُرسَل دعوة بالبريد. استيراد Excel موجود لأنماط أخرى ويمكن إعادة استخدام آليته.</p>
+
+<h2>6. المخاطر والنقاط المفتوحة</h2>
+<table>
+  <tr><th style="width:24%">النقطة</th><th>التفصيل</th></tr>
+  <tr><td><b>OTP إلى الجوال</b></td><td>لم أجد في الشيفرة بوابة رسائل نصية (SMS). OTP موجود فعلياً عبر <b>البريد</b>. الإرسال إلى الجوال يحتاج مزوّد SMS (مثل مزوّدات سعودية) وله تكلفة لكل رسالة. إما يُبدأ بالبريد ويضاف الجوال لاحقاً، أو يُعتمد مزوّد SMS من الآن.</td></tr>
+  <tr><td><b>واتساب</b></td><td>لم أجد إرسال واتساب آلياً. يحتاج واجهة WhatsApp Business وقوالب رسائل معتمدة وتكلفة. أرى البدء بالبريد في المرحلة الأولى (كما ذكرتَ سابقاً أنه يكفي) وإضافة واتساب مرحلة لاحقة إن أردتها. أخبرني إن أردتها من البداية.</td></tr>
+  <tr><td><b>هوية مشارك Zoom</b></td><td>يسجّل النظام المشارك ببريده «إن وفّره Zoom»، وإلا بمعرّف Zoom، فقد لا يُربط بالمتدرب. الحل: الدخول إلى الاجتماع من صفحة المنصة بعد OTP، أو اجتماعات بتسجيل مسبق ورابط خاص لكل متدرب إن سمحت خطة Zoom (لم أتحقق منها).</td></tr>
+  <tr><td><b>الخصوصية</b></td><td>بيانات الموظفين شخصية. تُقترح مدة احتفاظ محددة وتسجيل من اطّلع على التقارير، ومراعاة PDPL.</td></tr>
+  <tr><td><b>مصدر الحضور المباشر</b></td><td>دقة الخروج تعتمد على أحداث Zoom (<span class="en">participant_left</span>)، ويجب تفعيلها في إعدادات تطبيق Zoom. هذا إعداد خارجي لا يمكن التحقق منه من الشيفرة.</td></tr>
+</table>
+
+<h2>7. الأعمال بالترتيب</h2>
+<table>
+  <tr><th style="width:5%">#</th><th>العمل</th><th style="width:12%">الحجم النسبي</th><th style="width:30%">يعتمد على</th></tr>
+  <tr><td>1</td><td>مسار تسجيل الموظفين في الدورة وحقل الرقم الوظيفي واستيراد Excel</td><td>صغير–متوسط</td><td>—</td></tr>
+  <tr><td>2</td><td>جدولا الفترات والحضور، ومعالجة <span class="en">participant_left</span>، ومحرك حساب الحالة (قواعد القسم 3)</td><td>متوسط</td><td>حسم القيم الافتراضية في 3.2</td></tr>
+  <tr><td>3</td><td>OTP الحضور وصفحة تسجيل الحضور للمتدرب</td><td>صغير–متوسط</td><td>قرار قناة OTP (بريد أم SMS)</td></tr>
+  <tr><td>4</td><td>تنبيه الـ25 دقيقة (مهمة مؤجلة وبريد)</td><td>صغير</td><td>2 و3</td></tr>
+  <tr><td>5</td><td>تقارير الحضور لمدير الأكاديمية، وتجميع للمالك، وتصدير Excel</td><td>متوسط</td><td>2</td></tr>
+  <tr><td>6</td><td>دعوات البريد (وواتساب لاحقاً إن اعتُمد)</td><td>صغير (بريد)</td><td>1</td></tr>
+</table>
+<p class="sub">الأحجام نسبية للمقارنة بين البنود وليست تقديراً بالأيام؛ لا أقدّم مدة زمنية دون معرفة سعة الفريق.</p>
+
+<h2>8. ما أحتاجه منك للانطلاق</h2>
+<ol>
+  <li>تأكيد أو تعديل القيم الافتراضية في 3.2 (حد التأخر، هامش الخروج، حساب المتأخر في 85%، الانصراف في المسجلة).</li>
+  <li>قناة OTP: بريد فقط الآن، أم بريد وجوال (SMS) من البداية؟</li>
+  <li>واتساب: مرحلة لاحقة (موصى بها) أم من البداية؟</li>
+  <li>هل تريد أن يُنبَّه جهة إضافية غير مدير الأكاديمية؟ (افتراضي: المدير فقط.)</li>
+</ol>
+
+<div class="foot">المصادر: إجابات صاحب المشروع في المحادثة؛ <span class="en">prisma/schema.prisma</span> وترحيلاته؛ مسارات <span class="en">src/modules/provider</span> و<span class="en">src/modules/platform</span> و<span class="en">src/modules/lms/enrollments</span>؛ معالج إشعارات Zoom في <span class="en">src/modules/live</span>. ما لم يُذكر أنه موجود في الشيفرة فلم أجده عند الفحص.</div>
+</body>
+</html>
