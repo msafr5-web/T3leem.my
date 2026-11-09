@@ -158,3 +158,67 @@ describe('provider dashboard', () => {
     expect((await admin('get', `/courses/${COURSE}`)).status).toBe(200);
   });
 });
+
+describe('corporate trainees: the academy admin enrolls employees into a course', () => {
+  const enrollPath = `/courses/${COURSE}/enrollments`;
+  const people = [
+    { full_name: 'Ali Hassan', email: 'ali@corp.test', phone: '0551234567', employee_no: 'E-1' },
+    { full_name: 'Sara Ahmed', email: 'sara@corp.test' },
+  ];
+  const upload = (csv: string, token = adminToken, path = `${enrollPath}/import`) =>
+    request(buildApp())
+      .post(`/api/v1/admin${path}`)
+      .set('x-tenant-id', TENANT_A)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.from(csv, 'utf8'));
+
+  it('enrolls a typed list and answers with a summary and one row per person', async () => {
+    const res = await admin('post', enrollPath).send({ trainees: people });
+    expect(res.status).toBe(201);
+    expect(res.body.data.summary).toEqual({ enrolled: 2, already_enrolled: 0, accounts_created: 2, errors: 0 });
+    expect(res.body.data.results[0]).toMatchObject({ email: 'ali@corp.test', status: 'enrolled', account_created: true, message: null });
+  });
+
+  it('422 with the bad rows listed (and nothing written) when any employee is invalid', async () => {
+    const res = await admin('post', enrollPath).send({ trainees: [people[0], { full_name: 'Bad One', email: 'nope' }] });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('INVALID_TRAINEES');
+    expect(res.body.error.details.errors).toEqual([{ row: 2, message: expect.stringContaining('البريد') }]);
+  });
+
+  it('422 for an empty list, a non-array body, or a course from another academy', async () => {
+    expect((await admin('post', enrollPath).send({ trainees: [] })).status).toBe(422);
+    expect((await admin('post', enrollPath).send({ trainees: 'x' })).status).toBe(422);
+    const foreign = await admin('post', '/courses/c0a80121-0000-4000-8000-00000000beef/enrollments').send({ trainees: people });
+    expect(foreign.body.error.code).toBe('UNKNOWN_COURSE');
+  });
+
+  it('imports an uploaded CSV', async () => {
+    const res = await upload('Full_Name,Email,Phone,Employee_No\nAli Hassan,ali@corp.test,0551234567,E-1\n');
+    expect(res.status).toBe(201);
+    expect(res.body.data.summary.enrolled).toBe(1);
+  });
+
+  it('rejects the whole upload with row numbers when a row is wrong, and an empty upload', async () => {
+    const bad = await upload('Full_Name,Email\nAli Hassan,ali@corp.test\nSara,bad\n');
+    expect(bad.status).toBe(422);
+    expect(bad.body.error.code).toBe('INVALID_TRAINEE_SHEET');
+    expect(bad.body.error.details.errors.map((e: { row: number }) => e.row)).toEqual([3]);
+    expect((await upload('')).body.error.code).toBe('FILE_REQUIRED');
+  });
+
+  it('serves the Excel template and the course roster', async () => {
+    const template = await admin('get', '/trainees/template');
+    expect(template.status).toBe(200);
+    expect(template.headers['content-type']).toContain('spreadsheetml');
+    expect((await admin('get', enrollPath)).status).toBe(200);
+  });
+
+  it('is for the academy admin only: 401 / 403 for everyone else, and on another academy', async () => {
+    expect((await request(buildApp()).post(`/api/v1/admin${enrollPath}`).set('x-tenant-id', TENANT_A).send({ trainees: people })).status).toBe(401);
+    expect((await admin('post', enrollPath, learnerToken).send({ trainees: people })).status).toBe(403);
+    expect((await upload('Full_Name,Email\nA B C,a@b.co\n', learnerToken)).status).toBe(403);
+    expect((await admin('post', enrollPath, adminToken, TENANT_B).send({ trainees: people })).status).toBe(403);
+  });
+});

@@ -259,6 +259,8 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     },
     createPlan: async () => 'p-new',
     createClassroom: async () => 'cl-new',
+    enrollTrainees: async (_t, _a, _c, drafts) => drafts.map((d) => ({ email: d.email, fullName: d.fullName, status: 'enrolled' as const, accountCreated: true })),
+    listCourseRoster: async () => [],
     deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
     updateTrainer: async (t, _a, id) => t === TENANT_A && ownedTrainers.has(id),
     deleteTrainer: async (t, _a, id) => (t !== TENANT_A ? 'not_found' : id === TRAINER ? 'in_use' : 'not_found'),

@@ -6,7 +6,7 @@ import { halalasToNumber } from '../../shared/utils/money';
 import type { CourseCatalogService } from '../lms/courses/course.service';
 import { priceJson } from '../lms/courses/course.controller';
 import type { ProviderService } from './provider.service';
-import type { Actor, AdminCourseRow, ClassroomRow, ClassroomUpdate, CourseInput, PlanRow, TrainerRow } from './provider.types';
+import type { Actor, AdminCourseRow, ClassroomRow, ClassroomUpdate, CourseInput, CourseRosterRow, PlanRow, TraineeEnrollmentResult, TrainerRow } from './provider.types';
 
 // ----- request parsing (bodies are already validated by express-validator) -----
 
@@ -35,6 +35,36 @@ function courseInput(b: Body, partial: boolean): Partial<CourseInput> {
   if (has('is_published')) map.isPublished = b.is_published === true || b.is_published === 'true';
   return map;
 }
+
+const enrollmentResultJson = (r: TraineeEnrollmentResult) => ({
+  email: r.email,
+  full_name: r.fullName,
+  status: r.status,
+  account_created: r.accountCreated,
+  message: r.message ?? null,
+});
+
+const rosterJson = (r: CourseRosterRow) => ({
+  enrollment_id: r.enrollmentId,
+  user_id: r.userId,
+  full_name: r.fullName,
+  email: r.email,
+  phone: r.phone,
+  employee_no: r.employeeNo,
+  progress_percentage: r.progressPercentage,
+  completion_status: r.completionStatus,
+  status: r.status,
+  source: r.source,
+  enrolled_at: r.enrolledAt.toISOString(),
+});
+
+/** Counts for the admin's confirmation message after an enrollment batch. */
+const enrollmentSummary = (results: TraineeEnrollmentResult[]) => ({
+  enrolled: results.filter((r) => r.status === 'enrolled').length,
+  already_enrolled: results.filter((r) => r.status === 'already_enrolled').length,
+  accounts_created: results.filter((r) => r.accountCreated).length,
+  errors: results.filter((r) => r.status === 'error').length,
+});
 
 const actorOf = (req: Request): Actor => {
   const { user } = requireAuthContext(req);
@@ -209,6 +239,35 @@ export class ProviderController {
       password: String(b.password),
     });
     res.status(201).json(ok({ id }));
+  };
+
+  courseRoster = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const roster = await this.provider.courseRoster(tenantOf(req), req.params.id);
+    res.json(ok(roster.map(rosterJson)));
+  };
+
+  enrollTrainees = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const people = ((req.body as Body).trainees as Body[]).map((t) => ({
+      fullName: String(t.full_name),
+      email: String(t.email),
+      phone: text(t.phone),
+      employeeNo: text(t.employee_no),
+    }));
+    const results = await this.provider.enrollTrainees(tenantOf(req), actorOf(req), req.params.id, people);
+    res.status(201).json(ok({ summary: enrollmentSummary(results), results: results.map(enrollmentResultJson) }));
+  };
+
+  /** The workbook arrives as the raw request body (see the route), not JSON or multipart. */
+  importTrainees = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const results = await this.provider.importTrainees(tenantOf(req), actorOf(req), req.params.id, req.body as Buffer);
+    res.status(201).json(ok({ summary: enrollmentSummary(results), results: results.map(enrollmentResultJson) }));
+  };
+
+  traineeTemplate = async (_req: Request, res: Response): Promise<void> => {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="trainees-template.xlsx"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(await this.provider.traineeTemplate());
   };
 
   listPlans = async (req: Request, res: Response): Promise<void> => {

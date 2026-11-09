@@ -1,9 +1,11 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { body, param, type ValidationChain } from 'express-validator';
 import { ClassroomStatus, CourseType, MeetingProvider, PlanStatus, PlanType, UserRole } from '@prisma/client';
 import { authenticate, requireRoles, type JwtVerifyOptions } from '../../shared/middlewares/auth.middleware';
 import { validate } from '../../shared/middlewares/validate.middleware';
+import { HttpError } from '../../shared/utils/http-error';
 import type { ProviderController } from './provider.controller';
+import { TRAINEE_LIMITS } from './trainee.excel';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const optionalText = (field: string, max: number) => body(field).optional({ values: 'null' }).isString().isLength({ max });
@@ -86,6 +88,33 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
   );
   router.put('/trainees/:id', uuidParam, body('full_name').isString().trim().isLength({ min: 3, max: 120 }), validate, controller.updateTrainee);
   router.delete('/trainees/:id', uuidParam, validate, controller.deleteTrainee);
+
+  // Corporate trainees: the academy's admin adds employees to a course (no payment) — typed in a form or uploaded as Excel/CSV.
+  router.get('/trainees/template', controller.traineeTemplate);
+  router.get('/courses/:id/enrollments', uuidParam, validate, controller.courseRoster);
+  router.post(
+    '/courses/:id/enrollments',
+    uuidParam,
+    body('trainees').isArray({ min: 1, max: TRAINEE_LIMITS.maxRows }).withMessage(`trainees must be a list of 1 - ${TRAINEE_LIMITS.maxRows} employees`),
+    body('trainees.*.full_name').isString().withMessage('full_name is required'),
+    body('trainees.*.email').isString().withMessage('email is required'),
+    body('trainees.*.phone').optional({ values: 'null' }).isString(),
+    body('trainees.*.employee_no').optional({ values: 'null' }).isString(),
+    validate,
+    controller.enrollTrainees,
+  );
+  // The workbook arrives as the raw request body (application/octet-stream), like the quiz import.
+  router.post(
+    '/courses/:id/enrollments/import',
+    uuidParam,
+    validate,
+    express.raw({ type: () => true, limit: TRAINEE_LIMITS.maxFileBytes }),
+    (req, res, next) => {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw HttpError.unprocessable('FILE_REQUIRED', 'Upload an Excel or CSV file');
+      next();
+    },
+    controller.importTrainees,
+  );
 
   router.get('/plans', controller.listPlans);
   router.post(

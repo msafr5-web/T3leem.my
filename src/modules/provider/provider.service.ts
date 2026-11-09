@@ -1,7 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import { logger } from '../../shared/services/logger';
 import { HttpError } from '../../shared/utils/http-error';
 import { ManualMeetingScheduler, type MeetingScheduler } from '../live/meeting-scheduler';
 import type { ProviderRepository } from './provider.repository';
+import { buildTraineeTemplate, cleanTrainee, dedupeBatch, parseTraineeSheet, TRAINEE_LIMITS, type TraineeDraft } from './trainee.excel';
 import type {
   Actor,
   AdminCourseRow,
@@ -13,6 +15,8 @@ import type {
   OverviewRow,
   PlanInput,
   PlanRow,
+  CourseRosterRow,
+  TraineeEnrollmentResult,
   TraineeRow,
   TrainerInput,
   TrainerRow,
@@ -131,6 +135,56 @@ export class ProviderService {
       if (isUniqueViolation(err)) throw HttpError.conflict('EMAIL_TAKEN', 'A user with this email already exists in this academy');
       throw err;
     }
+  }
+
+  // ----- corporate trainees: enroll employees into a course -----
+
+  async courseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]> {
+    await this.assertCoursesOwned(tenantId, [courseId]);
+    return this.deps.repository.listCourseRoster(tenantId, courseId);
+  }
+
+  traineeTemplate(): Promise<Buffer> {
+    return buildTraineeTemplate();
+  }
+
+  /** Employees typed into the form (JSON). Same validation as the spreadsheet, so both paths behave alike. */
+  async enrollTrainees(
+    tenantId: string,
+    actor: Actor,
+    courseId: string,
+    people: { fullName: string; email: string; phone?: string | null; employeeNo?: string | null }[],
+  ): Promise<TraineeEnrollmentResult[]> {
+    if (people.length === 0) throw HttpError.unprocessable('NO_TRAINEES', 'Add at least one employee');
+    if (people.length > TRAINEE_LIMITS.maxRows) {
+      throw HttpError.unprocessable('TOO_MANY_TRAINEES', `At most ${TRAINEE_LIMITS.maxRows} employees per request`);
+    }
+    const drafts: { row: number; draft: TraineeDraft }[] = [];
+    const errors: { row: number; message: string }[] = [];
+    people.forEach((p, i) => {
+      const cleaned = cleanTrainee(p);
+      if (typeof cleaned === 'string') errors.push({ row: i + 1, message: cleaned });
+      else drafts.push({ row: i + 1, draft: cleaned });
+    });
+    const deduped = dedupeBatch(drafts);
+    errors.push(...deduped.errors);
+    // All-or-nothing on the input itself: nothing is written until the whole list is clean.
+    if (errors.length > 0) throw HttpError.unprocessable('INVALID_TRAINEES', 'Some employees have invalid data', { errors });
+    return this.writeEnrollments(tenantId, actor, courseId, deduped.trainees);
+  }
+
+  /** Employees from an uploaded .xlsx / .csv. Nothing is written if any row is invalid, so the admin fixes the sheet once. */
+  async importTrainees(tenantId: string, actor: Actor, courseId: string, file: Buffer): Promise<TraineeEnrollmentResult[]> {
+    const parsed = await parseTraineeSheet(file);
+    if (parsed.errors.length > 0) throw HttpError.unprocessable('INVALID_TRAINEE_SHEET', 'The file has rows that need fixing', { errors: parsed.errors });
+    return this.writeEnrollments(tenantId, actor, courseId, parsed.trainees);
+  }
+
+  private async writeEnrollments(tenantId: string, actor: Actor, courseId: string, trainees: TraineeDraft[]): Promise<TraineeEnrollmentResult[]> {
+    await this.assertCoursesOwned(tenantId, [courseId]);
+    // One hash shared by the batch: it is of a random secret nobody knows, because trainees sign in with an e-mailed code.
+    const passwordHash = await this.deps.hashPassword(randomBytes(32).toString('hex'));
+    return this.deps.repository.enrollTrainees(tenantId, actor, courseId, trainees, passwordHash);
   }
 
   async createPlan(tenantId: string, actor: Actor, input: PlanInput): Promise<string> {

@@ -221,6 +221,8 @@ model User {
   role              UserRole         @default(LEARNER)
   // AES-256-GCM ciphertext (iv:tag:data, base64). Never store plaintext National ID / Iqama.
   nationalIdOrIqama String?          @map("national_id_or_iqama")
+  // The employer's staff number for corporate trainees (unique per academy when present).
+  employeeNo        String?          @map("employee_no")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
@@ -235,6 +237,7 @@ model User {
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
+  @@unique([tenantId, employeeNo])
   @@map("users")
 }
 
@@ -546,6 +549,8 @@ model Enrollment {
   status             EnrollmentStatus @default(ACTIVE)
   progressPercentage Decimal          @default(0) @map("progress_percentage") @db.Decimal(5, 2)
   completionStatus   CompletionStatus @default(ENROLLED) @map("completion_status")
+  // SELF = the learner enrolled (free or paid); ADMIN = the academy's admin added them (corporate trainees, no payment).
+  source             String           @default("SELF")
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
 

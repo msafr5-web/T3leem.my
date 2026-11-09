@@ -18,7 +18,10 @@ import type {
   TrainerInput,
   TrainerRow,
   AttendanceRow,
+  CourseRosterRow,
+  TraineeEnrollmentResult,
 } from './provider.types';
+import type { TraineeDraft } from './trainee.excel';
 
 export interface ProviderRepository {
   // public
@@ -51,6 +54,12 @@ export interface ProviderRepository {
   updateClassroom(tenantId: string, actor: Actor, id: string, input: ClassroomUpdate & { externalMeetingId?: string | null }): Promise<boolean>;
   deleteClassroom(tenantId: string, actor: Actor, id: string): Promise<boolean>;
   listAttendance(tenantId: string, classroomId: string): Promise<AttendanceRow[]>;
+  /**
+   * Enrolls employees into a course in ONE transaction: creates learner accounts for new e-mails, enrolls everyone
+   * (source ADMIN, no payment), skips people already enrolled. Per-person problems come back as rows, not exceptions.
+   */
+  enrollTrainees(tenantId: string, actor: Actor, courseId: string, drafts: TraineeDraft[], passwordHash: string): Promise<TraineeEnrollmentResult[]>;
+  listCourseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]>;
 }
 
 const audit = (
@@ -468,6 +477,131 @@ export class PrismaProviderRepository implements ProviderRepository {
       await tx.virtualClassroom.delete({ where: { id } });
       await audit(tx, tenantId, actor, 'classroom.deleted', 'virtual_classroom', id, { title: room.title });
       return true;
+    });
+  }
+
+  async listCourseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]> {
+    const rows = await forTenant(tenantId).enrollment.findMany({
+      where: { tenantId, courseId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        status: true,
+        source: true,
+        progressPercentage: true,
+        completionStatus: true,
+        createdAt: true,
+        user: { select: { id: true, fullName: true, email: true, phone: true, employeeNo: true } },
+      },
+    });
+    return rows.map((e) => ({
+      enrollmentId: e.id,
+      userId: e.user.id,
+      fullName: e.user.fullName,
+      email: e.user.email,
+      phone: e.user.phone,
+      employeeNo: e.user.employeeNo,
+      progressPercentage: e.progressPercentage.toNumber(),
+      completionStatus: e.completionStatus,
+      status: e.status,
+      source: e.source,
+      enrolledAt: e.createdAt,
+    }));
+  }
+
+  enrollTrainees(tenantId: string, actor: Actor, courseId: string, drafts: TraineeDraft[], passwordHash: string): Promise<TraineeEnrollmentResult[]> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      // One lookup for everything that could collide: the same e-mail, phone or staff number may already belong to someone.
+      const emails = drafts.map((d) => d.email);
+      const phones = drafts.flatMap((d) => (d.phone ? [d.phone] : []));
+      const staffNos = drafts.flatMap((d) => (d.employeeNo ? [d.employeeNo] : []));
+      const known = await tx.user.findMany({
+        where: { tenantId, OR: [{ email: { in: emails } }, { phone: { in: phones } }, { employeeNo: { in: staffNos } }] },
+        select: { id: true, email: true, phone: true, employeeNo: true, role: true },
+      });
+      const byEmail = new Map(known.map((u) => [u.email, u]));
+      const byPhone = new Map(known.flatMap((u) => (u.phone ? [[u.phone, u] as const] : [])));
+      const byStaffNo = new Map(known.flatMap((u) => (u.employeeNo ? [[u.employeeNo, u] as const] : [])));
+
+      const results = new Map<string, TraineeEnrollmentResult>();
+      const toCreate: TraineeDraft[] = [];
+      const fillMissing: { id: string; phone?: string; employeeNo?: string }[] = [];
+      for (const d of drafts) {
+        const base = { email: d.email, fullName: d.fullName, accountCreated: false } as const;
+        const user = byEmail.get(d.email);
+        if (user) {
+          if (user.role !== 'LEARNER') {
+            results.set(d.email, { ...base, status: 'error', message: 'هذا البريد يخص حساباً إدارياً في الأكاديمية وليس متدرباً.' });
+            continue;
+          }
+          // An existing trainee keeps what they have; only empty phone / staff number are filled, and never taken from someone else.
+          const fill: { id: string; phone?: string; employeeNo?: string } = { id: user.id };
+          if (!user.phone && d.phone && !byPhone.has(d.phone)) fill.phone = d.phone;
+          if (!user.employeeNo && d.employeeNo && !byStaffNo.has(d.employeeNo)) fill.employeeNo = d.employeeNo;
+          if (fill.phone || fill.employeeNo) fillMissing.push(fill);
+          continue;
+        }
+        if (d.phone && byPhone.has(d.phone)) {
+          results.set(d.email, { ...base, status: 'error', message: 'رقم الجوال مسجّل لمتدرب آخر في الأكاديمية.' });
+        } else if (d.employeeNo && byStaffNo.has(d.employeeNo)) {
+          results.set(d.email, { ...base, status: 'error', message: 'الرقم الوظيفي مسجّل لمتدرب آخر في الأكاديمية.' });
+        } else {
+          toCreate.push(d);
+        }
+      }
+
+      if (toCreate.length > 0) {
+        // The account has no usable password: trainees sign in with the code e-mailed to them.
+        await tx.user.createMany({
+          data: toCreate.map((d) => ({
+            tenantId,
+            email: d.email,
+            fullName: d.fullName,
+            phone: d.phone,
+            employeeNo: d.employeeNo,
+            passwordHash,
+            role: 'LEARNER' as const,
+          })),
+        });
+      }
+      for (const f of fillMissing) {
+        await tx.user.update({ where: { id: f.id }, data: { ...(f.phone ? { phone: f.phone } : {}), ...(f.employeeNo ? { employeeNo: f.employeeNo } : {}) } });
+      }
+
+      const created = new Set(toCreate.map((d) => d.email));
+      const enrollable = drafts.filter((d) => !results.has(d.email));
+      const users = await tx.user.findMany({
+        where: { tenantId, role: 'LEARNER', email: { in: enrollable.map((d) => d.email) } },
+        select: { id: true, email: true },
+      });
+      const idOf = new Map(users.map((u) => [u.email, u.id]));
+      const already = new Set(
+        (await tx.enrollment.findMany({ where: { tenantId, courseId, userId: { in: users.map((u) => u.id) } }, select: { userId: true } })).map((e) => e.userId),
+      );
+      const fresh = enrollable.filter((d) => idOf.has(d.email) && !already.has(idOf.get(d.email) as string));
+      if (fresh.length > 0) {
+        await tx.enrollment.createMany({
+          data: fresh.map((d) => ({ tenantId, courseId, userId: idOf.get(d.email) as string, source: 'ADMIN' })),
+          skipDuplicates: true,
+        });
+      }
+      const freshEmails = new Set(fresh.map((d) => d.email));
+      for (const d of enrollable) {
+        results.set(d.email, {
+          email: d.email,
+          fullName: d.fullName,
+          accountCreated: created.has(d.email),
+          status: freshEmails.has(d.email) ? 'enrolled' : 'already_enrolled',
+        });
+      }
+
+      await audit(tx, tenantId, actor, 'course.trainees_enrolled', 'course', courseId, {
+        requested: drafts.length,
+        enrolled: freshEmails.size,
+        accountsCreated: toCreate.length,
+        errors: [...results.values()].filter((r) => r.status === 'error').length,
+      });
+      return drafts.map((d) => results.get(d.email) as TraineeEnrollmentResult);
     });
   }
 }

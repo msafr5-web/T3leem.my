@@ -66,6 +66,32 @@ export interface TraineeRow {
   createdAt: Date;
 }
 
+/** Outcome for one employee when the academy's admin enrolls a list into a course. */
+export interface TraineeEnrollmentResult {
+  email: string;
+  fullName: string;
+  status: 'enrolled' | 'already_enrolled' | 'error';
+  /** A new learner account was created for this e-mail (they sign in with an e-mailed code, no password). */
+  accountCreated: boolean;
+  /** Arabic reason, set when status is 'error'. */
+  message?: string;
+}
+
+/** One enrolled trainee in a course roster (what the academy's admin / HR follows). */
+export interface CourseRosterRow {
+  enrollmentId: string;
+  userId: string;
+  fullName: string | null;
+  email: string;
+  phone: string | null;
+  employeeNo: string | null;
+  progressPercentage: number;
+  completionStatus: string;
+  status: string;
+  source: string;
+  enrolledAt: Date;
+}
+
 export interface ClassroomRow {
   id: string;
   title: string;
