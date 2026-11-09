@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>تقرير مقارنة: دراسة الفصول الافتراضية وGoogle Classroom وT3leem</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm; }
+  :root { --ink:#1b2430; --muted:#5b6675; --line:#d8dee6; --brand:#0f5c4d; --soft:#eef5f3; --warn:#9a5b00; --warnbg:#fff4e0; --bad:#a32727; --badbg:#fdeaea; --good:#14663a; --goodbg:#e6f5ec; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: var(--ink); font-size: 11pt; line-height: 1.75; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 4px; color: var(--brand); line-height: 1.35; }
+  h2 { font-size: 15pt; color: var(--brand); border-right: 5px solid var(--brand); padding-right: 10px; margin: 22px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; break-after: avoid; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 4px 0 6px; padding-right: 22px; }
+  li { margin: 2px 0; }
+  .sub { color: var(--muted); font-size: 11pt; }
+  .meta { margin-top: 10px; font-size: 9.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9.6pt; break-inside: auto; }
+  th { background: var(--brand); color: #fff; text-align: right; padding: 6px 8px; font-weight: 700; }
+  td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: top; }
+  tr { break-inside: avoid; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .box { border-radius: 6px; padding: 9px 12px; margin: 10px 0; break-inside: avoid; }
+  .key { background: var(--soft); border: 1px solid #bcd9d1; }
+  .warn { background: var(--warnbg); border: 1px solid #f0d49a; }
+  .tag { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 8.8pt; font-weight: 700; white-space: nowrap; }
+  .y { background: var(--goodbg); color: var(--good); }
+  .p { background: var(--warnbg); color: var(--warn); }
+  .n { background: var(--badbg); color: var(--bad); }
+  .u { background: #eceff3; color: var(--muted); }
+  code, .en { direction: ltr; unicode-bidi: embed; font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #f2f4f7; padding: 0 4px; border-radius: 3px; }
+  .flow { counter-reset: s; list-style: none; padding: 0; }
+  .flow li { counter-increment: s; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px 5px 8px; margin: 4px 0; break-inside: avoid; }
+  .flow li::before { content: counter(s); display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; text-align: center; line-height: 22px; font-size: 9.5pt; margin-left: 8px; }
+  .cover { padding: 20px 0 6px; }
+  .pb { break-before: page; }
+  .foot { font-size: 9pt; color: var(--muted); margin-top: 18px; border-top: 1px solid var(--line); padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="sub">تقرير فني للاطلاع واتخاذ القرار</div>
+  <h1>مقارنة دراسة منصة t3leem.my مع Google Classroom وقاعدة بيانات المشروع الحالية</h1>
+  <div class="sub">آلية إضافة الفصول الافتراضية وإدارتها: الوضع الحالي، الفجوات، والخيارات</div>
+  <div class="meta">
+    التاريخ: 2026-11-09 &nbsp;|&nbsp; المصادر: (1) الملف المرفق «التقرير الفني والتقني المتكامل» (صفحتان) &nbsp;|&nbsp; (2) صفحة Google Workspace for Education – Classroom &nbsp;|&nbsp; (3) مخطط <span class="en">prisma/schema.prisma</span> وشيفرة المشروع (الفرع <span class="en">main</span>).
+  </div>
+</div>
+
+<h2>1. الملخص التنفيذي</h2>
+<div class="box key">
+  <ul>
+    <li><b>الدراسة المرفقة</b> وثيقة تخطيط عالية المستوى (مكدس تقني، 5 جداول، مقارنة سوقية). تصلح مدخلاً للنقاش لكنها <b>لا تكفي وحدها كمواصفة بناء</b>: مخطط البيانات فيها لا يحتوي <span class="en">tenant_id</span> ولا يغطي الدفع والفواتير والشهادات ولا ما بُني فعلاً في المشروع.</li>
+    <li><b>المشروع الحالي أوسع من الدراسة</b> في الأساس المؤسسي: عزل متعدد المستأجرين عبر <span class="en">RLS</span>، دورات مسجّلة وحية، اختبارات، شهادات، فواتير ZATCA، ووحدة معهد (فروع/قاعات/جداول/حضور/مالية). لكنه <b>أضيق من Classroom</b> في «العمل داخل الفصل»: لا يوجد كيان فصل بمنشورات وواجبات وتسليمات وسجل درجات ولا رمز دعوة ولا دور ولي أمر.</li>
+    <li><b>الفصل الافتراضي اليوم = جلسة مباشرة مجدولة</b> (Zoom/Teams/Meet/أخرى) مرتبطة اختيارياً بدورة ومدرب، يديرها مدير الأكاديمية فقط، ويصل إليها المتدرب عبر تسجيله في الدورة، ويُسجَّل الحضور من إشعارات Zoom.</li>
+    <li><b>التوصية:</b> لا تُبنى منصة WebRTC خاصة. يُوسَّع النموذج الحالي بمرحلة «العمل الصفي» فوق جداول المشروع الموجودة (الخيار ب في القسم 7)، بعد قرارين مطلوبين منك (القسم 8).</li>
+  </ul>
+</div>
+
+<h2>2. نطاق الدراسة وحدودها</h2>
+<ul>
+  <li>قُرئ الملف المرفق كاملاً (صفحتان)، وجُلبت صفحة Google للتعليم، وفُحص مخطط قاعدة البيانات ومسارات الفصول في المشروع.</li>
+  <li><b>حد مهم:</b> صفحة Google تسويقية؛ لا تكشف بنية قاعدة بيانات Classroom الداخلية ولا حقول جداولها. لذلك <b>لا يدّعي هذا التقرير معرفة مخطط Google الداخلي</b>. المقارنة هنا على مستوى الوظائف المعلنة، لا على مستوى جداولهم.</li>
+  <li>رمز الفصل (Class Code) وآلية الانضمام <b>غير مذكورين في الصفحة التي جُلبت</b>، رغم أن الدراسة تطلبهما. يُعامل كمتطلب من الدراسة وليس كميزة مؤكدة من الصفحة.</li>
+  <li>لم تُشغَّل المنصة ولا قاعدة البيانات الحية؛ الاستنتاجات عن المشروع من قراءة المخطط والشيفرة.</li>
+</ul>
+
+<h2>3. مراجعة الدراسة المرفقة</h2>
+<h3>ما تقوله الدراسة</h3>
+<ul>
+  <li>أربع وحدات: الحسابات والأدوار (مدير نظام، معلم، طالب، ولي أمر)، الفصول والتدفق (إعلانات، واجبات، اختبارات)، التقييم والدرجات (مع تصدير Excel/CSV)، والتواصل (WebRTC وغرف نقاش).</li>
+  <li>المكدس: Next.js وTailwind، Node.js مع NestJS، PostgreSQL وRedis، وبث عبر Jitsi Meet API أو Mediasoup.</li>
+  <li>مخطط البيانات: <span class="en">Users, Classes, Class_Members, Assignments, Submissions</span>.</li>
+  <li>الأمان: TLS 1.3، AES-256، مصادقة ثنائية، GDPR/FERPA، وسجلات تدقيق.</li>
+</ul>
+<h3>ملاحظات فنية على الدراسة</h3>
+<table>
+  <tr><th style="width:22%">الموضوع</th><th>الملاحظة</th><th style="width:16%">الخطورة</th></tr>
+  <tr><td>تعدد المستأجرين</td><td>جداول المخطط لا تحمل <span class="en">tenant_id</span>. مع سوق المعاهد والمدارس الأهلية الذي تستهدفه الدراسة، هذا يعني نموذج مستأجر واحد؛ بينما المشروع مبني على عزل لكل أكاديمية.</td><td><span class="tag n">جوهرية</span></td></tr>
+  <tr><td>الإطار القانوني</td><td>تذكر GDPR وFERPA فقط. السوق المستهدف سعودي، فالمرجع النظامي هو نظام حماية البيانات الشخصية (PDPL)؛ ومشروعك يطبّقه أصلاً في تشفير الهوية الوطنية.</td><td><span class="tag p">متوسطة</span></td></tr>
+  <tr><td>البث المباشر</td><td>اقتراح Mediasoup/Jitsi يعني تشغيل بنية وسائط (SFU، TURN، مراقبة، سعة). المشروع يعتمد حالياً Zoom عبر API بلا تشغيل خوادم وسائط.</td><td><span class="tag p">متوسطة</span></td></tr>
+  <tr><td>تناقض في المكدس</td><td>الدراسة تقترح NestJS؛ المشروع Express بنمط وحدات (Modular Monolith) وفق تعليمات المشروع. لا مبرر لتغيير الإطار.</td><td><span class="tag u">منخفضة</span></td></tr>
+  <tr><td>نقص في النموذج</td><td>لا مرفقات، لا تعليقات، لا قوالب تقييم، لا حضور، لا إشعارات، لا فترات تقييم، لا ربط بالدفع أو الفاتورة.</td><td><span class="tag p">متوسطة</span></td></tr>
+  <tr><td>ولي الأمر</td><td>مذكور كدور لكن بلا أي جدول يربطه بالطالب. صفحة Google تذكر أن أولياء الأمور يطّلعون على الواجبات المسندة عبر رابط أو ملخص أسبوعي بالبريد.</td><td><span class="tag p">متوسطة</span></td></tr>
+  <tr><td>تحليل المنافسين</td><td>وصف مختصر لمدرستي وClassera ونون دون مصادر أو تواريخ. يُستخدم كتوجيه فقط، لا كحقائق سوقية.</td><td><span class="tag u">منخفضة</span></td></tr>
+</table>
+
+<h2 class="pb">4. المقارنة الوظيفية: Google Classroom (حسب الصفحة) ↔ الدراسة ↔ T3leem الحالي</h2>
+<p>الحالة في عمود T3leem مبنية على المخطط والمسارات الموجودة في المشروع: <span class="tag y">موجود</span> <span class="tag p">جزئي</span> <span class="tag n">غير موجود</span>.</p>
+<table>
+  <tr><th style="width:23%">القدرة</th><th style="width:25%">ما تذكره صفحة Google</th><th style="width:15%">الدراسة المرفقة</th><th>T3leem الحالي</th></tr>
+  <tr><td>إنشاء الفصل</td><td>المعلم يُنشئ فصله فوراً؛ المدير ينشئ فصولاً تلقائياً من نظام معلومات الطلاب (SIS)</td><td>إنشاء فصل برمز دعوة</td><td><span class="tag p">جزئي</span> جلسة مباشرة <span class="en">VirtualClassroom</span> يُنشئها مدير الأكاديمية؛ في وحدة المعهد جلسة <span class="en">ClassSession</span> لمادة وقاعة ومدرّس. لا كيان «فصل دائم».</td></tr>
+  <tr><td>الانضمام والدعوة</td><td>غير مذكور في الصفحة</td><td>رمز فصل فريد</td><td><span class="tag p">جزئي</span> الدخول عبر التسجيل في الدورة (حالة <span class="en">ACTIVE</span>)، ولا يوجد رمز دعوة.</td></tr>
+  <tr><td>مزامنة القوائم</td><td>Clever وبعض شركاء OneRoster: قوائم الطلاب والمعلمين المشاركين وإعدادات الدرجات</td><td>—</td><td><span class="tag p">جزئي</span> استيراد Excel لأسئلة الاختبارات وللمعهد؛ لا تكامل SIS (نظام «نور» مثلاً لم يُدرس).</td></tr>
+  <tr><td>الواجبات والتسليم</td><td>واجبات تفاعلية، حتى من Google Forms؛ أسئلة تفاعلية على فيديو YouTube</td><td><span class="tag u">جدولان</span> Assignments وSubmissions</td><td><span class="tag n">غير موجود</span> الاختبارات اليومية للدورة موجودة (<span class="en">QuizQuestion/QuizAttempt</span>) لكنها ليست واجبات بمرفقات وتسليم.</td></tr>
+  <tr><td>التقييم والدرجات</td><td>فترات تقييم وسلالم مخصصة، معايير تقييم (Rubrics) يراها الطالب، بنوك تعليقات وتقييم جماعي، تصدير إلى SIS</td><td>سجل درجات وتصدير Excel/CSV</td><td><span class="tag p">جزئي</span> تصحيح تلقائي ودرجة لمحاولة الاختبار؛ لا سجل درجات موحّد ولا معايير ولا تعليقات.</td></tr>
+  <tr><td>الاجتماع المباشر</td><td>«أدوات دردشة واجتماع مدمجة»؛ تفاصيل Meet غير شارحة في الصفحة</td><td>WebRTC (Jitsi/Mediasoup)</td><td><span class="tag y">موجود</span> Zoom عبر API: إنشاء/تعديل/حذف الاجتماع، غرفة انتظار، تسجيل سحابي، وروابط Teams/Meet/أخرى يدوياً.</td></tr>
+  <tr><td>الحضور</td><td>غير مذكور صراحة</td><td>غير مذكور</td><td><span class="tag y">موجود</span> تلقائي من Zoom (<span class="en">ClassroomAttendance</span>)، ويدوي في المعهد (حاضر/غائب/متأخر/بعذر).</td></tr>
+  <tr><td>التسجيلات</td><td>غير مذكورة</td><td>غير مذكورة</td><td><span class="tag y">موجود</span> إشعار انتهاء التسجيل يدخل خط معالجة HLS مشفّر AES-128 بروابط موقّعة.</td></tr>
+  <tr><td>أولياء الأمور</td><td>اطّلاع على الواجبات عبر رابط أو ملخص أسبوعي</td><td>دور بلا نموذج</td><td><span class="tag n">غير موجود</span> الأدوار: <span class="en">SUPER_ADMIN, TENANT_ADMIN, INSTRUCTOR, LEARNER</span> وأدوار المعهد الداخلية.</td></tr>
+  <tr><td>التحليلات</td><td>مشاركة الطلاب وإنجازهم وأداؤهم؛ تصدير سجلات إلى BigQuery</td><td>—</td><td><span class="tag p">جزئي</span> نسبة تقدم وإكمال، مؤشرات لوحة المدير والمعهد؛ لا تحليلات أداء واجبات.</td></tr>
+  <tr><td>الأصالة (كشف الانتحال)</td><td>مقارنة بمليارات صفحات الويب وأكثر من 40 مليون كتاب (ضمن خطط محددة)</td><td>—</td><td><span class="tag n">غير موجود</span> ولا يُنصح ببنائه داخلياً.</td></tr>
+  <tr><td>ضوابط المدير</td><td>إعدادات افتراضية للفصول والدرجات من لوحة المدير</td><td>سجلات تدقيق</td><td><span class="tag y">موجود</span> لوحة مدير، سجل تدقيق <span class="en">AuditLog</span>، وإعدادات لكل مستأجر، ولوحة المالك للمنصة.</td></tr>
+  <tr><td>تطبيق جوال</td><td>تطبيقا iOS وAndroid</td><td>واجهة متجاوبة</td><td><span class="tag p">جزئي</span> واجهة ويب متجاوبة؛ لا تطبيق أصلي.</td></tr>
+  <tr><td>الدفع والفوترة السعودية</td><td>غير ذات صلة</td><td>غير مذكورة</td><td><span class="tag y">موجود</span> فواتير ZATCA وVAT ومدى وأخرى؛ وهي ميزة لا تملكها Classroom أصلاً.</td></tr>
+</table>
+<div class="box warn"><b>قراءة النتيجة:</b> Classroom أداة صفّية ضمن حزمة Google Workspace for Education (بإصدارات وخطط مختلفة)؛ T3leem منصة تشغيل تجاري وتنظيمي (دفع، ترخيص، شهادات، فوترة). التنافس المباشر في «الواجبات والدرجات» يتطلب بناءً جديداً، أما التمايز الفعلي فهو في الجوانب السعودية والمؤسسية التي لا تغطيها Classroom.</div>
+
+<h2 class="pb">5. مقارنة قاعدة البيانات</h2>
+<h3>5.1 مخطط الدراسة مقابل جداول المشروع</h3>
+<table>
+  <tr><th style="width:20%">جدول الدراسة</th><th style="width:30%">المقابل في المشروع</th><th>الفرق</th></tr>
+  <tr><td class="en">Users</td><td><span class="en">users</span> (+ <span class="en">trainers, instructors, students</span>)</td><td>المشروع: <span class="en">tenant_id</span>، بريد وجوال فريدان داخل المستأجر، هوية وطنية مشفّرة AES-256-GCM، وكلمة مرور مجزّأة. الدراسة: <span class="en">uuid</span> و<span class="en">created_at</span> فقط.</td></tr>
+  <tr><td class="en">Classes</td><td><span class="en">virtual_classrooms</span> و<span class="en">class_sessions</span> (وحدة المعهد)</td><td>المقابل جلسة مجدولة (عنوان، بداية، مدة، سعة، مزوّد، رابط، حالة)، <b>وليس فصلاً دائماً</b> بقسم ومادة ورمز. لا حقل <span class="en">class_code</span>.</td></tr>
+  <tr><td class="en">Class_Members</td><td><span class="en">enrollments</span>، و<span class="en">students.level_id/program_id</span> في المعهد</td><td>العضوية تُشتق من التسجيل في الدورة؛ لا جدول عضوية فصل بدور (<span class="en">role_in_class</span>).</td></tr>
+  <tr><td class="en">Assignments</td><td><b>لا مقابل</b> (أقرب: <span class="en">quiz_questions</span>)</td><td>فجوة. لا تاريخ استحقاق ولا درجة عظمى ولا مرفقات.</td></tr>
+  <tr><td class="en">Submissions</td><td><b>لا مقابل</b> (أقرب: <span class="en">quiz_attempts</span>)</td><td>فجوة. محاولة الاختبار واحدة لكل طالب في اليوم ومجمّدة الأسئلة، وليست تسليم ملف.</td></tr>
+</table>
+<h3>5.2 ما في المشروع ولا تذكره الدراسة</h3>
+<ul>
+  <li><b>العزل:</b> كل جدول مستأجر يحمل <span class="en">tenant_id</span> وسياسة <span class="en">RLS</span> (مفعّلة بالترحيلات، وقسم منها بـ <span class="en">FORCE ROW LEVEL SECURITY</span>)، وطبقة ثانية لعزل الفروع في المعهد.</li>
+  <li><b>سلامة الجدولة:</b> في المعهد قيدا <span class="en">EXCLUDE USING gist</span> يمنعان تعارض القاعة والمدرّس في نفس الوقت على مستوى قاعدة البيانات، وليس في الشيفرة فقط.</li>
+  <li><b>الفصول الحية:</b> <span class="en">meeting_registry</span> (يربط رقم اجتماع Zoom بالمستأجر والفصل لأن إشعار Zoom لا يحمل المستأجر) و<span class="en">classroom_attendance</span> (صف واحد لكل مشارك في كل فصل).</li>
+  <li><b>الشهادات والفوترة:</b> <span class="en">certificates, certificate_registry, invoices, invoice_sequences</span> وغيرها، وكلها غائبة عن مخطط الدراسة.</li>
+</ul>
+
+<h2 class="pb">6. كيف تُضاف الفصول الافتراضية وتُدار اليوم في T3leem</h2>
+<p>النموذج الأول (أكاديميات التدريب): كيان <span class="en">VirtualClassroom</span>. يُدار من لوحة المدير (مسارات <span class="en">/api/v1/admin/classrooms</span>، وصلاحية <span class="en">TENANT_ADMIN</span> فقط).</p>
+<ol class="flow">
+  <li><b>الإدخال:</b> عنوان (3–200 حرفاً)، وقت البداية بصيغة ISO 8601، مدة 15–720 دقيقة، سعة اختيارية، دورة ومدرب اختياريان، المزوّد (Zoom افتراضياً)، ورابط اختياري. الرابط يجب أن يكون <span class="en">https</span> فقط.</li>
+  <li><b>قواعد العمل:</b> يُرفض الوقت الماضي (<span class="en">START_IN_PAST</span>). يُتحقق أن الدورة والمدرب يتبعان نفس الأكاديمية قبل الربط، فلا يمكن ربط فصل بدورة أكاديمية أخرى.</li>
+  <li><b>إنشاء الاجتماع:</b> إن كان المزوّد Zoom ولم يُلصق رابط وكانت بيانات Zoom مضبوطة، يُنشأ الاجتماع عبر API بإعدادات: غرفة انتظار، منع الدخول قبل المضيف، كتم الصوت عند الدخول، وتسجيل سحابي. يُخزَّن رابط المشارك فقط ولا يُخزَّن رابط المضيف. إن لم تُضبط بيانات Zoom يلصق المدير الرابط يدوياً.</li>
+  <li><b>الحفظ:</b> يُحفظ الصف داخل سياق المستأجر (<span class="en">RLS</span>) ويُمرَّر معه المنفّذ (<span class="en">actor</span>) إلى طبقة المستودع. إذا فشل الحفظ بعد إنشاء الاجتماع يُحذف الاجتماع من Zoom كي لا يبقى اجتماع يتيم.</li>
+  <li><b>ظهور الفصل للمتدرب:</b> يرى المتدرب الفصول <span class="en">SCHEDULED</span> المرتبطة بدورة هو مسجَّل فيها بحالة <span class="en">ACTIVE</span>، حتى 12 ساعة بعد البداية، بحد أقصى 20 فصلاً. في الموقع العام تظهر الفصول القادمة بلا حاجة إلى تسجيل دخول.</li>
+  <li><b>الحضور:</b> عند حدث <span class="en">meeting.participant_joined</span> من Zoom يُسجَّل المشارك مرة واحدة (بالبريد أو بمعرّف Zoom). التوقيع يُتحقق بـ HMAC مع مقارنة آمنة زمنياً، ويُرفض الحدث الأقدم من 5 دقائق (حماية من إعادة الإرسال).</li>
+  <li><b>التسجيل:</b> عند <span class="en">recording.completed</span> يدخل التسجيل خط المعالجة المشفّر ويصبح درساً محمياً.</li>
+  <li><b>التعديل والحذف:</b> التعديل يُزامَن مع Zoom، والحذف يزيل الاجتماع هناك بأفضل جهد (وإن كان قد حُذف أصلاً فلا خطأ).</li>
+</ol>
+<p>النموذج الثاني (وحدة المعهد): <span class="en">ClassSession</span> لمادة وقاعة ومدرّس بوقت بداية ونهاية. الحضور يدوي لكل طالب (حاضر/غائب/متأخر/بعذر)، ويمنع التعارض قيد قاعدة البيانات. هذا حصة حضورية في قاعة، وليس فصلاً افتراضياً.</p>
+<div class="box warn"><b>قيود الوضع الحالي:</b> المدرب لا ينشئ فصله بنفسه (الإنشاء لمدير الأكاديمية)؛ لا فصل دائم يجمع الطلاب والمواد؛ لا انضمام برمز؛ لا واجبات ولا درجات ولا منشورات.</div>
+
+<h2 class="pb">7. الخيارات المتاحة</h2>
+<table>
+  <tr><th style="width:18%">الخيار</th><th>ماذا يعني</th><th style="width:30%">الإيجابيات</th><th style="width:30%">المخاطر</th></tr>
+  <tr><td><b>أ. إبقاء الوضع</b></td><td>الاكتفاء بجلسات Zoom المربوطة بالدورات.</td><td>لا تكلفة. يعمل ويُختبر.</td><td>لا يلبّي «الفصل الافتراضي» كما تصفه الدراسة؛ الفجوة في الواجبات والدرجات ظاهرة للعميل.</td></tr>
+  <tr><td><b>ب. توسعة العمل الصفي (موصى به)</b></td><td>إضافة كيان <span class="en">Class</span> (قسم/مادة/رمز دعوة/حالة) وأعضاء بدور، ثم <span class="en">Announcement, Assignment, Submission, Grade</span> فوق الجداول الحالية، مع كل الجداول تحمل <span class="en">tenant_id</span> وRLS. الجلسة المباشرة تُربط بالفصل بدل الدورة فقط.</td><td>يعيد استخدام العزل والمصادقة والتدقيق والتخزين والبريد. يبقى Zoom للبث. أقل مخاطرة من خيار ج.</td><td>حجم عمل ملموس (واجهات المعلم والطالب والتصحيح). يحتاج قراراً بشأن المرفقات (حد الحجم والتخزين) والحذف حسب PDPL.</td></tr>
+  <tr><td><b>ج. بناء بث WebRTC خاص</b></td><td>تشغيل Jitsi أو Mediasoup على خوادم المنصة، كما تقترح الدراسة.</td><td>استقلال عن Zoom وتخصيص كامل.</td><td>تشغيل وسائط وTURN ومراقبة وسعة؛ اختبارات حمل؛ لا يضيف ما يحتاجه العميل لإدارة الفصل. <b>غير موصى به الآن.</b></td></tr>
+</table>
+<h3>مخطط مقترح مختصر للخيار ب (للنقاش وليس معتمداً)</h3>
+<table>
+  <tr><th style="width:24%">الجدول</th><th>الغرض والحقول الأساسية</th></tr>
+  <tr><td class="en">classes</td><td><span class="en">id, tenant_id, owner_trainer_id, title, section, subject, class_code (فريد داخل المستأجر), status, created_at</span></td></tr>
+  <tr><td class="en">class_members</td><td><span class="en">tenant_id, class_id, user_id, role_in_class, joined_at</span> — مفتاح مركّب (فصل، مستخدم)</td></tr>
+  <tr><td class="en">virtual_classrooms (تعديل)</td><td>ربط <span class="en">virtual_classrooms</span> بالفصل: <span class="en">class_id</span> اختياري إضافي إلى الجدول الحالي (بلا تكرار)</td></tr>
+  <tr><td class="en">announcements</td><td><span class="en">tenant_id, class_id, author_id, body, created_at</span></td></tr>
+  <tr><td class="en">assignments</td><td><span class="en">tenant_id, class_id, title, description, max_points, due_at, published_at</span></td></tr>
+  <tr><td class="en">submissions</td><td><span class="en">tenant_id, assignment_id, student_id, file_ref, submitted_at, grade, feedback, graded_by</span> — فريد (تكليف، طالب)</td></tr>
+</table>
+
+<h2>8. القرارات المطلوبة منك</h2>
+<ol>
+  <li><b>الاتجاه:</b> هل نعتمد الخيار ب (توسعة العمل الصفي) أم نبقى على الوضع الحالي؟</li>
+  <li><b>الجمهور:</b> هل «الفصل الافتراضي» المقصود لأكاديميات التدريب الحالية، أم لمدارس/معاهد تحتاج صفاً دائماً بواجبات ودرجات وأولياء أمور؟ هذا يحدد هل يلزم دور ولي الأمر ومزامنة نور.</li>
+  <li><b>المرفقات:</b> هل تُرفع ملفات التسليم إلى تخزين المنصة، وبأي حد حجم، وما مدة الاحتفاظ بها؟</li>
+  <li><b>تكامل البث:</b> هل يكفي Zoom (الحالي) أم يُطلب Google Meet/Teams بإنشاء تلقائي؟ حالياً هذان الخياران يعتمدان على رابط يلصقه المدير.</li>
+</ol>
+
+<div class="foot">
+  المصادر: الملف المرفق «التقرير الفني والتقني المتكامل لتطوير منصة t3leem.my»؛ صفحة Google Workspace for Education – Classroom (<span class="en">edu.google.com/workspace-for-education/products/classroom/</span>) بتاريخ الجلب أعلاه؛ مستودع T3leem.my (<span class="en">prisma/schema.prisma</span>، <span class="en">src/modules/provider</span>، <span class="en">src/modules/live</span>، <span class="en">src/modules/lms/learning</span>، <span class="en">prisma/migrations</span>). ما ورد عن Google مقتصر على ما نصّت عليه صفحتها؛ لم تُستخدم مصادر أخرى لوصف Classroom.
+</div>
+</body>
+</html>
