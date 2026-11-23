@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { body, param, type ValidationChain } from 'express-validator';
+import { body, param, query, type ValidationChain } from 'express-validator';
 import { ClassroomStatus, CourseType, MeetingProvider, PlanStatus, PlanType, UserRole } from '@prisma/client';
 import { authenticate, requireRoles, type JwtVerifyOptions } from '../../shared/middlewares/auth.middleware';
 import { validate } from '../../shared/middlewares/validate.middleware';
@@ -114,13 +114,16 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     body('trainees.*.email').isString().withMessage('email is required'),
     body('trainees.*.phone').optional({ values: 'null' }).isString(),
     body('trainees.*.employee_no').optional({ values: 'null' }).isString(),
+    body('invite').optional().isBoolean(),
     validate,
     controller.enrollTrainees,
   );
+  router.post('/courses/:id/enrollments/invite', uuidParam, validate, controller.resendInvitations);
   // The workbook arrives as the raw request body (application/octet-stream), like the quiz import.
   router.post(
     '/courses/:id/enrollments/import',
     uuidParam,
+    query('invite').optional().isIn(['0', '1']),
     validate,
     express.raw({ type: () => true, limit: TRAINEE_LIMITS.maxFileBytes }),
     (req, res, next) => {

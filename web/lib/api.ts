@@ -173,6 +173,8 @@ export interface CourseRosterRow {
 }
 
 export interface EnrollmentOutcome {
+  /** Invitation e-mails queued for the newly enrolled employees. */
+  invitations: number;
   summary: { enrolled: number; already_enrolled: number; accounts_created: number; errors: number };
   results: { email: string; full_name: string; status: 'enrolled' | 'already_enrolled' | 'error'; account_created: boolean; message: string | null }[];
 }

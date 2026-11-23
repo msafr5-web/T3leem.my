@@ -831,7 +831,7 @@ export async function enrollTraineesAction(slug: string, courseId: string, _prev
   if (trainees.length > MAX_TRAINEES) return { error: ERROR_MESSAGES.TOO_MANY_TRAINEES };
 
   try {
-    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments`, { method: 'POST', token, body: { trainees } });
+    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments`, { method: 'POST', token, body: { trainees, invite: form.get('invite') === 'on' } });
     revalidatePath(`/${slug}/dashboard/courses/${courseId}/enrollments`);
     revalidatePath(`/${slug}/dashboard/courses`);
     return { outcome };
@@ -848,7 +848,7 @@ export async function importTraineesAction(slug: string, courseId: string, _prev
   if (file.size > MAX_TRAINEE_SHEET) return { error: 'حجم الملف يجب ألا يتجاوز ١ ميغابايت.' };
   try {
     const data = new Uint8Array(await file.arrayBuffer());
-    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments/import`, {
+    const outcome = await api<EnrollmentOutcome>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments/import?invite=${form.get('invite') === 'on' ? '1' : '0'}`, {
       method: 'POST',
       token,
       raw: { data, contentType: 'application/octet-stream' },
@@ -1016,4 +1016,18 @@ export async function revertAttendanceAction(slug: string, courseId: string, kin
   }
   revalidatePath(`/${slug}/dashboard/attendance/${courseId}`);
   redirect(`/${slug}/dashboard/attendance/${courseId}?saved=reverted`);
+}
+
+
+/** Sends the invitation e-mail again to the employees the admin enrolled in this course. */
+export async function resendInvitationsAction(slug: string, courseId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(courseId)) return { error: 'طلب غير صالح.' };
+  let queued = 0;
+  try {
+    queued = (await api<{ queued: number }>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments/invite`, { method: 'POST', token })).queued;
+  } catch (err) {
+    return describeError(err);
+  }
+  redirect(`/${slug}/dashboard/courses/${courseId}/enrollments?invited=${queued}`);
 }

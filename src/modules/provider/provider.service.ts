@@ -3,6 +3,7 @@ import { logger } from '../../shared/services/logger';
 import type { Mailer } from '../../shared/services/mailer';
 import { HttpError } from '../../shared/utils/http-error';
 import { ManualMeetingScheduler, type MeetingScheduler } from '../live/meeting-scheduler';
+import { invitationMessage } from './enrollment-invite';
 import { firstPairConflict, scheduleConflictError } from './plan-schedule';
 import type { ProviderRepository } from './provider.repository';
 import { buildTraineeTemplate, cleanTrainee, dedupeBatch, parseTraineeSheet, TRAINEE_LIMITS, type TraineeDraft } from './trainee.excel';
@@ -65,6 +66,8 @@ const isUniqueViolation = (err: unknown): boolean =>
  * therefore re-checked through an RLS-scoped query before writing.
  */
 export class ProviderService {
+  /** Invitation e-mails still being sent in the background (so they can be awaited in tests and on shutdown). */
+  private readonly inflight = new Set<Promise<void>>();
   private readonly clock: () => Date;
   private readonly meetings: MeetingScheduler;
 
@@ -193,6 +196,65 @@ export class ProviderService {
     const parsed = await parseTraineeSheet(file);
     if (parsed.errors.length > 0) throw HttpError.unprocessable('INVALID_TRAINEE_SHEET', 'The file has rows that need fixing', { errors: parsed.errors });
     return this.writeEnrollments(tenantId, actor, courseId, parsed.trainees);
+  }
+
+  // ----- invitations: an e-mail to every newly enrolled employee -----
+
+  /** Like enrollTrainees, and (when asked) e-mails each NEWLY enrolled employee an invitation. */
+  async enrollTraineesInvited(
+    tenantId: string,
+    actor: Actor,
+    academy: { name: string; slug: string },
+    courseId: string,
+    people: { fullName: string; email: string; phone?: string | null; employeeNo?: string | null }[],
+    invite: boolean,
+  ): Promise<{ results: TraineeEnrollmentResult[]; invitations: number }> {
+    const results = await this.enrollTrainees(tenantId, actor, courseId, people);
+    return { results, invitations: invite ? await this.queueInvitations(tenantId, academy, courseId, results.filter((r) => r.status === 'enrolled')) : 0 };
+  }
+
+  async importTraineesInvited(tenantId: string, actor: Actor, academy: { name: string; slug: string }, courseId: string, file: Buffer, invite: boolean): Promise<{ results: TraineeEnrollmentResult[]; invitations: number }> {
+    const results = await this.importTrainees(tenantId, actor, courseId, file);
+    return { results, invitations: invite ? await this.queueInvitations(tenantId, academy, courseId, results.filter((r) => r.status === 'enrolled')) : 0 };
+  }
+
+  /** Sends the invitation again to the employees the admin enrolled in this course (still active, not finished). */
+  async resendInvitations(tenantId: string, academy: { name: string; slug: string }, courseId: string): Promise<number> {
+    await this.assertCoursesOwned(tenantId, [courseId]);
+    const roster = await this.deps.repository.listCourseRoster(tenantId, courseId);
+    const targets = roster.filter((r) => r.source === 'ADMIN' && r.status === 'ACTIVE' && r.completionStatus !== 'COMPLETED').map((r) => ({ email: r.email, fullName: r.fullName ?? r.email, accountCreated: false }));
+    return this.queueInvitations(tenantId, academy, courseId, targets);
+  }
+
+  /** Resolves when every invitation e-mail started so far has been attempted. */
+  async drainInvitations(): Promise<void> {
+    await Promise.allSettled([...this.inflight]);
+  }
+
+  /**
+   * Sends in the background (a few at a time) so a list of hundreds never holds the request; a failed e-mail is logged and
+   * does not undo anything: the employee is enrolled and can sign in from the academy's login page regardless.
+   * Returns how many invitations were queued (0 when e-mail is not available).
+   */
+  private async queueInvitations(tenantId: string, academy: { name: string; slug: string }, courseId: string, targets: { email: string; fullName: string; accountCreated: boolean }[]): Promise<number> {
+    const { mailer, webUrl } = this.deps;
+    if (!mailer || !webUrl || targets.length === 0) return 0;
+    const course = await this.deps.repository.courseInvitationInfo(tenantId, courseId);
+    if (!course) return 0;
+    const queue = [...targets];
+    const worker = async (): Promise<void> => {
+      for (let t = queue.shift(); t; t = queue.shift()) {
+        try {
+          await mailer.send({ to: t.email, ...invitationMessage({ name: t.fullName, academy, webUrl, course, accountCreated: t.accountCreated }) });
+        } catch (err) {
+          logger.warn('Enrollment invitation e-mail failed', { err: err instanceof Error ? err.message : err });
+        }
+      }
+    };
+    const job = Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker)).then(() => undefined);
+    this.inflight.add(job);
+    void job.finally(() => this.inflight.delete(job));
+    return targets.length;
   }
 
   private async writeEnrollments(tenantId: string, actor: Actor, courseId: string, trainees: TraineeDraft[]): Promise<TraineeEnrollmentResult[]> {

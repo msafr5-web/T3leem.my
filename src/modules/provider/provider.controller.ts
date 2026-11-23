@@ -253,14 +253,25 @@ export class ProviderController {
       phone: text(t.phone),
       employeeNo: text(t.employee_no),
     }));
-    const results = await this.provider.enrollTrainees(tenantOf(req), actorOf(req), req.params.id, people);
-    res.status(201).json(ok({ summary: enrollmentSummary(results), results: results.map(enrollmentResultJson) }));
+    // Invitations by e-mail are on unless the admin switches them off.
+    const invite = (req.body as Body).invite !== false && (req.body as Body).invite !== 'false';
+    const { tenant } = requireAuthContext(req);
+    const { results, invitations } = await this.provider.enrollTraineesInvited(tenantOf(req), actorOf(req), { name: tenant.name, slug: tenant.slug }, req.params.id, people, invite);
+    res.status(201).json(ok({ summary: enrollmentSummary(results), invitations, results: results.map(enrollmentResultJson) }));
   };
 
   /** The workbook arrives as the raw request body (see the route), not JSON or multipart. */
   importTrainees = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
-    const results = await this.provider.importTrainees(tenantOf(req), actorOf(req), req.params.id, req.body as Buffer);
-    res.status(201).json(ok({ summary: enrollmentSummary(results), results: results.map(enrollmentResultJson) }));
+    const { tenant } = requireAuthContext(req);
+    const { results, invitations } = await this.provider.importTraineesInvited(tenantOf(req), actorOf(req), { name: tenant.name, slug: tenant.slug }, req.params.id, req.body as Buffer, req.query.invite !== '0');
+    res.status(201).json(ok({ summary: enrollmentSummary(results), invitations, results: results.map(enrollmentResultJson) }));
+  };
+
+  /** Sends the invitation again to the employees enrolled by the admin (e.g. after a mail problem or a change of date). */
+  resendInvitations = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { tenant } = requireAuthContext(req);
+    const queued = await this.provider.resendInvitations(tenantOf(req), { name: tenant.name, slug: tenant.slug }, req.params.id);
+    res.json(ok({ queued }));
   };
 
   traineeTemplate = async (_req: Request, res: Response): Promise<void> => {

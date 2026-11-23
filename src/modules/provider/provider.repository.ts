@@ -24,6 +24,7 @@ import type {
   TrainerAccountOutcome,
 } from './provider.types';
 import { loadCourseSchedules, orderPlanByStart, type CourseSchedule } from './plan-schedule';
+import type { InvitationCourse } from './enrollment-invite';
 import type { TraineeDraft } from './trainee.excel';
 
 export interface ProviderRepository {
@@ -75,6 +76,8 @@ export interface ProviderRepository {
   grantTrainerAccount(tenantId: string, actor: Actor, trainerId: string, passwordHash: string): Promise<TrainerAccountOutcome>;
   /** Removes the trainer's login (the trainer record and their courses stay). 'no_account' = nothing to remove. */
   revokeTrainerAccount(tenantId: string, actor: Actor, trainerId: string): Promise<'revoked' | 'not_found' | 'no_account'>;
+  /** What an invitation tells the trainee about the course: its start, number of days, and next live session. Null when there is no such course. */
+  courseInvitationInfo(tenantId: string, courseId: string): Promise<InvitationCourse | null>;
   /** Start and day lengths of the dated recorded courses among these ids (for the plan overlap rule). */
   loadCourseSchedules(tenantId: string, courseIds: string[]): Promise<CourseSchedule[]>;
 }
@@ -546,6 +549,20 @@ export class PrismaProviderRepository implements ProviderRepository {
       await tx.user.delete({ where: { id: trainer.userId } }); // the trainer record keeps existing: its user link is cleared by the database
       await audit(tx, tenantId, actor, 'trainer.account_revoked', 'trainer', trainer.id, {});
       return 'revoked';
+    });
+  }
+
+  courseInvitationInfo(tenantId: string, courseId: string): Promise<InvitationCourse | null> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const course = await tx.course.findFirst({ where: { tenantId, id: courseId }, select: { title: true, sourceVideoId: true, scheduleStartsAt: true, _count: { select: { modules: true } } } });
+      if (!course) return null;
+      const next = await tx.virtualClassroom.findFirst({ where: { tenantId, courseId, status: 'SCHEDULED', startsAt: { gte: new Date() } }, orderBy: { startsAt: 'asc' }, select: { title: true, startsAt: true } });
+      return {
+        title: course.title,
+        startsAt: course.sourceVideoId ? course.scheduleStartsAt : null,
+        days: course.sourceVideoId ? course._count.modules : 0,
+        nextSession: next ? { title: next.title, startsAt: next.startsAt } : null,
+      };
     });
   }
 

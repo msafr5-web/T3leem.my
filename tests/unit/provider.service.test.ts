@@ -39,6 +39,7 @@ function setup(owned = { courses: ['c1', 'c2'], trainers: ['t1'] }) {
     deleteClassroom: jest.fn(async () => true),
     listAttendance: jest.fn(async () => []),
     loadCourseSchedules: jest.fn(async () => []),
+    courseInvitationInfo: jest.fn(async () => ({ title: 'PMP', startsAt: null, days: 0, nextSession: null })),
   } as unknown as jest.Mocked<ProviderRepository>;
   const hashPassword = jest.fn(async (p: string) => `hash(${p})`);
   const service = new ProviderService({ repository: repo, hashPassword, clock: () => NOW });

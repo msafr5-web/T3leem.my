@@ -19,6 +19,7 @@ function Outcome({ state }: { state: EnrollState }) {
             {outcome.summary.accounts_created > 0 ? `، وأُنشئ ${outcome.summary.accounts_created} حساباً جديداً` : ''}
             {outcome.summary.already_enrolled > 0 ? `، و${outcome.summary.already_enrolled} مسجّلون مسبقاً` : ''}
             {outcome.summary.errors > 0 ? `، و${outcome.summary.errors} لم يُسجَّلوا (انظر أدناه)` : ''}.
+            {outcome.invitations > 0 ? ` وأُرسلت دعوة بالبريد إلى ${outcome.invitations} منهم.` : ''}
           </strong>
           {outcome.summary.errors > 0 && (
             <ul className="quiz-errors small">
@@ -117,6 +118,10 @@ export function TypedEnrollForm({ action }: { action: Action }) {
         </table>
       </div>
       <Outcome state={state} />
+      <label className="check" htmlFor="invite-typed">
+        <input id="invite-typed" type="checkbox" name="invite" defaultChecked />
+        أرسل دعوة بالبريد الإلكتروني للمسجَّلين الجدد (اسم الدورة وموعدها ورابط الدخول)
+      </label>
       <div className="cta-row">
         <button type="button" className="btn btn-ghost" onClick={() => setRows((cur) => (cur.length < 100 ? [...cur, newRow()] : cur))} disabled={rows.length >= 100}>
           + إضافة صف
@@ -143,6 +148,10 @@ export function ImportEnrollForm({ action, templateHref }: { action: Action; tem
         الأعمدة: الاسم الكامل، البريد الإلكتروني، الجوال، الرقم الوظيفي. <a href={templateHref}>تنزيل القالب</a>
       </p>
       <Outcome state={state} />
+      <label className="check" htmlFor="invite-import">
+        <input id="invite-import" type="checkbox" name="invite" defaultChecked />
+        أرسل دعوة بالبريد الإلكتروني للمسجَّلين الجدد
+      </label>
       <div>
         <button type="submit" className="btn btn-primary" disabled={pending}>
           {pending ? 'جارٍ الرفع…' : 'رفع وتسجيل'}

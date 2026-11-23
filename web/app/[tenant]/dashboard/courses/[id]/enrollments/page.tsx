@@ -2,15 +2,16 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, admin, type AdminCourse, type CourseRosterRow } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { enrollTraineesAction, importTraineesAction } from '@/lib/admin-actions';
+import { enrollTraineesAction, importTraineesAction, resendInvitationsAction } from '@/lib/admin-actions';
 import { formatDate, formatNumber } from '@/lib/format';
+import { DeleteButton } from '../../../delete-button';
 import { ImportEnrollForm, TypedEnrollForm } from './enroll-forms';
 
 const statusLabel = { ACTIVE: 'فعّال', SUSPENDED: 'موقوف', EXPIRED: 'منتهٍ' } as const;
 
 /** Course roster plus the two ways to add employees (typed grid, Excel/CSV). The academy's admin follows their own staff here. */
-export default async function CourseEnrollments({ params }: { params: Promise<{ tenant: string; id: string }> }) {
-  const { tenant: slug, id } = await params;
+export default async function CourseEnrollments({ params, searchParams }: { params: Promise<{ tenant: string; id: string }>; searchParams: Promise<{ invited?: string }> }) {
+  const [{ tenant: slug, id }, { invited }] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
 
   let course: AdminCourse;
@@ -38,6 +39,12 @@ export default async function CourseEnrollments({ params }: { params: Promise<{ 
         </div>
       </div>
 
+      {invited !== undefined && /^\d+$/.test(invited) && (
+        <p className="notice ok" role="status">
+          {Number(invited) > 0 ? `أُرسلت الدعوة بالبريد إلى ${formatNumber(Number(invited))} موظفاً.` : 'لا موظفين مسجّلين من قبلك لإرسال دعوة إليهم (أو لم يُفعَّل البريد).'}
+        </p>
+      )}
+
       <section className="card stack" aria-labelledby="add-typed">
         <h2 id="add-typed" style={{ fontSize: 18 }}>إضافة موظفين</h2>
         <p className="small muted">يُنشأ حساب لمن ليس له حساب ويُسجَّل في الدورة بلا دفع. إن كان في القائمة أي صف خاطئ لا يُسجَّل أحد، وتظهر الصفوف التي تحتاج تصحيحاً.</p>
@@ -48,6 +55,18 @@ export default async function CourseEnrollments({ params }: { params: Promise<{ 
         <h2 id="add-file" style={{ fontSize: 18 }}>أو ارفع ملف Excel</h2>
         <ImportEnrollForm action={importTraineesAction.bind(null, slug, course.id)} templateHref={`/${slug}/dashboard/trainees/template`} />
       </section>
+
+      {roster.some((r) => r.source === 'ADMIN') && (
+        <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <p className="small muted">دعوة البريد تحمل اسم الدورة وموعدها ورابط الدخول وطريقة تسجيل الحضور. تُرسل تلقائياً للمسجَّلين الجدد، ويمكنك إعادتها للجميع.</p>
+          <DeleteButton
+            action={resendInvitationsAction.bind(null, slug, course.id)}
+            label="إعادة إرسال الدعوات بالبريد"
+            variant="primary"
+            confirmText="إرسال الدعوة بالبريد مرة أخرى إلى الموظفين الذين أضفتهم في هذه الدورة؟"
+          />
+        </div>
+      )}
 
       <div className="table-wrap">
         {roster.length === 0 ? (

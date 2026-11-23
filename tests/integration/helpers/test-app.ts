@@ -290,9 +290,13 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     createPlan: async () => 'p-new',
     createClassroom: async () => 'cl-new',
     enrollTrainees: async (_t, _a, _c, drafts) => drafts.map((d) => ({ email: d.email, fullName: d.fullName, status: 'enrolled' as const, accountCreated: true })),
-    listCourseRoster: async () => [],
+    listCourseRoster: async (t, courseId) =>
+      t === TENANT_A && courseId === COURSE
+        ? [{ enrollmentId: 'e1', userId: 'u1', fullName: 'Ali Hassan', email: 'ali@corp.test', phone: null, employeeNo: null, progressPercentage: 10, completionStatus: 'ENROLLED' as const, status: 'ACTIVE' as const, source: 'ADMIN' as const, enrolledAt: new Date('2026-10-24T00:00:00Z') }]
+        : [],
     deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
     loadCourseSchedules: async () => [],
+    courseInvitationInfo: async (t, id) => (t === TENANT_A && id === COURSE ? { title: 'PMP', startsAt: new Date('2027-01-10T16:00:00Z'), days: 5, nextSession: null } : null),
     grantTrainerAccount: async (t, _a, id) => {
       if (t !== TENANT_A) return { kind: 'not_found' };
       if (id === TRAINER_NEW && !granted.has(id)) return granted.add(id), audits.push(`trainer.account_granted:${id}`), { kind: 'granted', email: 'new.trainer@a.test', fullName: 'Sara' };
@@ -383,6 +387,20 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     clock: healthClock,
   };
 
+  const providerService = new ProviderService({
+    repository: providerRepo,
+    hashPassword: async (p) => `hashed:${p}`,
+    meetings: opts.meetings,
+    mailer: otp.mailer,
+    webUrl: 'https://t3leem.my',
+    approvals: {
+      request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
+        otp.service.requestOwnerApproval({ tenantId, tenantLabel: tenantName, requester: { id: requesterId }, purpose: 'course_delete', subjectId: courseId, details }),
+      confirm: ({ tenantId, requesterId, courseId, challengeId, code }) =>
+        otp.service.confirmOwnerApproval({ tenantId, requesterId, purpose: 'course_delete', subjectId: courseId, challengeId, code }),
+    },
+    clock: () => new Date('2026-10-23T00:00:00Z'),
+  });
   const app = createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
@@ -409,20 +427,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
           : null,
     }),
     providerController: new ProviderController(
-      new ProviderService({
-        repository: providerRepo,
-        hashPassword: async (p) => `hashed:${p}`,
-        meetings: opts.meetings,
-        mailer: otp.mailer,
-        webUrl: 'https://t3leem.my',
-        approvals: {
-          request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
-            otp.service.requestOwnerApproval({ tenantId, tenantLabel: tenantName, requester: { id: requesterId }, purpose: 'course_delete', subjectId: courseId, details }),
-          confirm: ({ tenantId, requesterId, courseId, challengeId, code }) =>
-            otp.service.confirmOwnerApproval({ tenantId, requesterId, purpose: 'course_delete', subjectId: courseId, challengeId, code }),
-        },
-        clock: () => new Date('2026-10-23T00:00:00Z'),
-      }),
+      providerService,
       catalog,
     ),
     providerDirectory: {
@@ -457,6 +462,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.registration = registration;
   app.locals.otp = otp;
   app.locals.attendance = attendance;
+  app.locals.providerService = providerService;
   app.locals.owner = owner;
   return app;
 }
