@@ -19,6 +19,7 @@ import type {
   TrainerRow,
   AttendanceRow,
   CourseRosterRow,
+  CourseDeletionSummary,
   TraineeEnrollmentResult,
 } from './provider.types';
 import type { TraineeDraft } from './trainee.excel';
@@ -44,6 +45,11 @@ export interface ProviderRepository {
   createPlan(tenantId: string, actor: Actor, input: PlanInput): Promise<string>;
   createClassroom(tenantId: string, actor: Actor, input: ClassroomRecord): Promise<string>;
   deleteCourse(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome>;
+  /**
+   * Deletes a course that has trainees (only after the platform owner approved): its enrollments, progress and certificates go
+   * with it. Tax invoices stay (the database clears their link to the enrollment). Null when the course does not exist.
+   */
+  deleteCourseWithEnrollments(tenantId: string, actor: Actor, id: string): Promise<CourseDeletionSummary | null>;
   updateTrainer(tenantId: string, actor: Actor, id: string, input: Partial<TrainerInput>): Promise<boolean>;
   deleteTrainer(tenantId: string, actor: Actor, id: string): Promise<DeleteOutcome>;
   updateTrainee(tenantId: string, actor: Actor, id: string, input: { fullName: string }): Promise<boolean>;
@@ -384,6 +390,26 @@ export class PrismaProviderRepository implements ProviderRepository {
       await tx.course.delete({ where: { id } });
       await audit(tx, tenantId, actor, 'course.deleted', 'course', id, { title: course.title });
       return 'deleted';
+    });
+  }
+
+  deleteCourseWithEnrollments(tenantId: string, actor: Actor, id: string): Promise<CourseDeletionSummary | null> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const course = await tx.course.findFirst({ where: { tenantId, id }, select: { title: true } });
+      if (!course) return null;
+      const enrollmentIds = (await tx.enrollment.findMany({ where: { tenantId, courseId: id }, select: { id: true } })).map((e) => e.id);
+      const certificateIds = (await tx.certificate.findMany({ where: { tenantId, enrollmentId: { in: enrollmentIds } }, select: { id: true } })).map((c) => c.id);
+      // Certificates and their public lookup entries first (the database refuses to drop an enrollment that still has one);
+      // progress goes with the enrollment (cascade) and invoices only lose their link to it.
+      await tx.certificateRegistry.deleteMany({ where: { tenantId, certificateId: { in: certificateIds } } });
+      await tx.certificate.deleteMany({ where: { tenantId, id: { in: certificateIds } } });
+      await tx.enrollment.deleteMany({ where: { tenantId, id: { in: enrollmentIds } } });
+      await tx.lesson.deleteMany({ where: { tenantId, module: { courseId: id } } });
+      await tx.module.deleteMany({ where: { tenantId, courseId: id } });
+      await tx.course.delete({ where: { id } });
+      const summary = { enrollments: enrollmentIds.length, certificates: certificateIds.length };
+      await audit(tx, tenantId, actor, 'course.deleted_with_enrollments', 'course', id, { title: course.title, approvedBy: 'platform_owner', ...summary });
+      return summary;
     });
   }
 

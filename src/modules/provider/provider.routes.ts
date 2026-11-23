@@ -54,6 +54,17 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
   router.post('/courses', ...courseValidators('create'), validate, controller.createCourse);
   router.put('/courses/:id', param('id').isUUID(), ...courseValidators('update'), validate, controller.updateCourse);
   router.delete('/courses/:id', uuidParam, validate, controller.deleteCourse);
+  // A course WITH trainees can only be deleted with the platform owner's approval: a code is e-mailed to the owner, and the
+  // admin comes back with it. The code is bound to this course, so approval for one course never deletes another.
+  router.post('/courses/:id/delete-request', uuidParam, validate, controller.requestCourseDeletion);
+  router.post(
+    '/courses/:id/delete-approved',
+    uuidParam,
+    body('challenge_id').isUUID().withMessage('challenge_id must be a UUID'),
+    body('code').isString().trim().matches(/^\d{6}$/).withMessage('code must be 6 digits'),
+    validate,
+    controller.deleteCourseApproved,
+  );
 
   router.get('/trainers', controller.listTrainers);
   router.post(

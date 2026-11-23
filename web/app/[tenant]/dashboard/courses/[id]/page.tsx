@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ApiError, admin, type AdminCourse } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { deleteAction, updateCourseAction } from '@/lib/admin-actions';
+import { approveCourseDeletionAction, deleteAction, requestCourseDeletionAction, updateCourseAction } from '@/lib/admin-actions';
 import { DeleteButton } from '../../delete-button';
+import { ApprovedDelete } from './approved-delete';
 import { CourseForm } from '../course-form';
 
 export default async function EditCourse({
@@ -51,8 +52,22 @@ export default async function EditCourse({
       </div>
       <section className="card stack danger-zone" aria-labelledby="delete-heading">
         <h2 id="delete-heading" style={{ fontSize: 18 }}>حذف الدورة</h2>
-        <p className="small muted">لا يمكن حذف دورة فيها متدربون مسجلون (فواتيرهم يجب أن تبقى). ألغِ نشرها بدلاً من ذلك.</p>
-        <DeleteButton action={deleteAction.bind(null, slug, 'courses', course.id)} label="حذف الدورة" confirmText={`حذف «${course.title}» نهائياً؟`} />
+        {course.enrollment_count === 0 ? (
+          <DeleteButton action={deleteAction.bind(null, slug, 'courses', course.id)} label="حذف الدورة" confirmText={`حذف «${course.title}» نهائياً؟`} />
+        ) : (
+          <>
+            <p className="small muted">
+              في هذه الدورة {course.enrollment_count} متدرب مسجّل. حذفها يتطلب <strong>موافقة مالك المنصة</strong>: نرسل رمزاً إلى بريده، فتطلبه منه وتكتبه هنا. الحذف نهائي ويشمل تسجيلات المتدربين وتقدمهم
+              وشهاداتهم؛ أما الفواتير الضريبية فتبقى. إن لم تُرد حذفاً نهائياً فألغِ نشر الدورة بدلاً من ذلك.
+            </p>
+            <ApprovedDelete
+              requestAction={requestCourseDeletionAction.bind(null, slug, course.id)}
+              approveAction={approveCourseDeletionAction.bind(null, slug, course.id)}
+              courseTitle={course.title}
+              trainees={course.enrollment_count}
+            />
+          </>
+        )}
       </section>
     </>
   );

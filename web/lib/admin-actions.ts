@@ -119,6 +119,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_TRAINEES: 'في بيانات الموظفين أخطاء. صحّحها ثم أعد المحاولة (لم يُسجَّل أحد).',
   INVALID_TRAINEE_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُسجَّل أحد).',
   NO_TRAINEES: 'أضف موظفاً واحداً على الأقل.',
+  OTP_INVALID: 'الرمز غير صحيح أو انتهت صلاحيته. اطلب موافقة جديدة إن لزم.',
+  TOO_MANY_ATTEMPTS: 'محاولات كثيرة. اطلب موافقة جديدة بعد قليل.',
+  MAIL_UNAVAILABLE: 'تعذّر إرسال الرمز إلى بريد مالك المنصة الآن. حاول لاحقاً.',
+  APPROVAL_UNAVAILABLE: 'موافقة المالك غير متاحة على هذا الخادم. تواصل مع إدارة المنصة.',
+  NO_APPROVAL_NEEDED: 'هذه الدورة بلا متدربين؛ احذفها مباشرة.',
   TOO_MANY_TRAINEES: 'الحد الأقصى ٥٠٠ موظف في المرة الواحدة.',
   SECTOR_EXISTS: 'يوجد قطاع بهذا الرمز.',
   SECTOR_NOT_FOUND: 'القطاع غير موجود.',
@@ -825,4 +830,38 @@ export async function importTraineesAction(slug: string, courseId: string, _prev
   } catch (err) {
     return enrollFailure(err);
   }
+}
+
+
+// ---- Deleting a course that has trainees: the platform owner approves with a code e-mailed to him ----------------
+
+export interface CourseApprovalState extends AdminFormState {
+  /** Step 1 done: a code was e-mailed to the platform owner for this request. */
+  challengeId?: string;
+}
+
+/** Step 1: asks the platform owner for approval. The code goes to the OWNER's e-mail, never back to this screen. */
+export async function requestCourseDeletionAction(slug: string, courseId: string, _prev: CourseApprovalState): Promise<CourseApprovalState> {
+  const token = await adminToken(slug);
+  try {
+    const r = await api<{ challenge_id: string }>(slug, `/admin/courses/${encodeURIComponent(courseId)}/delete-request`, { method: 'POST', token });
+    return { challengeId: r.challenge_id };
+  } catch (err) {
+    return describeError(err);
+  }
+}
+
+/** Step 2: the code the owner gave the admin deletes the course together with its trainees' records. */
+export async function approveCourseDeletionAction(slug: string, courseId: string, challengeId: string, _prev: CourseApprovalState, form: FormData): Promise<CourseApprovalState> {
+  const token = await adminToken(slug);
+  const code = String(form.get('code') ?? '').replace(/\D/g, '');
+  if (code.length !== 6) return { challengeId, error: 'اكتب الرمز المكوّن من ٦ أرقام الذي أعطاك إياه مالك المنصة.' };
+  try {
+    await api(slug, `/admin/courses/${encodeURIComponent(courseId)}/delete-approved`, { method: 'POST', token, body: { challenge_id: challengeId, code } });
+  } catch (err) {
+    // A wrong or expired code keeps the form open for another try; everything else starts over.
+    return { ...(err instanceof ApiError && err.code === 'OTP_INVALID' ? { challengeId } : {}), ...describeError(err) };
+  }
+  revalidatePath(`/${slug}/dashboard/courses`);
+  redirect(`/${slug}/dashboard/courses?deleted=1`);
 }

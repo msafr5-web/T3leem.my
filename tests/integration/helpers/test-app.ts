@@ -144,7 +144,12 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   const authRepo: AuthRepository = {
     phoneTaken: async (_t, phone) => phones.has(phone),
     findUser: async (tenantId, email) => (tenantId === TENANT_A && email === LEARNER_EMAIL ? { id: USER, email, role: 'LEARNER', fullName: 'Abdullah' } : null),
-    findById: async (tenantId, id) => (tenantId === TENANT_A && id === USER ? { id: USER, email: LEARNER_EMAIL, role: 'LEARNER', fullName: 'Abdullah' } : null),
+    findById: async (tenantId, id) =>
+      tenantId === TENANT_A && id === USER
+        ? { id: USER, email: LEARNER_EMAIL, role: 'LEARNER', fullName: 'Abdullah' }
+        : tenantId === TENANT_A && id === ADMIN
+          ? { id: ADMIN, email: 'admin@rukn.test', role: 'TENANT_ADMIN', fullName: 'Noura' }
+          : null,
     createLearner: async (_t, data) => {
       if (data.email === LEARNER_EMAIL || emails.has(data.email)) throw Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['tenant_id', 'email'] } });
       if (data.phone && phones.has(data.phone)) throw Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['tenant_id', 'phone'] } });
@@ -262,6 +267,11 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     enrollTrainees: async (_t, _a, _c, drafts) => drafts.map((d) => ({ email: d.email, fullName: d.fullName, status: 'enrolled' as const, accountCreated: true })),
     listCourseRoster: async () => [],
     deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
+    deleteCourseWithEnrollments: async (t, _a, id) => {
+      if (t !== TENANT_A || !ownedCourses.has(id)) return null;
+      audits.push(`course.deleted_with_enrollments:${id}`);
+      return { enrollments: 1, certificates: 0 };
+    },
     updateTrainer: async (t, _a, id) => t === TENANT_A && ownedTrainers.has(id),
     deleteTrainer: async (t, _a, id) => (t !== TENANT_A ? 'not_found' : id === TRAINER ? 'in_use' : 'not_found'),
     updateTrainee: async (t, _a, id) => t === TENANT_A && id === USER,
@@ -350,6 +360,12 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
         repository: providerRepo,
         hashPassword: async (p) => `hashed:${p}`,
         meetings: opts.meetings,
+        approvals: {
+          request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
+            otp.service.requestOwnerApproval({ tenantId, tenantLabel: tenantName, requester: { id: requesterId }, purpose: 'course_delete', subjectId: courseId, details }),
+          confirm: ({ tenantId, requesterId, courseId, challengeId, code }) =>
+            otp.service.confirmOwnerApproval({ tenantId, requesterId, purpose: 'course_delete', subjectId: courseId, challengeId, code }),
+        },
         clock: () => new Date('2026-10-23T00:00:00Z'),
       }),
       catalog,

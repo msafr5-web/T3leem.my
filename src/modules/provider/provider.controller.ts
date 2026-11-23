@@ -313,6 +313,21 @@ export class ProviderController {
     res.json(ok({ zoom: this.provider.meetingsAutomated }));
   };
 
+  /** Course with trainees: asks the platform owner for approval. The code goes to the owner's e-mail, never to this response. */
+  requestCourseDeletion = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { tenant } = requireAuthContext(req);
+    const r = await this.provider.requestCourseDeletion(tenantOf(req), actorOf(req), tenant.name, req.params.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(202).json(ok({ challenge_id: r.challengeId, expires_in: r.expiresInSec }));
+  };
+
+  deleteCourseApproved = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const b = req.body as Body;
+    const s = await this.provider.deleteCourseApproved(tenantOf(req), actorOf(req), req.params.id, String(b.challenge_id), String(b.code));
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok({ enrollments: s.enrollments, certificates: s.certificates }));
+  };
+
   deleteCourse = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     await this.provider.deleteCourse(tenantOf(req), actorOf(req), req.params.id);
     res.status(204).end();

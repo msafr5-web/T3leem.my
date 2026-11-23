@@ -17,6 +17,8 @@ export interface OtpChallenge {
   email: string;
   userId: string | null;
   purpose: string;
+  /** What the code approves (e.g. a course id); null for sign-in codes. */
+  subjectId: string | null;
   codeHash: string;
   attempts: number;
   sends: number;
@@ -25,13 +27,13 @@ export interface OtpChallenge {
 }
 
 export interface OtpRepository {
-  create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }): Promise<string>;
+  create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date; subjectId?: string | null }): Promise<string>;
   find(id: string): Promise<OtpChallenge | null>;
   bumpAttempts(id: string): Promise<void>;
   setCode(id: string, codeHash: string, expiresAt: Date, isResend: boolean): Promise<void>;
   /** True only for the caller that really removed the row: a code signs in once. */
   delete(id: string): Promise<boolean>;
-  countRecent(tenantId: string | null, email: string, since: Date): Promise<number>;
+  countRecent(tenantId: string | null, email: string, since: Date, purpose?: string): Promise<number>;
   purgeExpired(before: Date): Promise<void>;
 }
 
@@ -49,6 +51,24 @@ export interface UserLookup {
 
 /** What a one-time code is for: signing in, or confirming a signed-in user before a sensitive step. */
 export type OtpPurpose = 'login' | 'health_exam';
+
+/**
+ * Approvals that need the PLATFORM OWNER's consent: the code is e-mailed to the owner addresses (not to the requester),
+ * and the requester must come back with it. It is bound to one subject (the course), one academy and one requester.
+ */
+export type ApprovalPurpose = 'course_delete';
+
+export interface ApprovalRequest {
+  tenantId: string;
+  tenantLabel: string;
+  requester: { id: string };
+  purpose: ApprovalPurpose;
+  subjectId: string;
+  /** What the owner is being asked to approve, one line each (shown in the e-mail). */
+  details: string[];
+}
+
+export const APPROVAL = { maxRequestsPerHour: 5 } as const;
 
 interface Deps {
   repository: OtpRepository;
@@ -209,6 +229,71 @@ export class OtpLoginService {
     if (c.attempts >= OTP.maxAttempts) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong codes; request a new one');
     const expected = Buffer.from(c.codeHash, 'hex');
     const given = hashCode(code.trim(), c.id);
+    if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+      await this.deps.repository.bumpAttempts(c.id);
+      throw INVALID();
+    }
+    if (!(await this.deps.repository.delete(c.id))) throw INVALID();
+  }
+
+  /**
+   * Asks the platform owner to approve a destructive step. A code is e-mailed to every owner address; the requester never
+   * sees it and has to get it from the owner. Several requests in an hour are refused, so the owners' inboxes are safe.
+   */
+  async requestOwnerApproval(req: ApprovalRequest): Promise<{ challengeId: string; expiresInSec: number }> {
+    this.assertAvailable();
+    const requester = await this.deps.users.findById(req.tenantId, req.requester.id);
+    if (!requester) throw HttpError.unauthorized();
+    const owners = this.deps.platformAdmins;
+    if (owners.length === 0) throw new HttpError(503, 'APPROVAL_UNAVAILABLE', 'No platform owner address is configured');
+    const now = this.now();
+    if ((await this.deps.repository.countRecent(req.tenantId, requester.email, new Date(now.getTime() - 3_600_000), req.purpose)) >= APPROVAL.maxRequestsPerHour) {
+      throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many approval requests; try again later');
+    }
+    await this.deps.repository.purgeExpired(new Date(now.getTime() - 24 * 3_600_000));
+
+    const code = this.generateCode();
+    const expiresAt = new Date(now.getTime() + OTP.ttlMs);
+    const id = await this.deps.repository.create({ tenantId: req.tenantId, email: requester.email, userId: requester.id, purpose: req.purpose, expiresAt, subjectId: req.subjectId });
+    await this.deps.repository.setCode(id, hashCode(code, id).toString('hex'), expiresAt, false);
+
+    const minutes = OTP.ttlMs / 60_000;
+    const who = requester.fullName?.trim() || requester.email;
+    const text = [
+      `طلب موافقة على حذف دورة في «${req.tenantLabel}»`,
+      '',
+      ...req.details.map((d) => `• ${d}`),
+      `• الطالب: ${who} (${requester.email})`,
+      '',
+      `رمز الموافقة: ${code}`,
+      `الرمز صالح ${minutes} دقائق ويُستعمل مرة واحدة.`,
+      '',
+      'أعطِ الرمز لمدير الأكاديمية فقط إن وافقت. الحذف نهائي ويشمل تسجيلات المتدربين وتقدمهم وشهاداتهم. إن لم تتوقع هذا الطلب فتجاهل الرسالة ولن يحدث شيء.',
+    ].join('\n');
+    const html = `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;line-height:1.8;color:#1b1f1e;max-width:520px">
+<p><strong>طلب موافقة على حذف دورة في «${escapeHtml(req.tenantLabel)}»</strong></p>
+<ul>${req.details.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}<li>الطالب: ${escapeHtml(who)} (<span dir="ltr">${escapeHtml(requester.email)}</span>)</li></ul>
+<p>رمز الموافقة:</p>
+<p dir="ltr" style="font-size:32px;letter-spacing:8px;font-weight:700;background:#f1f5f4;border-radius:8px;padding:12px 16px;text-align:center">${escapeHtml(code)}</p>
+<p style="color:#555">الرمز صالح ${minutes} دقائق ويُستعمل مرة واحدة.</p>
+<p style="color:#a32727">أعطِ الرمز لمدير الأكاديمية فقط إن وافقت. الحذف نهائي ويشمل تسجيلات المتدربين وتقدمهم وشهاداتهم. إن لم تتوقع هذا الطلب فتجاهل الرسالة ولن يحدث شيء.</p></div>`;
+    try {
+      await Promise.all(owners.map((to) => this.deps.mailer.send({ to, subject: `طلب موافقة على حذف دورة — ${req.tenantLabel}`, text, html })));
+    } catch (err) {
+      await this.deps.repository.delete(id);
+      if (err instanceof HttpError) throw err;
+      throw new HttpError(503, 'MAIL_UNAVAILABLE', 'The approval code could not be e-mailed to the platform owner');
+    }
+    return { challengeId: id, expiresInSec: OTP.ttlMs / 1000 };
+  }
+
+  /** Consumes the owner's code: it must be for THIS academy, requester, purpose and subject, unexpired, and is single-use. */
+  async confirmOwnerApproval(args: { tenantId: string; requesterId: string; purpose: ApprovalPurpose; subjectId: string; challengeId: string; code: string }): Promise<void> {
+    const c = await this.deps.repository.find(args.challengeId);
+    if (!c || c.tenantId !== args.tenantId || c.userId !== args.requesterId || c.purpose !== args.purpose || c.subjectId !== args.subjectId || c.expiresAt <= this.now()) throw INVALID();
+    if (c.attempts >= OTP.maxAttempts) throw new HttpError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong codes; ask for a new approval');
+    const expected = Buffer.from(c.codeHash, 'hex');
+    const given = hashCode(args.code.trim(), c.id);
     if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
       await this.deps.repository.bumpAttempts(c.id);
       throw INVALID();

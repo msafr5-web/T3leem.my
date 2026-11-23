@@ -35,7 +35,7 @@ export class PrismaAuthRepository implements AuthRepository {
 
 /** One-time sign-in codes (platform-level table; every query names the tenant explicitly). */
 export class PrismaOtpRepository implements OtpRepository {
-  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }): Promise<string> {
+  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date; subjectId?: string | null }): Promise<string> {
     const created = await prisma.loginOtp.create({ data: { ...row, codeHash: '' }, select: { id: true } });
     return created.id;
   }
@@ -59,8 +59,8 @@ export class PrismaOtpRepository implements OtpRepository {
     return (await prisma.loginOtp.deleteMany({ where: { id } })).count === 1;
   }
 
-  countRecent(tenantId: string | null, email: string, since: Date): Promise<number> {
-    return prisma.loginOtp.count({ where: { tenantId, email, createdAt: { gte: since } } });
+  countRecent(tenantId: string | null, email: string, since: Date, purpose?: string): Promise<number> {
+    return prisma.loginOtp.count({ where: { tenantId, email, createdAt: { gte: since }, ...(purpose ? { purpose } : {}) } });
   }
 
   async purgeExpired(before: Date): Promise<void> {

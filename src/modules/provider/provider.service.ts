@@ -15,6 +15,7 @@ import type {
   OverviewRow,
   PlanInput,
   PlanRow,
+  CourseDeletionSummary,
   CourseRosterRow,
   TraineeEnrollmentResult,
   TraineeRow,
@@ -22,11 +23,19 @@ import type {
   TrainerRow,
 } from './provider.types';
 
+/** The platform owner's approval for deleting a course that has trainees: a code is e-mailed to the owner, not to the admin. */
+export interface CourseDeleteApprovals {
+  request(input: { tenantId: string; tenantName: string; requesterId: string; courseId: string; details: string[] }): Promise<{ challengeId: string; expiresInSec: number }>;
+  confirm(input: { tenantId: string; requesterId: string; courseId: string; challengeId: string; code: string }): Promise<void>;
+}
+
 export interface ProviderServiceDeps {
   repository: ProviderRepository;
   hashPassword: (password: string) => Promise<string>;
   /** Live-meeting provider (Zoom). Defaults to manual links. */
   meetings?: MeetingScheduler;
+  /** Owner approval for deleting courses with trainees. Without it such deletions are unavailable. */
+  approvals?: CourseDeleteApprovals;
   clock?: () => Date;
 }
 
@@ -236,6 +245,30 @@ export class ProviderService {
       HttpError.notFound('COURSE_NOT_FOUND', 'Course not found'),
       HttpError.conflict('COURSE_HAS_ENROLLMENTS', 'This course has enrolled trainees; unpublish it instead of deleting'),
     );
+  }
+
+  /** Step 1 for a course WITH trainees: asks the platform owner to approve (a code goes to the owner's e-mail). */
+  async requestCourseDeletion(tenantId: string, actor: Actor, tenantName: string, courseId: string): Promise<{ challengeId: string; expiresInSec: number }> {
+    if (!this.deps.approvals) throw new HttpError(503, 'APPROVAL_UNAVAILABLE', 'Owner approval is not available');
+    const course = await this.getCourse(tenantId, courseId);
+    if (course.enrollmentCount === 0) throw HttpError.unprocessable('NO_APPROVAL_NEEDED', 'This course has no trainees; delete it directly');
+    return this.deps.approvals.request({
+      tenantId,
+      tenantName,
+      requesterId: actor.userId,
+      courseId,
+      details: [`الدورة: ${course.title}`, `عدد المتدربين المسجلين: ${course.enrollmentCount}`],
+    });
+  }
+
+  /** Step 2: the owner's code (bound to this course and this admin) unlocks the deletion of the course and its trainees' records. */
+  async deleteCourseApproved(tenantId: string, actor: Actor, courseId: string, challengeId: string, code: string): Promise<CourseDeletionSummary> {
+    if (!this.deps.approvals) throw new HttpError(503, 'APPROVAL_UNAVAILABLE', 'Owner approval is not available');
+    await this.getCourse(tenantId, courseId); // 404 before a code is spent
+    await this.deps.approvals.confirm({ tenantId, requesterId: actor.userId, courseId, challengeId, code });
+    const summary = await this.deps.repository.deleteCourseWithEnrollments(tenantId, actor, courseId);
+    if (!summary) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    return summary;
   }
 
   async updateTrainer(tenantId: string, actor: Actor, id: string, input: Partial<TrainerInput>): Promise<void> {

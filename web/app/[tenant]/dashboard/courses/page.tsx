@@ -3,8 +3,8 @@ import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
 import { courseTypeLabel, formatDate, formatNumber, formatSar } from '@/lib/format';
 
-export default async function DashboardCourses({ params }: { params: Promise<{ tenant: string }> }) {
-  const { tenant: slug } = await params;
+export default async function DashboardCourses({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<{ deleted?: string }> }) {
+  const [{ tenant: slug }, { deleted }] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
   const courses = await admin.courses(slug, token);
   const base = `/${slug}/dashboard/courses`;
@@ -18,6 +18,12 @@ export default async function DashboardCourses({ params }: { params: Promise<{ t
         </div>
         <Link href={`${base}/new`} className="btn btn-primary">دورة جديدة</Link>
       </div>
+
+      {deleted === '1' && (
+        <p className="notice ok" role="status">
+          تم حذف الدورة نهائياً مع تسجيلات متدربيها بموافقة مالك المنصة.
+        </p>
+      )}
 
       <div className="table-wrap">
         {courses.length === 0 ? (

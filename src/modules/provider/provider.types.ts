@@ -115,6 +115,12 @@ export interface AttendanceRow {
   isTrainee: boolean;
 }
 
+/** What an owner-approved deletion of a course with trainees removed (counts only). */
+export interface CourseDeletionSummary {
+  enrollments: number;
+  certificates: number;
+}
+
 /** Outcome of a delete that may be blocked by dependent records. */
 export type DeleteOutcome = 'deleted' | 'not_found' | 'in_use';
 

@@ -181,8 +181,11 @@ model LoginOtp {
   tenantId   String?  @map("tenant_id") @db.Uuid
   email      String
   userId     String?  @map("user_id") @db.Uuid
-  // 'login' signs in; 'health_exam' only confirms the signed-in user before an exam.
+  // 'login' signs in; 'health_exam' only confirms the signed-in user before an exam;
+  // 'course_delete' is the platform owner's approval for deleting a course that has trainees.
   purpose    String   @default("login")
+  // What the code approves (the course id for 'course_delete'); null for sign-in codes.
+  subjectId  String?  @map("subject_id") @db.Uuid
   codeHash   String   @map("code_hash")
   attempts   Int      @default(0)
   sends      Int      @default(1)

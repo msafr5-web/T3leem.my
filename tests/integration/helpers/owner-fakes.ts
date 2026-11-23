@@ -6,13 +6,13 @@ import { CapturingMailer } from './registration-fakes';
 
 export class InMemoryOtpRepository implements OtpRepository {
   rows = new Map<string, OtpChallenge>();
-  created: { tenantId: string | null; email: string; at: Date }[] = [];
+  created: { id: string; tenantId: string | null; email: string; at: Date }[] = [];
   clock: () => Date = () => new Date();
 
-  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date }) {
+  async create(row: { tenantId: string | null; email: string; userId: string | null; purpose: string; expiresAt: Date; subjectId?: string | null }) {
     const id = randomUUID();
-    this.rows.set(id, { id, ...row, codeHash: '', attempts: 0, sends: 1, lastSentAt: new Date(0) });
-    this.created.push({ tenantId: row.tenantId, email: row.email, at: this.clock() });
+    this.rows.set(id, { id, subjectId: null, ...row, codeHash: '', attempts: 0, sends: 1, lastSentAt: new Date(0) });
+    this.created.push({ id, tenantId: row.tenantId, email: row.email, at: this.clock() });
     return id;
   }
   async find(id: string) {
@@ -30,8 +30,8 @@ export class InMemoryOtpRepository implements OtpRepository {
   async delete(id: string) {
     return this.rows.delete(id);
   }
-  async countRecent(tenantId: string | null, email: string, since: Date) {
-    return this.created.filter((c) => c.tenantId === tenantId && c.email === email && c.at >= since).length;
+  async countRecent(tenantId: string | null, email: string, since: Date, purpose?: string) {
+    return this.created.filter((c) => c.tenantId === tenantId && c.email === email && c.at >= since && (!purpose || this.rows.get(c.id)?.purpose === purpose)).length;
   }
   async purgeExpired() {}
 }

@@ -157,7 +157,18 @@ export function createServerApp(): ServerApp {
   const catalogService = new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT);
   const meetings = zoomCredentials ? new ZoomMeetingScheduler(zoomCredentials) : new ManualMeetingScheduler();
   if (!zoomCredentials) logger.info('Zoom not configured: virtual classroom links are entered manually');
-  const providerService = new ProviderService({ repository: new PrismaProviderRepository(), hashPassword, meetings });
+  const providerService = new ProviderService({
+    repository: new PrismaProviderRepository(),
+    hashPassword,
+    meetings,
+    // Deleting a course that has trainees needs the platform owner's consent: a code goes to the owner address(es).
+    approvals: {
+      request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
+        otpLogin.requestOwnerApproval({ tenantId, tenantLabel: tenantName, requester: { id: requesterId }, purpose: 'course_delete', subjectId: courseId, details }),
+      confirm: ({ tenantId, requesterId, courseId, challengeId, code }) =>
+        otpLogin.confirmOwnerApproval({ tenantId, requesterId, purpose: 'course_delete', subjectId: courseId, challengeId, code }),
+    },
+  });
 
   const media = createVideoService({ inlineFallback: true });
   const learningService = new LearningService({ repository: new PrismaLearningRepository(), publicWebUrl: env.PUBLIC_WEB_URL });
