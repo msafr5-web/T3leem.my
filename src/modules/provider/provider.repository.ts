@@ -21,6 +21,7 @@ import type {
   CourseRosterRow,
   CourseDeletionSummary,
   TraineeEnrollmentResult,
+  TrainerAccountOutcome,
 } from './provider.types';
 import { loadCourseSchedules, orderPlanByStart, type CourseSchedule } from './plan-schedule';
 import type { TraineeDraft } from './trainee.excel';
@@ -67,6 +68,13 @@ export interface ProviderRepository {
    */
   enrollTrainees(tenantId: string, actor: Actor, courseId: string, drafts: TraineeDraft[], passwordHash: string): Promise<TraineeEnrollmentResult[]>;
   listCourseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]>;
+  /**
+   * Gives the trainer a login: an INSTRUCTOR account on the trainer's e-mail, linked to the trainer. The account has no usable
+   * password (the trainer signs in with an e-mailed code). Nothing is changed unless everything checks out.
+   */
+  grantTrainerAccount(tenantId: string, actor: Actor, trainerId: string, passwordHash: string): Promise<TrainerAccountOutcome>;
+  /** Removes the trainer's login (the trainer record and their courses stay). 'no_account' = nothing to remove. */
+  revokeTrainerAccount(tenantId: string, actor: Actor, trainerId: string): Promise<'revoked' | 'not_found' | 'no_account'>;
   /** Start and day lengths of the dated recorded courses among these ids (for the plan overlap rule). */
   loadCourseSchedules(tenantId: string, courseIds: string[]): Promise<CourseSchedule[]>;
 }
@@ -509,6 +517,35 @@ export class PrismaProviderRepository implements ProviderRepository {
       await tx.virtualClassroom.delete({ where: { id } });
       await audit(tx, tenantId, actor, 'classroom.deleted', 'virtual_classroom', id, { title: room.title });
       return true;
+    });
+  }
+
+  grantTrainerAccount(tenantId: string, actor: Actor, trainerId: string, passwordHash: string): Promise<TrainerAccountOutcome> {
+    return withTenantTransaction(tenantId, async (tx): Promise<TrainerAccountOutcome> => {
+      const trainer = await tx.trainer.findFirst({ where: { tenantId, id: trainerId }, select: { id: true, fullName: true, email: true, userId: true } });
+      if (!trainer) return { kind: 'not_found' };
+      if (trainer.userId) return { kind: 'already_has_account' };
+      const email = trainer.email?.trim().toLowerCase();
+      if (!email) return { kind: 'no_email' };
+      // One person, one account per academy: an address that already signs in (as a trainee, admin...) cannot also become a trainer.
+      if ((await tx.user.count({ where: { tenantId, email } })) > 0) return { kind: 'email_taken' };
+      const user = await tx.user.create({ data: { tenantId, email, fullName: trainer.fullName, passwordHash, role: 'INSTRUCTOR' }, select: { id: true } });
+      await tx.trainer.update({ where: { id: trainer.id }, data: { userId: user.id } });
+      await audit(tx, tenantId, actor, 'trainer.account_granted', 'trainer', trainer.id, { userId: user.id });
+      return { kind: 'granted', email, fullName: trainer.fullName };
+    });
+  }
+
+  revokeTrainerAccount(tenantId: string, actor: Actor, trainerId: string): Promise<'revoked' | 'not_found' | 'no_account'> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const trainer = await tx.trainer.findFirst({ where: { tenantId, id: trainerId }, select: { id: true, userId: true, user: { select: { email: true, role: true } } } });
+      if (!trainer) return 'not_found';
+      // Only an INSTRUCTOR login is removed here; never an admin's or a trainee's account that happens to be linked.
+      if (!trainer.userId || trainer.user?.role !== 'INSTRUCTOR') return 'no_account';
+      await tx.loginOtp.deleteMany({ where: { tenantId, OR: [{ userId: trainer.userId }, { email: trainer.user.email }] } });
+      await tx.user.delete({ where: { id: trainer.userId } }); // the trainer record keeps existing: its user link is cleared by the database
+      await audit(tx, tenantId, actor, 'trainer.account_revoked', 'trainer', trainer.id, {});
+      return 'revoked';
     });
   }
 

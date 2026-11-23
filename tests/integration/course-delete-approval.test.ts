@@ -27,9 +27,11 @@ describe('owner approval for deleting a course with trainees (HTTP)', () => {
     const res = await post(app, `/courses/${COURSE}/delete-request`);
     expect(res.status).toBe(202);
     expect(Object.keys(res.body.data).sort()).toEqual(['challenge_id', 'expires_in']);
-    expect(JSON.stringify(res.body)).not.toMatch(/\d{6}/);
-
     const mails = otpOf(app).mailer.sent;
+    // The code itself is nowhere in the response (a random challenge id may legitimately contain digits, so look for THE code).
+    expect(otpOf(app).mailer.lastCode).toMatch(/^\d{6}$/);
+    expect(JSON.stringify(res.body)).not.toContain(otpOf(app).mailer.lastCode);
+
     expect(mails.map((m) => m.to)).toEqual([OWNER]);
     expect(mails[0]?.text).toContain('Rukn'); // the academy
     expect(mails[0]?.text).toContain('عدد المتدربين المسجلين: 1');

@@ -87,6 +87,9 @@ export function buildProviderAdminRouter(controller: ProviderController, jwt: Jw
     controller.updateTrainer,
   );
   router.delete('/trainers/:id', uuidParam, validate, controller.deleteTrainer);
+  // A login for the trainer (e-mailed code, no password) and the page it opens; removing it keeps the trainer and their courses.
+  router.post('/trainers/:id/account', uuidParam, validate, controller.grantTrainerAccount);
+  router.delete('/trainers/:id/account', uuidParam, validate, controller.revokeTrainerAccount);
 
   router.get('/trainees', controller.listTrainees);
   router.post(

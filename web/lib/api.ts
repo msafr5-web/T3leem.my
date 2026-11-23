@@ -177,6 +177,18 @@ export interface EnrollmentOutcome {
   results: { email: string; full_name: string; status: 'enrolled' | 'already_enrolled' | 'error'; account_created: boolean; message: string | null }[];
 }
 
+/** The trainer's own page (a trainer login: INSTRUCTOR). */
+export interface TrainerOverview {
+  trainer: { id: string; full_name: string; specialization: string | null; bio: string | null };
+  courses: { id: string; title: string; type: 'RECORDED' | 'LIVE'; is_published: boolean; enrollment_count: number; starts_at: string | null; duration_days: number | null }[];
+  sessions: { id: string; title: string; starts_at: string; duration_minutes: number; provider: MeetingProvider; join_url: string | null; course_title: string | null }[];
+}
+
+export interface TrainerCourseTrainees {
+  title: string;
+  trainees: { name: string; progress_percentage: number; completion_status: 'ENROLLED' | 'COMPLETED'; status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED'; enrolled_at: string }[];
+}
+
 /** Result of adding several recorded courses at once: one line per YouTube link. */
 export interface RecordedBatchOutcome {
   plan_linked: boolean;
@@ -826,6 +838,12 @@ export const owner = {
   overview: (token: string) => platformApi<OwnerOverview>('/owner/overview', { token }),
   plans: (token: string) => platformApi<OwnerPlan[]>('/owner/plans', { token }),
   trainees: (token: string, tenantId: string) => platformApi<OwnerTrainee[]>(`/owner/tenants/${encodeURIComponent(tenantId)}/trainees`, { token }),
+};
+
+/** Trainer page reads (the trainer's own token; never cached). */
+export const trainerPortal = {
+  overview: (slug: string, token: string) => api<TrainerOverview>(slug, '/trainer/overview', { token }),
+  courseTrainees: (slug: string, token: string, courseId: string) => api<TrainerCourseTrainees>(slug, `/trainer/courses/${encodeURIComponent(courseId)}/trainees`, { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */

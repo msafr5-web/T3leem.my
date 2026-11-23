@@ -91,7 +91,7 @@ export async function verifyLoginCodeAction(slug: string, challenge: { id: strin
     return err instanceof ApiError && err.code === 'OTP_INVALID' ? { challenge, error: otpMessage(err) } : { error: otpMessage(err) };
   }
   // redirect() throws, so it must stay outside the try block.
-  const fallback = role === 'TENANT_ADMIN' ? `/${slug}/dashboard` : `/${slug}`;
+  const fallback = role === 'TENANT_ADMIN' ? `/${slug}/dashboard` : role === 'INSTRUCTOR' ? `/${slug}/trainer` : `/${slug}`;
   redirect(next ? safeNextPath(slug, next) : fallback);
 }
 

@@ -51,6 +51,8 @@ export default async function TenantLayout({ children, params }: { children: Rea
                 {showHealth && <Link href={`/${slug}/health`} className="btn btn-ghost">الشهادات الصحية</Link>}
                 {session.role === 'TENANT_ADMIN' ? (
                   <Link href={`/${slug}/dashboard`} className="btn btn-primary">لوحة التحكم</Link>
+                ) : session.role === 'INSTRUCTOR' ? (
+                  <Link href={`/${slug}/trainer`} className="btn btn-primary">لوحة المدرب</Link>
                 ) : (
                   <Link href={`/${slug}/my`} className="btn btn-primary">دوراتي</Link>
                 )}

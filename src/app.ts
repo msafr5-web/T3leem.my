@@ -26,6 +26,8 @@ import { buildOwnerRouter } from './modules/platform/owner.routes';
 import type { OwnerService } from './modules/platform/owner.service';
 import type { OtpLoginService } from './modules/auth/otp.service';
 import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/lms/recorded/recorded.routes';
+import { buildTrainerPortalRouter } from './modules/provider/trainer-portal.routes';
+import type { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
 import type { CourseController } from './modules/lms/courses/course.controller';
@@ -56,6 +58,7 @@ export interface AppDependencies {
   courseController: CourseController;
   enrollmentController: EnrollmentController;
   providerController: ProviderController;
+  trainerPortalService: TrainerPortalService;
   providerDirectory: ProviderDirectorySource;
   brandingService: BrandingService;
   registrationService: RegistrationService;
@@ -131,6 +134,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/courses', buildCourseRouter(deps.courseController));
   api.use('/enrollments', buildEnrollmentRouter(deps.enrollmentController, deps.jwt));
   api.use('/me', buildLearnerRouter(deps.learningService, deps.videoService, deps.jwt));
+  api.use('/trainer', buildTrainerPortalRouter(deps.trainerPortalService, deps.jwt));
   api.use('/me', buildRecordedLearnerRouter(deps.recordedCourseService, deps.jwt));
   api.use('/me', buildQuizLearnerRouter(deps.quizService, deps.jwt));
   api.use('/me', buildHealthLearnerRouter(deps.healthService, deps.jwt));

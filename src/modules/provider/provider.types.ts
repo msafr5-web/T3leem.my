@@ -115,6 +115,14 @@ export interface AttendanceRow {
   isTrainee: boolean;
 }
 
+/** Result of giving a trainer a login account. */
+export type TrainerAccountOutcome =
+  | { kind: 'granted'; email: string; fullName: string }
+  | { kind: 'not_found' }
+  | { kind: 'already_has_account' }
+  | { kind: 'no_email' }
+  | { kind: 'email_taken' };
+
 /** What an owner-approved deletion of a course with trainees removed (counts only). */
 export interface CourseDeletionSummary {
   enrollments: number;

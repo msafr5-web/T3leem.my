@@ -119,6 +119,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_TRAINEES: 'في بيانات الموظفين أخطاء. صحّحها ثم أعد المحاولة (لم يُسجَّل أحد).',
   INVALID_TRAINEE_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُسجَّل أحد).',
   NO_TRAINEES: 'أضف موظفاً واحداً على الأقل.',
+  TRAINER_HAS_ACCOUNT: 'لهذا المدرب حساب دخول بالفعل.',
+  TRAINER_HAS_NO_ACCOUNT: 'ليس لهذا المدرب حساب دخول.',
+  TRAINER_EMAIL_REQUIRED: 'أضف بريد المدرب أولاً (من تعديل المدرب) ثم امنحه حساب دخول.',
+  TRAINER_NOT_FOUND: 'المدرب غير موجود.',
   PLAN_NOT_FOUND: 'الخطة غير موجودة.',
   OTP_INVALID: 'الرمز غير صحيح أو انتهت صلاحيته. اطلب موافقة جديدة إن لزم.',
   TOO_MANY_ATTEMPTS: 'محاولات كثيرة. اطلب موافقة جديدة بعد قليل.',
@@ -928,4 +932,34 @@ export async function addRecordedBatchAction(slug: string, planId: string, _prev
     if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') state.error = 'تحقق من الروابط والسعر: كل رابط على سطر مستقل ورابط YouTube صحيح.';
     return state;
   }
+}
+
+
+// ---- A trainer's login: an e-mailed code, no password ---------------------------------------------------------
+
+/** Gives the trainer a login and invites them by e-mail; the page then says whether the invitation went out. */
+export async function grantTrainerAccountAction(slug: string, trainerId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(trainerId)) return { error: 'طلب غير صالح.' };
+  let invited = false;
+  try {
+    invited = (await api<{ invited: boolean }>(slug, `/admin/trainers/${encodeURIComponent(trainerId)}/account`, { method: 'POST', token })).invited;
+  } catch (err) {
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/trainers`);
+  redirect(`/${slug}/dashboard/trainers?account=${invited ? 'invited' : 'created'}`);
+}
+
+/** Removes the trainer's login; the trainer and their courses stay. */
+export async function revokeTrainerAccountAction(slug: string, trainerId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(trainerId)) return { error: 'طلب غير صالح.' };
+  try {
+    await api(slug, `/admin/trainers/${encodeURIComponent(trainerId)}/account`, { method: 'DELETE', token });
+  } catch (err) {
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/trainers`);
+  redirect(`/${slug}/dashboard/trainers?account=revoked`);
 }

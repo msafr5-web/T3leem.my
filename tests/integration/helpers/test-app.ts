@@ -41,6 +41,7 @@ import { PrismaCostRepository } from '../../../src/modules/institute/cost/cost.r
 import { CostService } from '../../../src/modules/institute/cost/cost.service';
 import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
+import { TrainerPortalService } from '../../../src/modules/provider/trainer-portal.service';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 
 export const TENANT_A = '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11';
@@ -80,6 +81,15 @@ export const testCipher = new FieldCipher(Buffer.alloc(32, 7).toString('base64')
 export const TRAINER = 'f1000000-0000-4000-8000-000000000001';
 export const ADMIN = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a00';
 export const adminToken = sign({ sub: ADMIN, tid: TENANT_A, role: 'TENANT_ADMIN' });
+/** A trainer's login (INSTRUCTOR) linked to the trainer record TRAINER, and one that is not linked to any trainer. */
+export const INSTRUCTOR = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a03';
+export const INSTRUCTOR_NO_PROFILE = 'a4b8f2b0-1111-4c2a-8a33-9f2c1d0e7a04';
+export const instructorToken = sign({ sub: INSTRUCTOR, tid: TENANT_A, role: 'INSTRUCTOR' });
+export const unlinkedInstructorToken = sign({ sub: INSTRUCTOR_NO_PROFILE, tid: TENANT_A, role: 'INSTRUCTOR' });
+/** Trainers for the login-account routes: no login yet / no e-mail / e-mail already used by another account. */
+export const TRAINER_NEW = 'f1000000-0000-4000-8000-000000000002';
+export const TRAINER_NO_EMAIL = 'f1000000-0000-4000-8000-000000000003';
+export const TRAINER_EMAIL_TAKEN = 'f1000000-0000-4000-8000-000000000004';
 
 const pmp: CourseDetailRow = {
   id: COURSE,
@@ -190,6 +200,8 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   const audits: string[] = [];
   const ownedCourses = new Set([COURSE]);
   const ownedTrainers = new Set([TRAINER]);
+  const granted = new Set<string>();
+  const revoked = new Set<string>();
   const trainer = { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant', email: 'k@a.test', hasAccount: true, courseCount: 1 };
   const plan = {
     id: 'a2000000-0000-4000-8000-000000000001',
@@ -268,6 +280,20 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     listCourseRoster: async () => [],
     deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
     loadCourseSchedules: async () => [],
+    grantTrainerAccount: async (t, _a, id) => {
+      if (t !== TENANT_A) return { kind: 'not_found' };
+      if (id === TRAINER_NEW && !granted.has(id)) return granted.add(id), audits.push(`trainer.account_granted:${id}`), { kind: 'granted', email: 'new.trainer@a.test', fullName: 'Sara' };
+      if (id === TRAINER || id === TRAINER_NEW) return { kind: 'already_has_account' };
+      if (id === TRAINER_NO_EMAIL) return { kind: 'no_email' };
+      if (id === TRAINER_EMAIL_TAKEN) return { kind: 'email_taken' };
+      return { kind: 'not_found' };
+    },
+    revokeTrainerAccount: async (t, _a, id) => {
+      if (t !== TENANT_A) return 'not_found';
+      if (id === TRAINER && !revoked.has(id)) return revoked.add(id), 'revoked';
+      if (id === TRAINER || id === TRAINER_NEW || id === TRAINER_NO_EMAIL || id === TRAINER_EMAIL_TAKEN) return 'no_account';
+      return 'not_found';
+    },
     deleteCourseWithEnrollments: async (t, _a, id) => {
       if (t !== TENANT_A || !ownedCourses.has(id)) return null;
       audits.push(`course.deleted_with_enrollments:${id}`);
@@ -356,11 +382,24 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     ownerService: owner.service,
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
+    trainerPortalService: new TrainerPortalService({
+      findTrainerByUser: async (t, userId) => (t === TENANT_A && userId === INSTRUCTOR ? { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant' } : null),
+      listCourses: async (_t, trainerId) =>
+        trainerId === TRAINER ? [{ id: COURSE, title: 'PMP', type: 'RECORDED' as const, isPublished: true, enrollmentCount: 2, startsAt: new Date('2027-01-10T16:00:00Z'), durationDays: 5 }] : [],
+      listUpcomingSessions: async (_t, trainerId) =>
+        trainerId === TRAINER ? [{ id: classroom.id, title: classroom.title, startsAt: classroom.startsAt, durationMinutes: 90, provider: 'ZOOM' as const, joinUrl: classroom.joinUrl, courseTitle: 'PMP' }] : [],
+      listCourseTrainees: async (_t, trainerId, courseId) =>
+        trainerId === TRAINER && courseId === COURSE
+          ? { title: 'PMP', trainees: [{ name: 'Abdullah', progress: 40, completionStatus: 'ENROLLED' as const, status: 'ACTIVE' as const, enrolledAt: new Date('2026-10-24T00:00:00Z') }] }
+          : null,
+    }),
     providerController: new ProviderController(
       new ProviderService({
         repository: providerRepo,
         hashPassword: async (p) => `hashed:${p}`,
         meetings: opts.meetings,
+        mailer: otp.mailer,
+        webUrl: 'https://t3leem.my',
         approvals: {
           request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
             otp.service.requestOwnerApproval({ tenantId, tenantLabel: tenantName, requester: { id: requesterId }, purpose: 'course_delete', subjectId: courseId, details }),

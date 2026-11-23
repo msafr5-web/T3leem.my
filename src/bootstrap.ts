@@ -43,6 +43,8 @@ import { PrismaMediaRepository } from './modules/lms/media/media.repository';
 import { FfmpegTranscoder } from './modules/lms/media/transcoder';
 import { VideoService, type MediaToken, type VideoJob, type VideoQueue } from './modules/lms/media/video.service';
 import { ProviderController } from './modules/provider/provider.controller';
+import { PrismaTrainerPortalRepository } from './modules/provider/trainer-portal.repository';
+import { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import { PrismaProviderRepository } from './modules/provider/provider.repository';
 import { ProviderService } from './modules/provider/provider.service';
 import { BrandingService } from './modules/tenant/branding.service';
@@ -161,6 +163,8 @@ export function createServerApp(): ServerApp {
     repository: new PrismaProviderRepository(),
     hashPassword,
     meetings,
+    mailer,
+    webUrl: env.PUBLIC_WEB_URL,
     // Deleting a course that has trainees needs the platform owner's consent: a code goes to the owner address(es).
     approvals: {
       request: ({ tenantId, tenantName, requesterId, courseId, details }) =>
@@ -189,6 +193,7 @@ export function createServerApp(): ServerApp {
     ownerService: new OwnerService({ repository: new PrismaOwnerRepository(prisma), mailer, webUrl: env.PUBLIC_WEB_URL, invalidate: (t) => invalidateTenant(t.id) }),
     courseController: new CourseController(catalogService),
     enrollmentController: new EnrollmentController(checkoutService),
+    trainerPortalService: new TrainerPortalService(new PrismaTrainerPortalRepository()),
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
     brandingService: new BrandingService(tenantRepository, (id) => invalidateTenant(id)),

@@ -344,6 +344,17 @@ export class ProviderController {
     res.json(ok({ id: req.params.id }));
   };
 
+  grantTrainerAccount = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { tenant } = requireAuthContext(req);
+    const r = await this.provider.grantTrainerAccount(tenantOf(req), actorOf(req), { name: tenant.name, slug: tenant.slug }, req.params.id);
+    res.status(201).json(ok({ invited: r.invited }));
+  };
+
+  revokeTrainerAccount = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    await this.provider.revokeTrainerAccount(tenantOf(req), actorOf(req), req.params.id);
+    res.status(204).end();
+  };
+
   deleteTrainer = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     await this.provider.deleteTrainer(tenantOf(req), actorOf(req), req.params.id);
     res.status(204).end();

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { logger } from '../../shared/services/logger';
+import type { Mailer } from '../../shared/services/mailer';
 import { HttpError } from '../../shared/utils/http-error';
 import { ManualMeetingScheduler, type MeetingScheduler } from '../live/meeting-scheduler';
 import { firstPairConflict, scheduleConflictError } from './plan-schedule';
@@ -37,6 +38,10 @@ export interface ProviderServiceDeps {
   meetings?: MeetingScheduler;
   /** Owner approval for deleting courses with trainees. Without it such deletions are unavailable. */
   approvals?: CourseDeleteApprovals;
+  /** Sends the invitation when a trainer is given a login. Without it the account is still created, just not announced. */
+  mailer?: Mailer;
+  /** Public site address for the link in that invitation. */
+  webUrl?: string;
   clock?: () => Date;
 }
 
@@ -271,6 +276,48 @@ export class ProviderService {
     const summary = await this.deps.repository.deleteCourseWithEnrollments(tenantId, actor, courseId);
     if (!summary) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
     return summary;
+  }
+
+  /**
+   * Gives a trainer a login (an e-mailed code, no password) and invites them. Returns whether the invitation e-mail went out;
+   * a failed e-mail does not undo the account: the trainer can still sign in from the academy's login page.
+   */
+  async grantTrainerAccount(tenantId: string, actor: Actor, academy: { name: string; slug: string }, trainerId: string): Promise<{ invited: boolean }> {
+    // The account has no usable password: the trainer signs in with the code e-mailed to them.
+    const passwordHash = await this.deps.hashPassword(randomBytes(32).toString('hex'));
+    const r = await this.deps.repository.grantTrainerAccount(tenantId, actor, trainerId, passwordHash);
+    if (r.kind === 'not_found') throw HttpError.notFound('TRAINER_NOT_FOUND', 'Trainer not found');
+    if (r.kind === 'already_has_account') throw HttpError.conflict('TRAINER_HAS_ACCOUNT', 'This trainer already has a login');
+    if (r.kind === 'no_email') throw HttpError.unprocessable('TRAINER_EMAIL_REQUIRED', 'Add the trainer\'s e-mail first');
+    if (r.kind === 'email_taken') throw HttpError.conflict('EMAIL_TAKEN', 'This e-mail already has an account in this academy');
+    return { invited: await this.invite(r.email, r.fullName, academy) };
+  }
+
+  async revokeTrainerAccount(tenantId: string, actor: Actor, trainerId: string): Promise<void> {
+    const r = await this.deps.repository.revokeTrainerAccount(tenantId, actor, trainerId);
+    if (r === 'not_found') throw HttpError.notFound('TRAINER_NOT_FOUND', 'Trainer not found');
+    if (r === 'no_account') throw HttpError.conflict('TRAINER_HAS_NO_ACCOUNT', 'This trainer has no login to remove');
+  }
+
+  private async invite(email: string, name: string, academy: { name: string; slug: string }): Promise<boolean> {
+    if (!this.deps.mailer || !this.deps.webUrl) return false;
+    const url = `${this.deps.webUrl.replace(/\/$/, '')}/${academy.slug}/login`;
+    const text = [
+      `مرحباً ${name}،`,
+      '',
+      `أُضيفت لك حسابات دخول مدرّب في أكاديمية «${academy.name}».`,
+      `للدخول افتح: ${url}`,
+      'واكتب بريدك الإلكتروني هذا، فيصلك رمز من ٦ أرقام تكتبه ثم تدخل إلى صفحتك (دوراتك وجلساتك المباشرة ومتدربوك). لا حاجة لكلمة مرور.',
+    ].join('\n');
+    const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+    const html = `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;line-height:1.8;color:#1b1f1e;max-width:520px"><p>مرحباً ${esc(name)}،</p><p>أُضيف لك حساب دخول مدرّب في أكاديمية <strong>«${esc(academy.name)}»</strong>.</p><p><a href="${esc(url)}">${esc(url)}</a></p><p>اكتب بريدك الإلكتروني هذا في صفحة الدخول، فيصلك رمز من ٦ أرقام تكتبه ثم تدخل إلى صفحتك (دوراتك وجلساتك المباشرة ومتدربوك). لا حاجة لكلمة مرور.</p></div>`;
+    try {
+      await this.deps.mailer.send({ to: email, subject: `دعوة دخول مدرّب — ${academy.name}`, text, html });
+      return true;
+    } catch (err) {
+      logger.warn('Trainer invitation e-mail failed', { err: err instanceof Error ? err.message : err });
+      return false;
+    }
   }
 
   async updateTrainer(tenantId: string, actor: Actor, id: string, input: Partial<TrainerInput>): Promise<void> {
