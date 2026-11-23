@@ -97,6 +97,7 @@ main { padding-block: 40px 72px; }
 .btn-block { width: 100%; }
 .btn-danger { background: transparent; color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { background: var(--danger-soft); }
+.btn-sm { padding: 4px 12px; font-size: 14px; min-height: 0; }
 .danger-zone { border-color: var(--danger); }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 

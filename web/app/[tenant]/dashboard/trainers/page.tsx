@@ -1,9 +1,10 @@
 import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { createTrainerAction } from '@/lib/admin-actions';
+import { createTrainerAction, deleteAction } from '@/lib/admin-actions';
 import { formatNumber } from '@/lib/format';
 import Link from 'next/link';
 import { AdminForm } from '../admin-form';
+import { DeleteButton } from '../delete-button';
 import { TrainerFields } from './trainer-fields';
 
 export default async function DashboardTrainers({ params }: { params: Promise<{ tenant: string }> }) {
@@ -13,9 +14,12 @@ export default async function DashboardTrainers({ params }: { params: Promise<{ 
 
   return (
     <>
-      <div className="stack" style={{ gap: 4 }}>
-        <h1 style={{ fontSize: 28 }}>المدربون</h1>
-        <p className="muted small">أضف مدربيك بأسمائهم وتخصصاتهم. لا يحتاج المدرب حساب دخول ليُسند إليه دورات أو فصول.</p>
+      <div className="page-head">
+        <div className="stack" style={{ gap: 4 }}>
+          <h1 style={{ fontSize: 28 }}>المدربون</h1>
+          <p className="muted small">أضف مدربيك بأسمائهم وتخصصاتهم. لا يحتاج المدرب حساب دخول ليُسند إليه دورات أو فصول.</p>
+        </div>
+        <a href="#add-trainer" className="btn btn-primary">+ إضافة مدرب</a>
       </div>
 
       <div className="table-wrap">
@@ -30,6 +34,7 @@ export default async function DashboardTrainers({ params }: { params: Promise<{ 
                 <th>البريد</th>
                 <th className="num">الدورات</th>
                 <th>حساب دخول</th>
+                <th>إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -43,6 +48,21 @@ export default async function DashboardTrainers({ params }: { params: Promise<{ 
                   <td className="ltr">{t.email ?? '—'}</td>
                   <td className="num">{formatNumber(t.course_count)}</td>
                   <td>{t.has_account ? <span className="badge ok">نعم</span> : <span className="badge">لا</span>}</td>
+                  <td>
+                    <div className="row-actions">
+                      <Link href={`/${slug}/dashboard/trainers/${t.id}`} className="btn btn-ghost btn-sm">تعديل</Link>
+                      {t.course_count === 0 ? (
+                        <DeleteButton
+                          action={deleteAction.bind(null, slug, 'trainers', t.id)}
+                          label="حذف"
+                          size="sm"
+                          confirmText={`حذف ${t.full_name} نهائياً؟`}
+                        />
+                      ) : (
+                        <span className="small muted" title="انقل دوراته إلى مدرب آخر ثم احذفه">مسند إلى دورات</span>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

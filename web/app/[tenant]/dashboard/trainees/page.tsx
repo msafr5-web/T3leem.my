@@ -1,9 +1,10 @@
 import { admin } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
-import { createTraineeAction } from '@/lib/admin-actions';
+import { createTraineeAction, deleteAction } from '@/lib/admin-actions';
 import { formatDate, formatNumber } from '@/lib/format';
 import Link from 'next/link';
 import { AdminForm } from '../admin-form';
+import { DeleteButton } from '../delete-button';
 
 export default async function DashboardTrainees({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
@@ -12,9 +13,12 @@ export default async function DashboardTrainees({ params }: { params: Promise<{ 
 
   return (
     <>
-      <div className="stack" style={{ gap: 4 }}>
-        <h1 style={{ fontSize: 28 }}>المتدربون</h1>
-        <p className="muted small">متدربو أكاديميتك فقط. يمكنك إنشاء حساب لمتدرب وإرسال بيانات الدخول إليه.</p>
+      <div className="page-head">
+        <div className="stack" style={{ gap: 4 }}>
+          <h1 style={{ fontSize: 28 }}>المتدربون</h1>
+          <p className="muted small">متدربو أكاديميتك فقط. يمكنك إنشاء حساب لمتدرب وإرسال بيانات الدخول إليه.</p>
+        </div>
+        <a href="#add-trainee" className="btn btn-primary">+ إضافة متدرب</a>
       </div>
 
       <div className="table-wrap">
@@ -28,6 +32,7 @@ export default async function DashboardTrainees({ params }: { params: Promise<{ 
                 <th>البريد</th>
                 <th className="num">الدورات المسجلة</th>
                 <th>تاريخ الانضمام</th>
+                <th>إجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -39,6 +44,21 @@ export default async function DashboardTrainees({ params }: { params: Promise<{ 
                   <td className="ltr">{t.email}</td>
                   <td className="num">{formatNumber(t.enrollment_count)}</td>
                   <td className="small muted">{formatDate(t.created_at)}</td>
+                  <td>
+                    <div className="row-actions">
+                      <Link href={`/${slug}/dashboard/trainees/${t.id}`} className="btn btn-ghost btn-sm">تعديل</Link>
+                      {t.enrollment_count === 0 ? (
+                        <DeleteButton
+                          action={deleteAction.bind(null, slug, 'trainees', t.id)}
+                          label="حذف"
+                          size="sm"
+                          confirmText={`حذف حساب ${t.full_name ?? t.email} نهائياً؟`}
+                        />
+                      ) : (
+                        <span className="small muted" title="الفواتير والتسجيلات يجب أن تبقى">مسجّل في دورات</span>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

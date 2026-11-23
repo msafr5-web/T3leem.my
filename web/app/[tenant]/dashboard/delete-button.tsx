@@ -9,11 +9,13 @@ export function DeleteButton({
   label,
   confirmText,
   variant = 'danger',
+  size = 'md',
 }: {
   action: (prev: AdminFormState) => Promise<AdminFormState>;
   label: string;
   confirmText: string;
   variant?: 'danger' | 'primary';
+  size?: 'sm' | 'md';
 }) {
   const [state, formAction, pending] = useActionState(action, {});
 
@@ -27,7 +29,7 @@ export function DeleteButton({
       style={{ gap: 8 }}
     >
       <div>
-        <button type="submit" className={`btn ${variant === 'danger' ? 'btn-danger' : 'btn-primary'}`} disabled={pending}>
+        <button type="submit" className={`btn ${variant === 'danger' ? 'btn-danger' : 'btn-primary'}${size === 'sm' ? ' btn-sm' : ''}`} disabled={pending}>
           {pending ? 'جارٍ التنفيذ…' : label}
         </button>
       </div>
