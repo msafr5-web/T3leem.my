@@ -200,6 +200,7 @@ export interface AttendanceCourseSummary {
   held: number;
   trainees: number;
   passing_trainees: number;
+  attendance_percent: number | null;
 }
 
 export interface AttendanceReport {
@@ -219,6 +220,30 @@ export interface AttendanceReport {
     adjusted: Record<string, string>;
     summary: { held: number; attended: number; late: number; absent: number; percent: number | null; passes: boolean | null };
   }[];
+}
+
+/** The platform owner's attendance view across academies. */
+export interface OwnerAttendanceAcademy {
+  id: string;
+  slug: string;
+  name: string;
+  courses: number;
+  held_sessions: number;
+  trainees: number;
+  passing_trainees: number;
+  attendance_percent: number | null;
+  late_slots: number;
+  absent_slots: number;
+}
+
+export interface OwnerAttendanceSummary {
+  totals: { academies: number; courses: number; held_sessions: number; trainees: number; passing_trainees: number; attendance_percent: number | null };
+  academies: OwnerAttendanceAcademy[];
+}
+
+export interface OwnerAttendanceCourses {
+  academy: { id: string; slug: string; name: string };
+  courses: { course_id: string; title: string; sessions: number; held: number; trainees: number; passing_trainees: number; attendance_percent: number | null }[];
 }
 
 /** The trainer's own page (a trainer login: INSTRUCTOR). */
@@ -884,6 +909,8 @@ export const owner = {
   overview: (token: string) => platformApi<OwnerOverview>('/owner/overview', { token }),
   plans: (token: string) => platformApi<OwnerPlan[]>('/owner/plans', { token }),
   trainees: (token: string, tenantId: string) => platformApi<OwnerTrainee[]>(`/owner/tenants/${encodeURIComponent(tenantId)}/trainees`, { token }),
+  attendance: (token: string) => platformApi<OwnerAttendanceSummary>('/owner/attendance', { token }),
+  attendanceCourses: (token: string, tenantId: string) => platformApi<OwnerAttendanceCourses>(`/owner/tenants/${encodeURIComponent(tenantId)}/attendance`, { token }),
 };
 
 /** Trainer page reads (the trainer's own token; never cached). */

@@ -124,7 +124,7 @@ describe("the admin's attendance report", () => {
     clock.now = at('12:00'); // the live session is over, the recorded day is still to come
 
     const list = await as(app, adminToken).get('/admin/attendance/courses');
-    expect(list.body.data).toEqual([{ course_id: COURSE, title: 'PMP', sessions: 2, held: 1, trainees: 1, passing_trainees: 1 }]);
+    expect(list.body.data).toEqual([{ course_id: COURSE, title: 'PMP', sessions: 2, held: 1, trainees: 1, passing_trainees: 1, attendance_percent: 100 }]);
 
     const rep = await as(app, adminToken).get(`/admin/attendance/courses/${COURSE}`);
     expect(rep.status).toBe(200);

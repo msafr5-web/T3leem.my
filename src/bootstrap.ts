@@ -46,6 +46,7 @@ import { ProviderController } from './modules/provider/provider.controller';
 import { PrismaTrainerPortalRepository } from './modules/provider/trainer-portal.repository';
 import { PrismaAttendanceRepository } from './modules/attendance/attendance.repository';
 import { AttendanceService } from './modules/attendance/attendance.service';
+import { OwnerAttendanceService } from './modules/attendance/attendance.owner';
 import { AttendanceSweeper } from './modules/attendance/attendance.sweeper';
 import { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import { PrismaProviderRepository } from './modules/provider/provider.repository';
@@ -211,6 +212,7 @@ export function createServerApp(): ServerApp {
     enrollmentController: new EnrollmentController(checkoutService),
     trainerPortalService: new TrainerPortalService(new PrismaTrainerPortalRepository()),
     attendanceService,
+    ownerAttendance: new OwnerAttendanceService({ repository: attendanceRepository, service: attendanceService }),
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
     brandingService: new BrandingService(tenantRepository, (id) => invalidateTenant(id)),

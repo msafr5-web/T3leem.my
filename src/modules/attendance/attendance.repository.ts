@@ -79,7 +79,7 @@ export interface AttendanceRepository {
   claimAlert(tenantId: string, session: SessionDescriptor, absentCount: number): Promise<AlertClaim | null>;
   markAlertSent(tenantId: string, alertId: string, at: Date): Promise<void>;
   /** Academies that are live (not suspended), for the periodic sweep. */
-  activeTenants(): Promise<{ id: string; name: string }[]>;
+  activeTenants(): Promise<{ id: string; name: string; slug: string }[]>;
   /** Looks up a trainee by e-mail among the active enrollments of the session's course (Zoom gives an e-mail, not a user id). */
   findTraineeByEmail(tenantId: string, courseId: string, email: string): Promise<string | null>;
 }
@@ -354,8 +354,8 @@ export class PrismaAttendanceRepository implements AttendanceRepository {
     });
   }
 
-  async activeTenants(): Promise<{ id: string; name: string }[]> {
-    return prisma.tenant.findMany({ where: { status: 'ACTIVE' }, select: { id: true, name: true } });
+  async activeTenants(): Promise<{ id: string; name: string; slug: string }[]> {
+    return prisma.tenant.findMany({ where: { status: 'ACTIVE' }, select: { id: true, name: true, slug: true } });
   }
 
   findTraineeByEmail(tenantId: string, courseId: string, email: string): Promise<string | null> {

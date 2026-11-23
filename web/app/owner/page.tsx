@@ -136,9 +136,14 @@ export default async function OwnerPage() {
           <h1>لوحة إدارة المنصة</h1>
           <p className="muted">الأكاديميات والاشتراكات والباقات والصلاحيات.</p>
         </div>
-        <a className="btn btn-ghost" href={supportLink()} target="_blank" rel="noopener noreferrer">
-          واتساب الدعم <span dir="ltr">{SUPPORT_PHONE}</span>
-        </a>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Link className="btn btn-primary" href="/owner/attendance">
+            تقرير الحضور
+          </Link>
+          <a className="btn btn-ghost" href={supportLink()} target="_blank" rel="noopener noreferrer">
+            واتساب الدعم <span dir="ltr">{SUPPORT_PHONE}</span>
+          </a>
+        </div>
       </div>
 
       <div className="hl-stats" role="group" aria-label="ملخص">

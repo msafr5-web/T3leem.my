@@ -92,7 +92,7 @@ export function buildAttendanceAdminRouter(service: AttendanceService, jwt: JwtV
   router.get('/attendance/courses', ...admin, async (req: Request, res: Response) => {
     const rows = await service.overview(requireAuthContext(req).tenantId);
     res.setHeader('Cache-Control', 'no-store');
-    res.json(ok(rows.map((r) => ({ course_id: r.courseId, title: r.title, sessions: r.sessions, held: r.held, trainees: r.trainees, passing_trainees: r.passingTrainees }))));
+    res.json(ok(rows.map((r) => ({ course_id: r.courseId, title: r.title, sessions: r.sessions, held: r.held, trainees: r.trainees, passing_trainees: r.passingTrainees, attendance_percent: r.heldSlots === 0 ? null : Math.round((r.attendedSlots / r.heldSlots) * 1000) / 10 }))));
   });
 
   router.get('/attendance/courses/:id', ...admin, uuid, validate, async (req: Request<{ id: string }>, res: Response) => {

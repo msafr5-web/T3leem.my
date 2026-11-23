@@ -33,6 +33,7 @@ export default async function DashboardAttendance({ params }: { params: Promise<
                 <th className="num">المنعقدة</th>
                 <th className="num">المتدربون</th>
                 <th className="num">يجتازون الحضور</th>
+                <th className="num">نسبة الحضور</th>
               </tr>
             </thead>
             <tbody>
@@ -45,6 +46,7 @@ export default async function DashboardAttendance({ params }: { params: Promise<
                   <td className="num">{formatNumber(c.held)}</td>
                   <td className="num">{formatNumber(c.trainees)}</td>
                   <td className="num">{c.held === 0 ? '—' : `${formatNumber(c.passing_trainees)} من ${formatNumber(c.trainees)}`}</td>
+                  <td className="num">{c.attendance_percent === null ? '—' : `${formatNumber(c.attendance_percent)}٪`}</td>
                 </tr>
               ))}
             </tbody>

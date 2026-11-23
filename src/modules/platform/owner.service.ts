@@ -117,6 +117,11 @@ export class OwnerService {
     };
   }
 
+  /** One academy (404 when it does not exist). */
+  tenant(id: string): Promise<OwnerTenantRow> {
+    return this.load(id);
+  }
+
   private async load(id: string): Promise<OwnerTenantRow> {
     const t = await this.deps.repository.getTenant(id);
     if (!t) throw HttpError.notFound('TENANT_NOT_FOUND', 'Academy not found');

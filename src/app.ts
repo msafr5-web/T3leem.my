@@ -29,6 +29,7 @@ import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/
 import { buildTrainerPortalRouter } from './modules/provider/trainer-portal.routes';
 import { buildAttendanceAdminRouter, buildAttendanceLearnerRouter } from './modules/attendance/attendance.routes';
 import type { AttendanceService } from './modules/attendance/attendance.service';
+import type { OwnerAttendanceService } from './modules/attendance/attendance.owner';
 import type { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
@@ -62,6 +63,7 @@ export interface AppDependencies {
   providerController: ProviderController;
   trainerPortalService: TrainerPortalService;
   attendanceService: AttendanceService;
+  ownerAttendance: OwnerAttendanceService;
   providerDirectory: ProviderDirectorySource;
   brandingService: BrandingService;
   registrationService: RegistrationService;
@@ -117,7 +119,7 @@ export function createApp(deps: AppDependencies): Express {
   });
 
   // Platform-wide endpoints (no tenant). Mounted BEFORE the tenant-scoped router.
-  app.use('/api/v1/platform/owner', deps.rateLimiter, buildOwnerRouter(deps.otpLogin, deps.ownerService, deps.jwt, deps.loginRateLimiter));
+  app.use('/api/v1/platform/owner', deps.rateLimiter, buildOwnerRouter(deps.otpLogin, deps.ownerService, deps.jwt, deps.loginRateLimiter, deps.ownerAttendance));
   app.use(
     '/api/v1/platform',
     deps.rateLimiter,

@@ -40,6 +40,20 @@ export interface MySession {
   result: AttendanceStatus | null;
 }
 
+/** One course in the overview (admin and owner lists). A "slot" is one trainee in one held session. */
+export interface CourseAttendanceRow {
+  courseId: string;
+  title: string;
+  sessions: number;
+  held: number;
+  trainees: number;
+  passingTrainees: number;
+  /** Held slots in total / how many of them were attended (present or late) / how many were late. */
+  heldSlots: number;
+  attendedSlots: number;
+  lateSlots: number;
+}
+
 export interface ReportSession {
   kind: SessionKind;
   ref: string;
@@ -163,13 +177,23 @@ export class AttendanceService {
   // ---------- the academy's admin ----------
 
   /** Every course that has sessions, with how many sessions were held and how many trainees reach the pass mark. */
-  async overview(tenantId: string): Promise<{ courseId: string; title: string; sessions: number; held: number; trainees: number; passingTrainees: number }[]> {
+  async overview(tenantId: string): Promise<CourseAttendanceRow[]> {
     const sessions = await this.deps.repository.listSessions(tenantId, new Date(0), new Date('2100-01-01T00:00:00Z'));
     const courseIds = [...new Set(sessions.map((s) => s.courseId))];
-    const rows = [];
+    const rows: CourseAttendanceRow[] = [];
     for (const id of courseIds) {
       const r = await this.courseReport(tenantId, id);
-      rows.push({ courseId: id, title: r.course.title, sessions: r.sessions.length, held: r.sessions.filter((s) => s.held).length, trainees: r.trainees.length, passingTrainees: r.passingTrainees });
+      rows.push({
+        courseId: id,
+        title: r.course.title,
+        sessions: r.sessions.length,
+        held: r.sessions.filter((s) => s.held).length,
+        trainees: r.trainees.length,
+        passingTrainees: r.passingTrainees,
+        heldSlots: r.trainees.reduce((n, t) => n + t.summary.held, 0),
+        attendedSlots: r.trainees.reduce((n, t) => n + t.summary.attended, 0),
+        lateSlots: r.trainees.reduce((n, t) => n + t.summary.late, 0),
+      });
     }
     return rows.sort((a, b) => a.title.localeCompare(b.title, 'ar'));
   }

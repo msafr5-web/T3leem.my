@@ -43,6 +43,7 @@ import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import { TrainerPortalService } from '../../../src/modules/provider/trainer-portal.service';
 import { buildAttendanceFakes } from './attendance-fakes';
+import { OwnerAttendanceService } from '../../../src/modules/attendance/attendance.owner';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 
 export const TENANT_A = '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11';
@@ -395,6 +396,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
     attendanceService: attendance.service,
+    ownerAttendance: new OwnerAttendanceService({ repository: attendance.repository, service: attendance.service }),
     trainerPortalService: new TrainerPortalService({
       findTrainerByUser: async (t, userId) => (t === TENANT_A && userId === INSTRUCTOR ? { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant' } : null),
       listCourses: async (_t, trainerId) =>

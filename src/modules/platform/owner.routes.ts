@@ -6,6 +6,7 @@ import type { JwtVerifyOptions } from '../../shared/middlewares/auth.middleware'
 import { ok } from '../../shared/utils/api-response';
 import { HttpError } from '../../shared/utils/http-error';
 import { tokenJson } from '../auth/auth.controller';
+import type { OwnerAttendanceService } from '../attendance/attendance.owner';
 import { otpCodeRules, otpEmailRule } from '../auth/auth.routes';
 import { PLATFORM_OWNER_ID, PLATFORM_TENANT_ID, type OtpLoginService } from '../auth/otp.service';
 import { FEATURES, type Features, type OwnerService, type OwnerTenantRow, type PlanRow } from './owner.service';
@@ -65,7 +66,7 @@ const planInput = (b: Record<string, unknown>) => ({ name: String(b.name).trim()
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
 
 /** Mounted under /api/v1/platform/owner: the platform owner's sign-in and console. */
-export function buildOwnerRouter(otp: OtpLoginService, service: OwnerService, jwtOpts: JwtVerifyOptions, loginLimiter: RequestHandler): Router {
+export function buildOwnerRouter(otp: OtpLoginService, service: OwnerService, jwtOpts: JwtVerifyOptions, loginLimiter: RequestHandler, attendance: OwnerAttendanceService): Router {
   const router = Router();
   const noStore = (res: Response) => res.setHeader('Cache-Control', 'no-store');
 
@@ -177,6 +178,56 @@ export function buildOwnerRouter(otp: OtpLoginService, service: OwnerService, jw
       );
     },
   );
+
+  // ---- attendance across academies (read-only: the owner sees what each academy's admin sees) ----
+  router.get('/attendance', guard, async (_req: Request, res: Response) => {
+    const { academies, totals } = await attendance.summary();
+    noStore(res);
+    res.json(
+      ok({
+        totals: {
+          academies: totals.academies,
+          courses: totals.courses,
+          held_sessions: totals.heldSessions,
+          trainees: totals.trainees,
+          passing_trainees: totals.passingTrainees,
+          attendance_percent: totals.attendancePercent,
+        },
+        academies: academies.map((a) => ({
+          id: a.tenantId,
+          slug: a.slug,
+          name: a.name,
+          courses: a.courses,
+          held_sessions: a.heldSessions,
+          trainees: a.trainees,
+          passing_trainees: a.passingTrainees,
+          attendance_percent: a.attendancePercent,
+          late_slots: a.lateSlots,
+          absent_slots: a.absentSlots,
+        })),
+      }),
+    );
+  });
+
+  router.get('/tenants/:id/attendance', guard, uuid('id'), validate, async (req: Request<{ id: string }>, res: Response) => {
+    const t = await service.tenant(req.params.id);
+    const rows = await attendance.courses(t.id);
+    noStore(res);
+    res.json(
+      ok({
+        academy: { id: t.id, slug: t.slug, name: t.name },
+        courses: rows.map((r) => ({
+          course_id: r.courseId,
+          title: r.title,
+          sessions: r.sessions,
+          held: r.held,
+          trainees: r.trainees,
+          passing_trainees: r.passingTrainees,
+          attendance_percent: r.heldSlots === 0 ? null : Math.round((r.attendedSlots / r.heldSlots) * 1000) / 10,
+        })),
+      }),
+    );
+  });
 
   router.get('/plans', guard, async (_req: Request, res: Response) => {
     noStore(res);

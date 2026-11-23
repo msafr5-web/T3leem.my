@@ -85,7 +85,7 @@ export function buildAttendanceFakes(ids: { tenant: string; course: string; cour
     adminContacts: async () => [{ email: 'admin@rukn.test', name: 'Noura' }],
     claimAlert: async () => null,
     markAlertSent: async () => undefined,
-    activeTenants: async () => [{ id: ids.tenant, name: 'Rukn' }],
+    activeTenants: async () => [{ id: ids.tenant, name: 'Rukn', slug: 'rukn' }],
     findTraineeByEmail: async (_t, _c, email) => (email === 'learner@rukn.test' ? ids.learner : null),
   };
 
