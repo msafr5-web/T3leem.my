@@ -5,7 +5,7 @@ import { logger } from './shared/services/logger';
 
 /** Long-running process entry (local dev, Docker/K8s). Vercel uses api/index.ts instead. */
 async function main(): Promise<void> {
-  const { app, close, attendanceSweeper } = createServerApp();
+  const { app, close, attendanceSweeper, weeklyReport } = createServerApp();
 
   await prisma.$connect();
   const server = app.listen(env.PORT, () =>
@@ -29,6 +29,25 @@ async function main(): Promise<void> {
     };
     setInterval(() => void sweep(), 60_000).unref();
     setTimeout(() => void sweep(), 10_000).unref();
+  }
+
+  // Weekly digest to each academy's admins (Sunday morning, Riyadh). Checked every 10 minutes; a table key makes it send once.
+  // Turn off with ATTENDANCE_WEEKLY=off.
+  if (process.env.ATTENDANCE_WEEKLY !== 'off') {
+    let sending = false;
+    const send = async (): Promise<void> => {
+      if (sending) return;
+      sending = true;
+      try {
+        await weeklyReport.runOnce();
+      } catch (err) {
+        logger.warn('Weekly attendance report failed', { err: err instanceof Error ? err.message : err });
+      } finally {
+        sending = false;
+      }
+    };
+    setInterval(() => void send(), 10 * 60_000).unref();
+    setTimeout(() => void send(), 30_000).unref();
   }
 
   // Graceful shutdown for zero-downtime K8s rollouts: stop accepting, drain, then close pools.

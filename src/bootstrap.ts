@@ -47,6 +47,7 @@ import { PrismaTrainerPortalRepository } from './modules/provider/trainer-portal
 import { PrismaAttendanceRepository } from './modules/attendance/attendance.repository';
 import { AttendanceService } from './modules/attendance/attendance.service';
 import { OwnerAttendanceService } from './modules/attendance/attendance.owner';
+import { PrismaWeeklyClaims, WeeklyReportSender } from './modules/attendance/attendance.weekly';
 import { PrismaBadgeRepository } from './modules/badge/badge.repository';
 import { BadgeService } from './modules/badge/badge.service';
 import { AttendanceSweeper } from './modules/attendance/attendance.sweeper';
@@ -74,6 +75,7 @@ export interface ServerApp {
   app: Express;
   /** Runs the once-a-minute attendance sweep (late alerts, settling finished sessions). Started by the long-running server only. */
   attendanceSweeper: AttendanceSweeper;
+  weeklyReport: WeeklyReportSender;
   /** Releases pools and connections (graceful shutdown). */
   close(): Promise<void>;
 }
@@ -177,6 +179,7 @@ export function createServerApp(): ServerApp {
     },
   });
   const attendanceSweeper = new AttendanceSweeper({ repository: attendanceRepository, service: attendanceService, mailer });
+  const weeklyReport = new WeeklyReportSender({ repository: attendanceRepository, claims: new PrismaWeeklyClaims(), mailer });
 
   const providerService = new ProviderService({
     repository: new PrismaProviderRepository(),
@@ -262,6 +265,7 @@ export function createServerApp(): ServerApp {
   return {
     app,
     attendanceSweeper,
+    weeklyReport,
     async close() {
       await Promise.allSettled([queueProducer?.close(), media.close(), prisma.$disconnect(), redis?.quit(), bullConnection?.quit()]);
     },

@@ -1338,3 +1338,15 @@ model TraineeBadge {
   @@index([tenantId])
   @@map("trainee_badges")
 }
+
+// One weekly attendance digest per academy per week (week_start = the Sunday, Riyadh date); unique key = idempotent sending.
+model AttendanceWeeklyReport {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  weekStart String    @map("week_start")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt    DateTime? @map("sent_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, weekStart])
+  @@map("attendance_weekly_reports")
+}
