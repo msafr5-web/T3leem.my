@@ -119,6 +119,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_TRAINEES: 'في بيانات الموظفين أخطاء. صحّحها ثم أعد المحاولة (لم يُسجَّل أحد).',
   INVALID_TRAINEE_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُسجَّل أحد).',
   NO_TRAINEES: 'أضف موظفاً واحداً على الأقل.',
+  INVALID_SETTINGS: 'إحدى القيم خارج المدى المسموح. راجع الحدود المذكورة تحت كل حقل.',
+  NOTE_REQUIRED: 'اكتب سبب القرار (٣ أحرف على الأقل).',
+  SESSION_NOT_STARTED: 'يمكن تعديل الحضور بعد بدء الجلسة فقط.',
+  SESSION_NOT_FOUND: 'الجلسة غير موجودة في هذه الدورة.',
+  TRAINEE_NOT_FOUND: 'هذا الشخص ليس متدرباً فعّالاً في الدورة.',
+  NO_ADJUSTMENT: 'لا يوجد قرار يدوي للتراجع عنه.',
   TRAINER_HAS_ACCOUNT: 'لهذا المدرب حساب دخول بالفعل.',
   TRAINER_HAS_NO_ACCOUNT: 'ليس لهذا المدرب حساب دخول.',
   TRAINER_EMAIL_REQUIRED: 'أضف بريد المدرب أولاً (من تعديل المدرب) ثم امنحه حساب دخول.',
@@ -962,4 +968,52 @@ export async function revokeTrainerAccountAction(slug: string, trainerId: string
   }
   revalidatePath(`/${slug}/dashboard/trainers`);
   redirect(`/${slug}/dashboard/trainers?account=revoked`);
+}
+
+
+// ---- Attendance: per-course rules and the admin's manual decisions -----------------------------------------------
+
+/** Saves the three numbers (an empty field = the default). */
+export async function saveAttendanceSettingsAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(courseId)) return { error: 'طلب غير صالح.' };
+  const body = { late_percent: str(form, 'late_percent'), leave_grace_minutes: str(form, 'leave_grace_minutes'), pass_percent: str(form, 'pass_percent') };
+  try {
+    await api(slug, `/admin/attendance/courses/${encodeURIComponent(courseId)}/settings`, { method: 'PUT', token, body });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') return { error: ERROR_MESSAGES.INVALID_SETTINGS };
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/attendance/${courseId}`);
+  redirect(`/${slug}/dashboard/attendance/${courseId}?saved=settings`);
+}
+
+/** The admin decides one trainee's status for one session, with a reason. */
+export async function adjustAttendanceAction(slug: string, courseId: string, _prev: AdminFormState, form: FormData): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(courseId)) return { error: 'طلب غير صالح.' };
+  const [kind, ref] = str(form, 'session').split(':');
+  const body = { kind, ref, user_id: str(form, 'user_id'), status: str(form, 'status'), note: str(form, 'note') };
+  if (!kind || !ref || !body.user_id) return { error: 'اختر المتدرب والجلسة.' };
+  try {
+    await api(slug, `/admin/attendance/courses/${encodeURIComponent(courseId)}/records`, { method: 'PUT', token, body });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') return { error: ERROR_MESSAGES.NOTE_REQUIRED };
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/attendance/${courseId}`);
+  redirect(`/${slug}/dashboard/attendance/${courseId}?saved=adjusted`);
+}
+
+/** Takes a manual decision back, so the automatic result applies again. */
+export async function revertAttendanceAction(slug: string, courseId: string, kind: 'LIVE' | 'DAY', ref: string, userId: string, _prev: AdminFormState): Promise<AdminFormState> {
+  const token = await adminToken(slug);
+  if (!ID_RE.test(courseId) || !ID_RE.test(ref) || !ID_RE.test(userId)) return { error: 'طلب غير صالح.' };
+  try {
+    await api(slug, `/admin/attendance/courses/${encodeURIComponent(courseId)}/records`, { method: 'DELETE', token, body: { kind, ref, user_id: userId } });
+  } catch (err) {
+    return describeError(err);
+  }
+  revalidatePath(`/${slug}/dashboard/attendance/${courseId}`);
+  redirect(`/${slug}/dashboard/attendance/${courseId}?saved=reverted`);
 }

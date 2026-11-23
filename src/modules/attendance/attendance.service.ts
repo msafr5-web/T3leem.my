@@ -6,6 +6,10 @@ import {
   evaluate,
   finalizeDueAt,
   lateAfter,
+  mergeRules,
+  RULE_LIMITS,
+  type AttendanceRules,
+  type AttendanceSettings,
   type AttendanceStatus,
   type CourseAttendance,
   type SessionKind,
@@ -52,11 +56,16 @@ export interface ReportTrainee {
   adminEnrolled: boolean;
   /** Status per session ref. */
   statuses: Record<string, AttendanceStatus>;
+  /** Sessions where the admin decided the status by hand: session ref -> the reason. */
+  adjusted: Record<string, string>;
   summary: CourseAttendance;
 }
 
 export interface CourseReport {
   course: { id: string; title: string };
+  /** The rules in force for this course, and the settings the admin saved for it (null = default). */
+  rules: AttendanceRules;
+  settings: AttendanceSettings;
   sessions: ReportSession[];
   trainees: ReportTrainee[];
   /** Share of trainees who reach the pass mark over the sessions held so far (null when nothing is held). */
@@ -146,7 +155,7 @@ export class AttendanceService {
     const evidence = await this.deps.repository.loadEvidence(tenantId, session, trainees.map((t) => t.userId));
     const finalized = now >= finalizeDueAt(session);
     for (const t of trainees) {
-      const outcome = evaluate(session.kind, { startsAt: session.startsAt, endsAt: session.endsAt }, evidence.get(t.userId) ?? { otpVerifiedAt: null, intervals: [] }, now);
+      const outcome = evaluate(session.kind, { startsAt: session.startsAt, endsAt: session.endsAt, rules: session.rules }, evidence.get(t.userId) ?? { otpVerifiedAt: null, intervals: [] }, now);
       await this.deps.repository.saveOutcome(tenantId, t.userId, session, outcome, finalized);
     }
   }
@@ -167,8 +176,9 @@ export class AttendanceService {
 
   /** Per course: how every trainee did in every session, and the 85% result. Computed from the evidence, not just the stored rows. */
   async courseReport(tenantId: string, courseId: string): Promise<CourseReport> {
-    const courseTitle = await this.deps.repository.courseTitle(tenantId, courseId);
-    if (courseTitle === null) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    const info = await this.deps.repository.courseInfo(tenantId, courseId);
+    if (!info) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+    const rules = mergeRules(info.settings);
     const now = this.clock();
     const [sessions, trainees, records] = await Promise.all([
       this.deps.repository.listSessions(tenantId, new Date(0), new Date('2100-01-01T00:00:00Z'), courseId),
@@ -177,6 +187,7 @@ export class AttendanceService {
     ]);
     const stored = new Map(records.map((r) => [`${key(r.kind, r.sessionRef)}:${r.userId}`, r]));
     const statuses = new Map<string, Record<string, AttendanceStatus>>(trainees.map((t) => [t.userId, {}]));
+    const adjusted = new Map<string, Record<string, string>>(trainees.map((t) => [t.userId, {}]));
 
     for (const s of sessions) {
       const held = now >= s.endsAt;
@@ -185,19 +196,69 @@ export class AttendanceService {
       for (const t of trainees) {
         const row = stored.get(`${key(s.kind, s.ref)}:${t.userId}`);
         let status: AttendanceStatus;
-        if (!held) status = 'PENDING';
+        // The admin's own decision always stands (even for a session not yet over, e.g. excusing someone who is leaving early).
+        if (row?.source === 'MANUAL') {
+          status = row.status;
+          (adjusted.get(t.userId) as Record<string, string>)[s.ref] = row.note ?? '';
+        } else if (!held) status = 'PENDING';
         else if (row?.finalizedAt) status = row.status;
-        else status = evaluate(s.kind, { startsAt: s.startsAt, endsAt: s.endsAt }, evidence?.get(t.userId) ?? { otpVerifiedAt: null, intervals: [] }, now).status;
+        else status = evaluate(s.kind, { startsAt: s.startsAt, endsAt: s.endsAt, rules: s.rules }, evidence?.get(t.userId) ?? { otpVerifiedAt: null, intervals: [] }, now).status;
         (statuses.get(t.userId) as Record<string, AttendanceStatus>)[s.ref] = status;
       }
     }
 
-    const rows = trainees.map((t) => ({ userId: t.userId, name: t.name, adminEnrolled: t.adminEnrolled, statuses: statuses.get(t.userId) as Record<string, AttendanceStatus>, summary: courseAttendance(Object.values(statuses.get(t.userId) as Record<string, AttendanceStatus>)) }));
+    const rows = trainees.map((t) => ({
+      userId: t.userId,
+      name: t.name,
+      adminEnrolled: t.adminEnrolled,
+      statuses: statuses.get(t.userId) as Record<string, AttendanceStatus>,
+      adjusted: adjusted.get(t.userId) as Record<string, string>,
+      summary: courseAttendance(Object.values(statuses.get(t.userId) as Record<string, AttendanceStatus>), rules.passPercent),
+    }));
     return {
-      course: { id: courseId, title: courseTitle },
+      course: { id: courseId, title: info.title },
+      rules,
+      settings: info.settings,
       sessions: sessions.map((s) => ({ kind: s.kind, ref: s.ref, title: s.title, startsAt: s.startsAt, endsAt: s.endsAt, held: now >= s.endsAt })),
       trainees: rows,
       passingTrainees: rows.filter((r) => r.summary.passes === true).length,
     };
+  }
+
+  // ---------- the academy's admin: rules and manual decisions ----------
+
+  /** Saves the course's own rules (null = back to the default). Each value must be within its allowed range. */
+  async updateSettings(tenantId: string, actorId: string, courseId: string, input: AttendanceSettings): Promise<void> {
+    const fits = (v: number | null, r: { min: number; max: number }) => v === null || (Number.isInteger(v) && v >= r.min && v <= r.max);
+    const bad: string[] = [];
+    if (!fits(input.latePercent, RULE_LIMITS.latePercent)) bad.push('late_percent');
+    if (!fits(input.leaveGraceMinutes, RULE_LIMITS.leaveGraceMinutes)) bad.push('leave_grace_minutes');
+    if (!fits(input.passPercent, RULE_LIMITS.passPercent)) bad.push('pass_percent');
+    if (bad.length > 0) throw HttpError.unprocessable('INVALID_SETTINGS', 'A value is outside its allowed range', { fields: bad });
+    if (!(await this.deps.repository.updateCourseSettings(tenantId, actorId, courseId, input))) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
+  }
+
+  private async manualTarget(tenantId: string, courseId: string, kind: SessionKind, ref: string, userId: string): Promise<SessionDescriptor> {
+    const session = await this.deps.repository.getSession(tenantId, kind, ref);
+    // The session must belong to THIS course: a decision for another course's session cannot be smuggled in through this one.
+    if (!session || session.courseId !== courseId) throw HttpError.notFound('SESSION_NOT_FOUND', 'Session not found in this course');
+    if (!(await this.deps.repository.courseTrainees(tenantId, courseId)).some((t) => t.userId === userId)) throw HttpError.notFound('TRAINEE_NOT_FOUND', 'This person is not an active trainee of the course');
+    return session;
+  }
+
+  /** The admin decides one trainee's status for one session (with a reason). Only once the session has started. */
+  async adjust(tenantId: string, actorId: string, courseId: string, input: { kind: SessionKind; ref: string; userId: string; status: Exclude<AttendanceStatus, 'PENDING'>; note: string }): Promise<void> {
+    const note = input.note.trim();
+    if (note.length < 3 || note.length > 300) throw HttpError.unprocessable('NOTE_REQUIRED', 'Give a reason of 3-300 characters');
+    const session = await this.manualTarget(tenantId, courseId, input.kind, input.ref, input.userId);
+    const now = this.clock();
+    if (session.startsAt > now) throw HttpError.unprocessable('SESSION_NOT_STARTED', 'Attendance can be adjusted once the session has started');
+    await this.deps.repository.setManualStatus(tenantId, actorId, input.userId, session, input.status, note, now);
+  }
+
+  /** Takes a manual decision back: the automatic result applies again. */
+  async revertAdjustment(tenantId: string, actorId: string, courseId: string, kind: SessionKind, ref: string, userId: string): Promise<void> {
+    const session = await this.manualTarget(tenantId, courseId, kind, ref, userId);
+    if (!(await this.deps.repository.clearManualStatus(tenantId, actorId, userId, session))) throw HttpError.notFound('NO_ADJUSTMENT', 'There is no manual decision to take back');
   }
 }

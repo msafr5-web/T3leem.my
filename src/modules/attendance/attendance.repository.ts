@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma, withTenantTransaction } from '../../config/database';
 import { DAY_MS, minutesOf, storedDayMinutes } from '../provider/plan-schedule';
-import type { AttendanceStatus, Evidence, Interval, Outcome, SessionKind } from './attendance.engine';
+import { mergeRules, type AttendanceRules, type AttendanceSettings, type AttendanceStatus, type Evidence, type Interval, type Outcome, type SessionKind } from './attendance.engine';
 
 /** One session a trainee can attend: a live classroom, or one day (module) of a recorded course. */
 export interface SessionDescriptor {
@@ -15,6 +15,8 @@ export interface SessionDescriptor {
   endsAt: Date;
   /** Live sessions: the meeting link shown after a successful check-in. */
   joinUrl: string | null;
+  /** The course's attendance rules (its own settings, or the defaults). */
+  rules: AttendanceRules;
 }
 
 export interface AttendanceRecord {
@@ -27,6 +29,9 @@ export interface AttendanceRecord {
   lastLeaveAt: Date | null;
   attendedSeconds: number;
   finalizedAt: Date | null;
+  /** OTP | ZOOM | MANUAL (an admin's adjustment, which automatic settling never overwrites). */
+  source: string;
+  note: string | null;
 }
 
 export interface TraineeRef {
@@ -44,7 +49,14 @@ export interface AttendanceRepository {
   /** Sessions whose window touches [from, to], optionally for one course (live classrooms and recorded days). */
   listSessions(tenantId: string, from: Date, to: Date, courseId?: string): Promise<SessionDescriptor[]>;
   getSession(tenantId: string, kind: SessionKind, ref: string): Promise<SessionDescriptor | null>;
-  courseTitle(tenantId: string, courseId: string): Promise<string | null>;
+  /** Title and the course's own attendance settings (null values = defaults); null when there is no such course. */
+  courseInfo(tenantId: string, courseId: string): Promise<{ title: string; settings: AttendanceSettings } | null>;
+  /** Saves the course's settings and un-settles its automatic results so they are recomputed under the new rules. */
+  updateCourseSettings(tenantId: string, actorId: string, courseId: string, settings: AttendanceSettings): Promise<boolean>;
+  /** The admin's own decision for one trainee in one session (kept as is by the automatic settling). */
+  setManualStatus(tenantId: string, actorId: string, userId: string, session: SessionDescriptor, status: Exclude<AttendanceStatus, 'PENDING'>, note: string, at: Date): Promise<AttendanceStatus | null>;
+  /** Takes the manual decision back, so the automatic result applies again. False when there was none. */
+  clearManualStatus(tenantId: string, actorId: string, userId: string, session: SessionDescriptor): Promise<boolean>;
   /** Course ids the user is actively enrolled in. */
   activeCourseIds(tenantId: string, userId: string): Promise<string[]>;
   /** Active trainees of a course. */
@@ -82,12 +94,20 @@ const toRecord = (r: Prisma.SessionAttendanceGetPayload<object>): AttendanceReco
   lastLeaveAt: r.lastLeaveAt,
   attendedSeconds: r.attendedSeconds,
   finalizedAt: r.finalizedAt,
+  source: r.source,
+  note: r.note,
 });
 
 const nameOf = (u: { fullName: string | null; email: string }) => u.fullName ?? u.email.split('@')[0] ?? u.email;
 const isUnique = (err: unknown) => err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 
 type Tx = Prisma.TransactionClient;
+
+/** The three per-course attendance columns, selected wherever sessions are built. */
+const settingsSelect = { attendanceLatePercent: true, attendanceLeaveGraceMinutes: true, attendancePassPercent: true } as const;
+type CourseSettingsRow = { attendanceLatePercent: number | null; attendanceLeaveGraceMinutes: number | null; attendancePassPercent: number | null };
+const settingsOfCourse = (c: CourseSettingsRow): AttendanceSettings => ({ latePercent: c.attendanceLatePercent, leaveGraceMinutes: c.attendanceLeaveGraceMinutes, passPercent: c.attendancePassPercent });
+const rulesOfCourse = (c: CourseSettingsRow): AttendanceRules => mergeRules(settingsOfCourse(c));
 
 /** Recorded days: every dated recorded course contributes one session per day, day N starting N-1 days after day 1 at the same time. */
 async function recordedDays(tx: Tx, tenantId: string, filter: { courseId?: string; moduleId?: string }): Promise<SessionDescriptor[]> {
@@ -104,6 +124,7 @@ async function recordedDays(tx: Tx, tenantId: string, filter: { courseId?: strin
       title: true,
       scheduleStartsAt: true,
       scheduleConfig: true,
+      ...settingsSelect,
       modules: { orderBy: { sortOrder: 'asc' }, select: { id: true, title: true, lessons: { select: { startSecond: true, endSecond: true } } } },
     },
   });
@@ -112,7 +133,7 @@ async function recordedDays(tx: Tx, tenantId: string, filter: { courseId?: strin
       if (filter.moduleId && m.id !== filter.moduleId) return [];
       const start = new Date((c.scheduleStartsAt as Date).getTime() + index * DAY_MS);
       const minutes = storedDayMinutes(m.lessons, minutesOf(c.scheduleConfig, 'breakMinutes'), minutesOf(c.scheduleConfig, 'discussionMinutes'));
-      return [{ kind: 'DAY' as const, ref: m.id, courseId: c.id, courseTitle: c.title, title: `${c.title} — ${m.title}`, startsAt: start, endsAt: new Date(start.getTime() + Math.max(1, minutes) * 60_000), joinUrl: null }];
+      return [{ kind: 'DAY' as const, ref: m.id, courseId: c.id, courseTitle: c.title, title: `${c.title} — ${m.title}`, startsAt: start, endsAt: new Date(start.getTime() + Math.max(1, minutes) * 60_000), joinUrl: null, rules: rulesOfCourse(c) }];
     }),
   );
 }
@@ -127,11 +148,11 @@ async function liveSessions(tx: Tx, tenantId: string, filter: { from?: Date; to?
       // A classroom can last up to 12 hours: look back that far so one that began earlier but still runs is included.
       ...(filter.from || filter.to ? { startsAt: { ...(filter.from ? { gte: new Date(filter.from.getTime() - 12 * 3_600_000) } : {}), ...(filter.to ? { lte: filter.to } : {}) } } : {}),
     },
-    select: { id: true, title: true, startsAt: true, durationMinutes: true, joinUrl: true, courseId: true, course: { select: { title: true } } },
+    select: { id: true, title: true, startsAt: true, durationMinutes: true, joinUrl: true, courseId: true, course: { select: { title: true, ...settingsSelect } } },
   });
   return rows.flatMap((r) =>
     r.courseId && r.course
-      ? [{ kind: 'LIVE' as const, ref: r.id, courseId: r.courseId, courseTitle: r.course.title, title: r.title, startsAt: r.startsAt, endsAt: new Date(r.startsAt.getTime() + r.durationMinutes * 60_000), joinUrl: r.joinUrl }]
+      ? [{ kind: 'LIVE' as const, ref: r.id, courseId: r.courseId, courseTitle: r.course.title, title: r.title, startsAt: r.startsAt, endsAt: new Date(r.startsAt.getTime() + r.durationMinutes * 60_000), joinUrl: r.joinUrl, rules: rulesOfCourse(r.course) }]
       : [],
   );
 }
@@ -148,8 +169,54 @@ export class PrismaAttendanceRepository implements AttendanceRepository {
     return withTenantTransaction(tenantId, async (tx) => ((kind === 'LIVE' ? await liveSessions(tx, tenantId, { classroomId: ref }) : await recordedDays(tx, tenantId, { moduleId: ref }))[0] ?? null));
   }
 
-  async courseTitle(tenantId: string, courseId: string): Promise<string | null> {
-    return withTenantTransaction(tenantId, async (tx) => (await tx.course.findFirst({ where: { tenantId, id: courseId }, select: { title: true } }))?.title ?? null);
+  async courseInfo(tenantId: string, courseId: string): Promise<{ title: string; settings: AttendanceSettings } | null> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const c = await tx.course.findFirst({ where: { tenantId, id: courseId }, select: { title: true, ...settingsSelect } });
+      return c ? { title: c.title, settings: settingsOfCourse(c) } : null;
+    });
+  }
+
+  updateCourseSettings(tenantId: string, actorId: string, courseId: string, settings: AttendanceSettings): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.course.updateMany({
+        where: { tenantId, id: courseId },
+        data: { attendanceLatePercent: settings.latePercent, attendanceLeaveGraceMinutes: settings.leaveGraceMinutes, attendancePassPercent: settings.passPercent },
+      });
+      if (count === 0) return false;
+      // Results settled under the old rules are cleared (the admin's manual decisions stay): they are recomputed from the evidence.
+      await tx.sessionAttendance.updateMany({ where: { tenantId, courseId, source: { not: 'MANUAL' } }, data: { finalizedAt: null, status: 'PENDING' } });
+      await tx.auditLog.create({ data: { tenantId, actorId, actorRole: 'TENANT_ADMIN', action: 'attendance.rules_changed', entityType: 'course', entityId: courseId, metadata: { ...settings } } });
+      return true;
+    });
+  }
+
+  setManualStatus(tenantId: string, actorId: string, userId: string, session: SessionDescriptor, status: Exclude<AttendanceStatus, 'PENDING'>, note: string, at: Date): Promise<AttendanceStatus | null> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const key = { userId_kind_sessionRef: { userId, kind: session.kind, sessionRef: session.ref } };
+      const before = await tx.sessionAttendance.findUnique({ where: key, select: { status: true } });
+      const data = { status, source: 'MANUAL', note, adjustedBy: actorId, adjustedAt: at, finalizedAt: at };
+      await tx.sessionAttendance.upsert({
+        where: key,
+        update: data,
+        create: { tenantId, userId, courseId: session.courseId, kind: session.kind, sessionRef: session.ref, startsAt: session.startsAt, endsAt: session.endsAt, ...data },
+      });
+      await tx.auditLog.create({
+        data: { tenantId, actorId, actorRole: 'TENANT_ADMIN', action: 'attendance.adjusted', entityType: 'session_attendance', entityId: session.ref, metadata: { userId, kind: session.kind, from: before?.status ?? null, to: status } },
+      });
+      return (before?.status as AttendanceStatus | undefined) ?? null;
+    });
+  }
+
+  clearManualStatus(tenantId: string, actorId: string, userId: string, session: SessionDescriptor): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const { count } = await tx.sessionAttendance.updateMany({
+        where: { tenantId, userId, kind: session.kind, sessionRef: session.ref, source: 'MANUAL' },
+        data: { source: 'OTP', note: null, adjustedBy: null, adjustedAt: null, finalizedAt: null, status: 'PENDING' },
+      });
+      if (count === 0) return false;
+      await tx.auditLog.create({ data: { tenantId, actorId, actorRole: 'TENANT_ADMIN', action: 'attendance.adjustment_reverted', entityType: 'session_attendance', entityId: session.ref, metadata: { userId, kind: session.kind } } });
+      return true;
+    });
   }
 
   async activeCourseIds(tenantId: string, userId: string): Promise<string[]> {
@@ -252,6 +319,8 @@ export class PrismaAttendanceRepository implements AttendanceRepository {
 
   saveOutcome(tenantId: string, userId: string, session: SessionDescriptor, outcome: Outcome, finalized: boolean): Promise<void> {
     return withTenantTransaction(tenantId, async (tx) => {
+      const current = await tx.sessionAttendance.findUnique({ where: { userId_kind_sessionRef: { userId, kind: session.kind, sessionRef: session.ref } }, select: { source: true } });
+      if (current?.source === 'MANUAL') return; // the admin's decision stands
       const data = { status: outcome.status, firstJoinAt: outcome.firstJoinAt, lastLeaveAt: outcome.lastLeaveAt, attendedSeconds: outcome.attendedSeconds, finalizedAt: finalized ? new Date() : null };
       await tx.sessionAttendance.upsert({
         where: { userId_kind_sessionRef: { userId, kind: session.kind, sessionRef: session.ref } },

@@ -142,8 +142,8 @@ describeDb('Attendance and check-out (real database)', () => {
     expect((await live()).joinUrl).toBe('https://zoom.example/x');
     expect(await repo.listSessions(tenantB, at('00:00'), at('23:59', '2027-03-03'))).toEqual([]); // another academy sees nothing
     expect(await repo.listSessions(tenantA, at('00:00'), at('23:59', '2027-03-03'), recCourse)).toHaveLength(2);
-    expect(await repo.courseTitle(tenantA, liveCourse)).toBe('Live course');
-    expect(await repo.courseTitle(tenantB, liveCourse)).toBeNull();
+    expect((await repo.courseInfo(tenantA, liveCourse))?.title).toBe('Live course');
+    expect(await repo.courseInfo(tenantB, liveCourse)).toBeNull();
   });
 
   it('the first check-in is the one that counts', async () => {

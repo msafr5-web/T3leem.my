@@ -27,13 +27,47 @@ export const RULES = {
   finalizeAfterMinutes: 5,
 } as const;
 
+/** The three numbers an academy may tune per course. */
+export interface AttendanceRules {
+  /** Late = checking in after this share of the session's length (0.1 = 10%). */
+  lateFraction: number;
+  leaveGraceMinutes: number;
+  passPercent: number;
+}
+
+export const DEFAULT_RULES: AttendanceRules = { lateFraction: RULES.lateFraction, leaveGraceMinutes: RULES.leaveGraceMinutes, passPercent: RULES.passPercent };
+
+/** What an admin may set (whole numbers; the ends are inclusive). */
+export const RULE_LIMITS = {
+  latePercent: { min: 1, max: 50 },
+  leaveGraceMinutes: { min: 0, max: 30 },
+  passPercent: { min: 50, max: 100 },
+} as const;
+
+/** A course's own settings (null = use the default). */
+export interface AttendanceSettings {
+  latePercent: number | null;
+  leaveGraceMinutes: number | null;
+  passPercent: number | null;
+}
+
+export const mergeRules = (s?: Partial<AttendanceSettings>): AttendanceRules => ({
+  lateFraction: s?.latePercent != null ? s.latePercent / 100 : DEFAULT_RULES.lateFraction,
+  leaveGraceMinutes: s?.leaveGraceMinutes ?? DEFAULT_RULES.leaveGraceMinutes,
+  passPercent: s?.passPercent ?? DEFAULT_RULES.passPercent,
+});
+
 export type SessionKind = 'LIVE' | 'DAY';
 export type AttendanceStatus = 'PENDING' | 'PRESENT' | 'LATE' | 'ABSENT';
 
 export interface SessionWindow {
   startsAt: Date;
   endsAt: Date;
+  /** The course's rules; the defaults when absent. */
+  rules?: AttendanceRules;
 }
+
+const rulesOf = (w: SessionWindow): AttendanceRules => w.rules ?? DEFAULT_RULES;
 
 export interface Interval {
   joinedAt: Date;
@@ -59,7 +93,7 @@ export interface Outcome {
 const MIN = 60_000;
 
 /** Checking in after this moment is LATE. */
-export const lateAfter = (w: SessionWindow): Date => new Date(w.startsAt.getTime() + (w.endsAt.getTime() - w.startsAt.getTime()) * RULES.lateFraction);
+export const lateAfter = (w: SessionWindow): Date => new Date(w.startsAt.getTime() + (w.endsAt.getTime() - w.startsAt.getTime()) * rulesOf(w).lateFraction);
 
 export const checkInOpensAt = (w: SessionWindow): Date => new Date(w.startsAt.getTime() - RULES.checkInOpensMinutes * MIN);
 
@@ -104,7 +138,7 @@ export function evaluateLive(w: SessionWindow, ev: Evidence, now: Date): Outcome
 
   if (now < w.endsAt) return { ...base, status: 'PENDING' };
   if (!ev.otpVerifiedAt) return { ...base, status: 'ABSENT' };
-  const leftEarly = lastLeaveAt !== null && lastLeaveAt.getTime() < w.endsAt.getTime() - RULES.leaveGraceMinutes * MIN;
+  const leftEarly = lastLeaveAt !== null && lastLeaveAt.getTime() < w.endsAt.getTime() - rulesOf(w).leaveGraceMinutes * MIN;
   if (leftEarly) return { ...base, status: 'ABSENT' };
   return { ...base, status: firstJoinAt && firstJoinAt > lateAfter(w) ? 'LATE' : 'PRESENT' };
 }
@@ -138,11 +172,11 @@ export interface CourseAttendance {
 }
 
 /** Course-level figure over the sessions already held (settled ones only: PENDING sessions are not counted yet). */
-export function courseAttendance(statuses: AttendanceStatus[]): CourseAttendance {
+export function courseAttendance(statuses: AttendanceStatus[], passPercent: number = RULES.passPercent): CourseAttendance {
   const settled = statuses.filter((s) => s !== 'PENDING');
   const late = settled.filter((s) => s === 'LATE').length;
   const attended = settled.filter((s) => s === 'PRESENT' || s === 'LATE').length;
   const held = settled.length;
   const percent = held === 0 ? null : Math.round((attended / held) * 1000) / 10;
-  return { held, attended, absent: held - attended, late, percent, passes: percent === null ? null : percent >= RULES.passPercent };
+  return { held, attended, absent: held - attended, late, percent, passes: percent === null ? null : percent >= passPercent };
 }

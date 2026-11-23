@@ -8,6 +8,8 @@ import {
   evaluateLive,
   finalizeDueAt,
   lateAfter,
+  mergeRules,
+  RULE_LIMITS,
   type Interval,
   type SessionWindow,
 } from '../../src/modules/attendance/attendance.engine';
@@ -129,5 +131,46 @@ describe('course attendance (85%)', () => {
     expect(rep(16, 0, 3)).toMatchObject({ percent: 84.2, passes: false });
     expect(rep(0, 0, 0, 4)).toEqual({ held: 0, attended: 0, absent: 0, late: 0, percent: null, passes: null });
     expect(RULES.passPercent).toBe(85);
+  });
+});
+
+describe('per-course rules', () => {
+  const strict = mergeRules({ latePercent: 5, leaveGraceMinutes: 0, passPercent: 95 });
+  const lenient = mergeRules({ latePercent: 25, leaveGraceMinutes: 15, passPercent: 70 });
+
+  it('mergeRules fills what is missing from the defaults', () => {
+    expect(mergeRules()).toEqual({ lateFraction: 0.1, leaveGraceMinutes: 5, passPercent: 85 });
+    expect(mergeRules({ latePercent: null, leaveGraceMinutes: 10, passPercent: null })).toEqual({ lateFraction: 0.1, leaveGraceMinutes: 10, passPercent: 85 });
+    expect(lenient).toEqual({ lateFraction: 0.25, leaveGraceMinutes: 15, passPercent: 70 });
+  });
+
+  it('the late threshold follows the course (25% of an hour = 15 minutes, 5% = 3 minutes)', () => {
+    expect(lateAfter({ ...win, rules: lenient })).toEqual(at('10:15'));
+    expect(lateAfter({ ...win, rules: strict })).toEqual(at('10:03'));
+    expect(evaluateLive({ ...win, rules: lenient }, { otpVerifiedAt: at('10:00'), intervals: [iv('10:12', '11:00')] }, after).status).toBe('PRESENT');
+    expect(evaluateLive({ ...win, rules: strict }, { otpVerifiedAt: at('10:00'), intervals: [iv('10:04', '11:00')] }, after).status).toBe('LATE');
+  });
+
+  it('the leave grace follows the course: 15 minutes early is fine for one, 1 minute is too early for a strict one', () => {
+    const ev = { otpVerifiedAt: at('10:00'), intervals: [iv('10:01', '10:46')] }; // 14 minutes early
+    expect(evaluateLive({ ...win, rules: lenient }, ev, after).status).toBe('PRESENT');
+    expect(evaluateLive(win, ev, after).status).toBe('ABSENT'); // default grace is 5
+    expect(evaluateLive({ ...win, rules: strict }, { otpVerifiedAt: at('10:00'), intervals: [iv('10:01', '10:59')] }, after).status).toBe('ABSENT'); // 1 minute early, no grace
+  });
+
+  it('the day rule uses the same late threshold', () => {
+    expect(evaluateDay({ ...win, rules: lenient }, { otpVerifiedAt: at('10:14'), intervals: [], dayCompletedAt: at('10:50') }, after).status).toBe('PRESENT');
+    expect(evaluateDay(win, { otpVerifiedAt: at('10:14'), intervals: [], dayCompletedAt: at('10:50') }, after).status).toBe('LATE');
+  });
+
+  it('the pass mark is a parameter of the course figure', () => {
+    const s = ['PRESENT', 'PRESENT', 'PRESENT', 'ABSENT'] as const; // 75%
+    expect(courseAttendance([...s]).passes).toBe(false);
+    expect(courseAttendance([...s], lenient.passPercent).passes).toBe(true);
+    expect(courseAttendance([...s], strict.passPercent).passes).toBe(false);
+  });
+
+  it('the limits an admin may choose from are fixed', () => {
+    expect(RULE_LIMITS).toEqual({ latePercent: { min: 1, max: 50 }, leaveGraceMinutes: { min: 0, max: 30 }, passPercent: { min: 50, max: 100 } });
   });
 });

@@ -205,6 +205,9 @@ export interface AttendanceCourseSummary {
 export interface AttendanceReport {
   course: { id: string; title: string };
   rules: { pass_percent: number; late_percent_of_session: number; leave_grace_minutes: number };
+  /** What the admin saved for this course (null = the default). */
+  settings: { late_percent: number | null; leave_grace_minutes: number | null; pass_percent: number | null };
+  limits: { late_percent: { min: number; max: number }; leave_grace_minutes: { min: number; max: number }; pass_percent: { min: number; max: number } };
   passing_trainees: number;
   sessions: { kind: 'LIVE' | 'DAY'; ref: string; title: string; starts_at: string; ends_at: string; held: boolean }[];
   trainees: {
@@ -212,6 +215,8 @@ export interface AttendanceReport {
     name: string;
     admin_enrolled: boolean;
     statuses: Record<string, AttendanceStatus>;
+    /** Sessions where the admin decided by hand: session ref -> the reason. */
+    adjusted: Record<string, string>;
     summary: { held: number; attended: number; late: number; absent: number; percent: number | null; passes: boolean | null };
   }[];
 }

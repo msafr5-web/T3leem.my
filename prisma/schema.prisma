@@ -295,6 +295,10 @@ model Course {
   quizDurationMinutes   Int        @default(10) @map("quiz_duration_minutes")
   quizQuestionCount     Int        @default(3) @map("quiz_question_count")
   isPublished           Boolean    @default(false) @map("is_published")
+  // Attendance rules of this course (null = the platform default: 10% late, 5 min leave grace, 85% to pass).
+  attendanceLatePercent        Int? @map("attendance_late_percent")
+  attendanceLeaveGraceMinutes  Int? @map("attendance_leave_grace_minutes")
+  attendancePassPercent        Int? @map("attendance_pass_percent")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")
 
@@ -1280,6 +1284,10 @@ model SessionAttendance {
   lastLeaveAt     DateTime? @map("last_leave_at") @db.Timestamptz(3)
   attendedSeconds Int       @default(0) @map("attended_seconds")
   source          String    @default("OTP")
+  // Manual adjustment by the academy's admin (source = MANUAL): the reason, who and when.
+  note            String?
+  adjustedBy      String?   @map("adjusted_by") @db.Uuid
+  adjustedAt      DateTime? @map("adjusted_at") @db.Timestamptz(3)
   finalizedAt     DateTime? @map("finalized_at") @db.Timestamptz(3)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
