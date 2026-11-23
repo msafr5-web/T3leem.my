@@ -21,6 +21,7 @@ export default async function MyCourses({ params }: { params: Promise<{ tenant: 
       <div className="stack" style={{ gap: 4 }}>
         <h1>دوراتي</h1>
         <p className="muted">تابع تقدمك، واحضر جلساتك المباشرة، واطّلع على شهاداتك.</p>
+        <p><Link href={`/${slug}/my/card`} className="btn btn-ghost">بطاقتي الرقمية</Link></p>
       </div>
 
       {attendance.length > 0 && (

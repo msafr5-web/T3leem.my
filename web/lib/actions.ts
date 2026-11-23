@@ -396,3 +396,11 @@ export async function confirmCheckInAction(slug: string, kind: 'LIVE' | 'DAY', r
     return err instanceof ApiError && err.code === 'OTP_INVALID' ? { challengeId, error: checkInMessage(err) } : { error: checkInMessage(err) };
   }
 }
+
+/** Turn the public badge on/off or replace its link. Used as a form action from the card page. */
+export async function badgeAction(slug: string, op: 'enable' | 'disable' | 'regenerate'): Promise<void> {
+  const token = await learnerToken(slug);
+  const path = op === 'regenerate' ? '/me/badge/regenerate' : '/me/badge';
+  await api<unknown>(slug, path, { method: op === 'disable' ? 'DELETE' : 'POST', token });
+  revalidatePath(`/${slug}/my/card`);
+}

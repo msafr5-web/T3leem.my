@@ -1324,3 +1324,17 @@ model AttendanceAlert {
   @@unique([tenantId, kind, sessionRef])
   @@map("attendance_alerts")
 }
+
+// A trainee's optional public digital badge (global lookup by token, like CertificateRegistry). FK to users (cascade) is in the migration.
+model TraineeBadge {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  token     String   @unique
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([tenantId])
+  @@map("trainee_badges")
+}

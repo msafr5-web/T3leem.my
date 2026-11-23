@@ -30,6 +30,8 @@ import { buildTrainerPortalRouter } from './modules/provider/trainer-portal.rout
 import { buildAttendanceAdminRouter, buildAttendanceLearnerRouter } from './modules/attendance/attendance.routes';
 import type { AttendanceService } from './modules/attendance/attendance.service';
 import type { OwnerAttendanceService } from './modules/attendance/attendance.owner';
+import { buildBadgeOwnerRouter, buildBadgePublicRouter } from './modules/badge/badge.routes';
+import type { BadgeService } from './modules/badge/badge.service';
 import type { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
@@ -64,6 +66,7 @@ export interface AppDependencies {
   trainerPortalService: TrainerPortalService;
   attendanceService: AttendanceService;
   ownerAttendance: OwnerAttendanceService;
+  badgeService: BadgeService;
   providerDirectory: ProviderDirectorySource;
   brandingService: BrandingService;
   registrationService: RegistrationService;
@@ -126,6 +129,7 @@ export function createApp(deps: AppDependencies): Express {
     buildPlatformRouter(deps.providerDirectory, deps.registrationService, deps.signupRateLimiter, deps.domainService),
   );
   app.use('/api/v1/certificates', deps.rateLimiter, buildCertificateVerifyRouter(deps.learningService));
+  app.use('/api/v1/badges', deps.rateLimiter, buildBadgePublicRouter(deps.badgeService));
 
   const api = express.Router();
   // Order matters: tenant first (rate-limit keys and auth both depend on req.tenantId).
@@ -141,6 +145,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/me', buildLearnerRouter(deps.learningService, deps.videoService, deps.jwt));
   api.use('/trainer', buildTrainerPortalRouter(deps.trainerPortalService, deps.jwt));
   api.use('/me', buildAttendanceLearnerRouter(deps.attendanceService, deps.jwt));
+  api.use('/me', buildBadgeOwnerRouter(deps.badgeService, deps.jwt));
   api.use('/me', buildRecordedLearnerRouter(deps.recordedCourseService, deps.jwt));
   api.use('/me', buildQuizLearnerRouter(deps.quizService, deps.jwt));
   api.use('/me', buildHealthLearnerRouter(deps.healthService, deps.jwt));

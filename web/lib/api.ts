@@ -937,6 +937,19 @@ export const me = {
     api<{ playlist_path: string; expires_in: number }>(slug, `/me/lessons/${encodeURIComponent(lessonId)}/playback`, { token }),
 };
 
+/** The trainee's optional public badge (anyone holding the unguessable link sees it). */
+export interface BadgeState { enabled: boolean; token: string | null }
+export interface PublicBadge { name: string; academy: { name: string; slug: string }; certificates: { code: string; course_title: string; issued_at: string }[] }
+export const myBadge = (slug: string, token: string) => api<BadgeState>(slug, '/me/badge', { token });
+export async function publicBadge(token: string): Promise<PublicBadge | null> {
+  try {
+    return await request<PublicBadge>(`/badges/${encodeURIComponent(token)}`, {}, { revalidate: 60 });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
 /** Public certificate verification (no tenant: certificate codes are global). */
 export async function verifyCertificate(code: string): Promise<CertificateVerification | null> {
   try {

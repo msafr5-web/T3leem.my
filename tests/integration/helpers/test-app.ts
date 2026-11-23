@@ -43,6 +43,7 @@ import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import { TrainerPortalService } from '../../../src/modules/provider/trainer-portal.service';
 import { buildAttendanceFakes } from './attendance-fakes';
+import { BadgeService, type BadgeRepository, type BadgeState } from '../../../src/modules/badge/badge.service';
 import { OwnerAttendanceService } from '../../../src/modules/attendance/attendance.owner';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 
@@ -401,6 +402,31 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     },
     clock: () => new Date('2026-10-23T00:00:00Z'),
   });
+  // In-memory trainee badges: one per user; the public view shows the fixture learner's name, academy and certificate.
+  const badges = new Map<string, BadgeState>();
+  const badgeRepo: BadgeRepository = {
+    find: async (_t, userId) => badges.get(userId) ?? null,
+    enable: async (_t, userId, token) => {
+      const b = badges.get(userId);
+      const next = b ? { ...b, enabled: true } : { token, enabled: true };
+      badges.set(userId, next);
+      return next;
+    },
+    disable: async (_t, userId) => {
+      const b = badges.get(userId);
+      if (!b) return false;
+      badges.set(userId, { ...b, enabled: false });
+      return true;
+    },
+    regenerate: async (_t, userId, token) => {
+      badges.set(userId, { token, enabled: true });
+      return { token, enabled: true };
+    },
+    publicView: async (token) => {
+      const found = [...badges.entries()].find(([, b]) => b.token === token && b.enabled);
+      return found ? { name: 'Abdullah', academy: { name: 'Rukn', slug: 'rukn' }, certificates: [{ code: 'CERT-ABCD1234', courseTitle: 'PMP', issuedAt: new Date('2026-10-30T00:00:00Z') }] } : null;
+    },
+  };
   const app = createApp({
     tenantResolver: resolver,
     scopeDb: () => ({}) as TenantPrismaClient,
@@ -414,6 +440,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
     attendanceService: attendance.service,
+    badgeService: new BadgeService(badgeRepo),
     ownerAttendance: new OwnerAttendanceService({ repository: attendance.repository, service: attendance.service }),
     trainerPortalService: new TrainerPortalService({
       findTrainerByUser: async (t, userId) => (t === TENANT_A && userId === INSTRUCTOR ? { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant' } : null),

@@ -47,6 +47,8 @@ import { PrismaTrainerPortalRepository } from './modules/provider/trainer-portal
 import { PrismaAttendanceRepository } from './modules/attendance/attendance.repository';
 import { AttendanceService } from './modules/attendance/attendance.service';
 import { OwnerAttendanceService } from './modules/attendance/attendance.owner';
+import { PrismaBadgeRepository } from './modules/badge/badge.repository';
+import { BadgeService } from './modules/badge/badge.service';
 import { AttendanceSweeper } from './modules/attendance/attendance.sweeper';
 import { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import { PrismaProviderRepository } from './modules/provider/provider.repository';
@@ -212,6 +214,7 @@ export function createServerApp(): ServerApp {
     enrollmentController: new EnrollmentController(checkoutService),
     trainerPortalService: new TrainerPortalService(new PrismaTrainerPortalRepository()),
     attendanceService,
+    badgeService: new BadgeService(new PrismaBadgeRepository()),
     ownerAttendance: new OwnerAttendanceService({ repository: attendanceRepository, service: attendanceService }),
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
