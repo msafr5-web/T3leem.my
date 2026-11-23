@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { ApiError, ApiUnavailableError, api, type EnrollmentOutcome } from './api';
+import { ApiError, ApiUnavailableError, api, type EnrollmentOutcome, type RecordedBatchOutcome } from './api';
 import { isValidSlug } from './format';
 import { getSession } from './session';
 
@@ -119,6 +119,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_TRAINEES: 'في بيانات الموظفين أخطاء. صحّحها ثم أعد المحاولة (لم يُسجَّل أحد).',
   INVALID_TRAINEE_SHEET: 'في الملف أخطاء. صحّحها ثم أعد الرفع (لم يُسجَّل أحد).',
   NO_TRAINEES: 'أضف موظفاً واحداً على الأقل.',
+  PLAN_NOT_FOUND: 'الخطة غير موجودة.',
   OTP_INVALID: 'الرمز غير صحيح أو انتهت صلاحيته. اطلب موافقة جديدة إن لزم.',
   TOO_MANY_ATTEMPTS: 'محاولات كثيرة. اطلب موافقة جديدة بعد قليل.',
   MAIL_UNAVAILABLE: 'تعذّر إرسال الرمز إلى بريد مالك المنصة الآن. حاول لاحقاً.',
@@ -864,4 +865,49 @@ export async function approveCourseDeletionAction(slug: string, courseId: string
   }
   revalidatePath(`/${slug}/dashboard/courses`);
   redirect(`/${slug}/dashboard/courses?deleted=1`);
+}
+
+
+// ---- Several recorded courses for one trainer at once, added to a training plan -----------------------------------
+
+export interface RecordedBatchState extends AdminFormState {
+  outcome?: RecordedBatchOutcome;
+}
+
+const BATCH_MAX = 20;
+
+/** One line per course: "https://youtu.be/xxxx" or "https://youtu.be/xxxx | course title" (the title is optional). */
+function parseBatchLines(raw: string): { youtube_url: string; title?: string }[] {
+  return raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const bar = line.indexOf('|');
+      if (bar === -1) return { youtube_url: line };
+      const title = line.slice(bar + 1).trim();
+      return { youtube_url: line.slice(0, bar).trim(), ...(title ? { title } : {}) };
+    });
+}
+
+export async function addRecordedBatchAction(slug: string, planId: string, _prev: RecordedBatchState, form: FormData): Promise<RecordedBatchState> {
+  const token = await adminToken(slug);
+  const items = parseBatchLines(String(form.get('lines') ?? ''));
+  if (items.length === 0) return { error: 'ألصق رابط YouTube واحداً على الأقل (رابط في كل سطر).' };
+  if (items.length > BATCH_MAX) return { error: `الحد الأقصى ${BATCH_MAX} دورة في المرة الواحدة.` };
+  const trainer = str(form, 'trainer_id');
+  if (!trainer) return { error: 'اختر المدرب.' };
+  try {
+    const outcome = await api<RecordedBatchOutcome>(slug, '/admin/recorded-courses/batch', {
+      method: 'POST',
+      token,
+      body: { trainer_id: trainer, plan_id: planId, price: Number(str(form, 'price') || 0), is_published: form.get('is_published') === 'on', items },
+    });
+    revalidatePath(`/${slug}`, 'layout');
+    return { outcome };
+  } catch (err) {
+    const state = describeError(err);
+    if (err instanceof ApiError && err.code === 'VALIDATION_FAILED') state.error = 'تحقق من الروابط والسعر: كل رابط على سطر مستقل ورابط YouTube صحيح.';
+    return state;
+  }
 }

@@ -6,7 +6,7 @@ import { validate } from '../../../shared/middlewares/validate.middleware';
 import { ok } from '../../../shared/utils/api-response';
 import type { DiscussionPostRow } from './recorded.repository';
 import type { RecordedSourceMeta } from './recorded.repository';
-import type { RecordedCourseService, ScheduleRequest, SchedulePreview, SourceInput } from './recorded.service';
+import { BATCH_MAX, type RecordedCourseService, type ScheduleRequest, type SchedulePreview, type SourceInput } from './recorded.service';
 import { SCHEDULE_LIMITS, type ScheduleConfig } from './schedule-planner';
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
@@ -169,6 +169,48 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
         isPublished: b.is_published === true || b.is_published === 'true',
       });
       res.status(201).json(ok({ id, ...previewJson(preview) }));
+    },
+  );
+
+  // Several recorded courses for one trainer at once (one per YouTube link), optionally added to a training plan.
+  router.post(
+    '/recorded-courses/batch',
+    ...admin,
+    body('trainer_id').isUUID().withMessage('trainer_id must be a UUID'),
+    body('plan_id').optional({ values: 'falsy' }).isUUID(),
+    body('price').optional({ values: 'falsy' }).isFloat({ min: 0, max: 1_000_000 }).withMessage('price must be 0 - 1,000,000 SAR'),
+    body('is_published').optional().isBoolean(),
+    body('items').isArray({ min: 1, max: BATCH_MAX }).withMessage(`items must be 1 - ${BATCH_MAX} links`),
+    body('items.*.youtube_url').isString().trim().isLength({ min: 11, max: 500 }).withMessage('youtube_url is required'),
+    body('items.*.title').optional({ values: 'falsy' }).isString().trim().isLength({ min: 3, max: 200 }),
+    validate,
+    async (req: Request, res: Response) => {
+      const { tenantId, user } = requireAuthContext(req);
+      const b = req.body as Record<string, unknown>;
+      const items = (b.items as Record<string, unknown>[]).map((i) => ({ youtubeUrl: String(i.youtube_url).trim(), title: typeof i.title === 'string' && i.title.trim() ? i.title.trim() : null }));
+      const r = await service.createBatch(tenantId, { userId: user.id, role: user.role, ip: req.ip ?? null }, {
+        trainerId: String(b.trainer_id),
+        planId: typeof b.plan_id === 'string' && b.plan_id ? b.plan_id : null,
+        price: Number(b.price ?? 0).toFixed(2),
+        isPublished: b.is_published === true || b.is_published === 'true',
+        items,
+      });
+      res.status(201).json(
+        ok({
+          plan_linked: r.planLinked,
+          created: r.results.filter((x) => x.status === 'created').length,
+          failed: r.results.filter((x) => x.status === 'error').length,
+          results: r.results.map((x) => ({
+            youtube_url: x.youtubeUrl,
+            status: x.status,
+            id: x.id ?? null,
+            title: x.title ?? null,
+            training_hours: x.trainingHours ?? null,
+            days: x.days ?? null,
+            code: x.code ?? null,
+          })),
+        }),
+      );
     },
   );
 

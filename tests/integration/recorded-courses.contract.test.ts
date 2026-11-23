@@ -1,7 +1,7 @@
 /** HTTP contracts for recorded (YouTube) courses: preview, creation, and per-day discussions. */
 import request from 'supertest';
 import { ADMIN, TENANT_A, TENANT_B, TRAINER, USER, adminToken, buildApp, learnerToken, sign } from './helpers/test-app';
-import { YT_NO_DURATION, YT_NO_EMBED, YT_OK, YT_PRIVATE } from './helpers/recorded-fakes';
+import { PLAN_ID, YT_NO_DURATION, YT_NO_EMBED, YT_OK, YT_OK_2, YT_PRIVATE } from './helpers/recorded-fakes';
 
 type Recorded = ReturnType<typeof import('./helpers/recorded-fakes').buildRecordedFakes>;
 const recordedOf = (app: ReturnType<typeof buildApp>) => app.locals.recorded as Recorded;
@@ -181,3 +181,78 @@ describe('channel, start date and lecture time', () => {
   });
 });
 
+
+
+describe('POST /api/v1/admin/recorded-courses/batch (several recorded courses for one trainer, into a plan)', () => {
+  const url = (id: string) => `https://youtu.be/${id}`;
+  const batch = (app: ReturnType<typeof buildApp>, body: object, token = adminToken, tenant = TENANT_A) => call(app, token, tenant).post('/admin/recorded-courses/batch', body);
+
+  it('creates one course per link for the trainer, titled by the video unless a title is given, and appends them to the plan in order', async () => {
+    const app = buildApp();
+    const res = await batch(app, { trainer_id: TRAINER, plan_id: PLAN_ID, price: 0, items: [{ youtube_url: url(YT_OK) }, { youtube_url: url(YT_OK_2), title: 'الداتا سنتر - الحلقة الثانية' }] });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ plan_linked: true, created: 2, failed: 0 });
+    const [a, b] = res.body.data.results as { id: string; title: string; status: string; days: number; training_hours: number }[];
+    expect(a).toMatchObject({ status: 'created', title: 'تعلم GitHub في أقل من 30 دقيقة', days: 1 });
+    expect(b).toMatchObject({ status: 'created', title: 'الداتا سنتر - الحلقة الثانية' });
+
+    const rec = recordedOf(app);
+    expect([...rec.courses.values()].map((c) => [c.trainerId, c.isPublished])).toEqual([[TRAINER, false], [TRAINER, false]]);
+    expect(rec.plans.get(PLAN_ID)).toEqual([a?.id, b?.id]);
+  });
+
+  it('a bad line fails alone with its own code; the good ones are still created and linked; repeats are flagged', async () => {
+    const app = buildApp();
+    const res = await batch(app, {
+      trainer_id: TRAINER,
+      plan_id: PLAN_ID,
+      items: [{ youtube_url: url(YT_OK) }, { youtube_url: url(YT_PRIVATE) }, { youtube_url: url(YT_NO_EMBED) }, { youtube_url: url(YT_NO_DURATION) }, { youtube_url: 'https://example.com/x1234567' }, { youtube_url: url(YT_OK) }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ created: 1, failed: 5, plan_linked: true });
+    expect(res.body.data.results.map((r: { status: string; code: string | null }) => r.code)).toEqual([
+      null,
+      'YOUTUBE_VIDEO_NOT_FOUND',
+      'YOUTUBE_NOT_EMBEDDABLE',
+      'YOUTUBE_DURATION_UNKNOWN',
+      'INVALID_YOUTUBE_URL',
+      'DUPLICATE_IN_BATCH',
+    ]);
+    expect(recordedOf(app).plans.get(PLAN_ID)).toHaveLength(1);
+  });
+
+  it('works without a plan (courses only), and publishes them when asked', async () => {
+    const app = buildApp();
+    const res = await batch(app, { trainer_id: TRAINER, is_published: true, price: 150, items: [{ youtube_url: url(YT_OK) }] });
+    expect(res.body.data).toMatchObject({ plan_linked: false, created: 1 });
+    const course = [...recordedOf(app).courses.values()][0];
+    expect(course).toMatchObject({ isPublished: true, price: '150.00' });
+    expect(recordedOf(app).plans.get(PLAN_ID)).toEqual([]);
+  });
+
+  it('refuses a trainer or plan of another academy before creating anything', async () => {
+    const app = buildApp();
+    const other = 'f1000000-0000-4000-8000-0000000000ff';
+    expect((await batch(app, { trainer_id: other, items: [{ youtube_url: url(YT_OK) }] })).body.error.code).toBe('UNKNOWN_TRAINER');
+    expect((await batch(app, { trainer_id: TRAINER, plan_id: other, items: [{ youtube_url: url(YT_OK) }] })).body.error.code).toBe('PLAN_NOT_FOUND');
+    expect(recordedOf(app).courses.size).toBe(0);
+  });
+
+  it('validates the body: 1-20 links, uuid ids, price range', async () => {
+    const app = buildApp();
+    expect((await batch(app, { trainer_id: TRAINER, items: [] })).status).toBe(422);
+    expect((await batch(app, { trainer_id: TRAINER, items: Array.from({ length: 21 }, () => ({ youtube_url: url(YT_OK) })) })).status).toBe(422);
+    expect((await batch(app, { trainer_id: 'nope', items: [{ youtube_url: url(YT_OK) }] })).status).toBe(422);
+    expect((await batch(app, { trainer_id: TRAINER, price: -1, items: [{ youtube_url: url(YT_OK) }] })).status).toBe(422);
+    expect((await batch(app, { trainer_id: TRAINER, items: [{ youtube_url: 'x' }] })).status).toBe(422);
+    expect(recordedOf(app).courses.size).toBe(0);
+  });
+
+  it('is for the academy admin only', async () => {
+    const app = buildApp();
+    const body = { trainer_id: TRAINER, items: [{ youtube_url: url(YT_OK) }] };
+    expect((await batch(app, body, learnerToken)).status).toBe(403);
+    expect((await batch(app, body, adminToken, TENANT_B)).status).toBe(403);
+    expect((await request(app).post('/api/v1/admin/recorded-courses/batch').set('x-tenant-id', TENANT_A).send(body)).status).toBe(401);
+  });
+});

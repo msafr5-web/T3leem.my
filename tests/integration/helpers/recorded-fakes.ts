@@ -6,9 +6,13 @@ import type { YoutubeLookup, YoutubeMetadataSource } from '../../../src/modules/
 
 /** 21 min 5 s, embeddable — mirrors the real trial video. */
 export const YT_OK = 'ZJQ-c4HyeX8';
+/** A second embeddable video (31 min), so a batch can hold several good links. */
+export const YT_OK_2 = 'okVideoTwo2';
 export const YT_PRIVATE = 'privateVid1';
 export const YT_NO_EMBED = 'noEmbedVid1';
 export const YT_NO_DURATION = 'noDuration1';
+/** A training plan of tenant A that the batch endpoint may append courses to. */
+export const PLAN_ID = 'b1000000-0000-4000-8000-000000000001';
 
 export function buildRecordedFakes(ids: { tenantA: string; trainer: string; users: Record<string, { name: string; role: UserRole }> }) {
   const courses = new Map<string, NewRecordedCourse & { tenantId: string; moduleIds: string[] }>();
@@ -25,6 +29,7 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
       if (videoId === YT_OK) {
         return { kind: 'ok', info: { videoId, title: 'تعلم GitHub في أقل من 30 دقيقة', channel: 'Syntax', channelUrl: 'https://www.youtube.com/@mostfa-syntax', durationSeconds: 1265 } };
       }
+      if (videoId === YT_OK_2) return { kind: 'ok', info: { videoId, title: 'الحلقة الثانية', channel: 'Syntax', channelUrl: null, durationSeconds: 1860 } };
       if (videoId === YT_PRIVATE) return { kind: 'not_found' };
       if (videoId === YT_NO_EMBED) return { kind: 'not_embeddable' };
       if (videoId === YT_NO_DURATION) return { kind: 'ok', info: { videoId, title: 'Long talk', channel: 'X', channelUrl: null, durationSeconds: null } };
@@ -41,7 +46,18 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
     mine: p.userId === viewer,
   });
 
+  /** Training plans for the batch tests: plan id → the course ids appended to it, in order. */
+  const plans = new Map<string, string[]>([[PLAN_ID, []]]);
+
   const repository: RecordedCourseRepository = {
+    trainerExists: async (tenantId, trainerId) => tenantId === ids.tenantA && trainerId === ids.trainer,
+    planExists: async (tenantId, planId) => tenantId === ids.tenantA && plans.has(planId),
+    appendCoursesToPlan: async (tenantId, _actor, planId, courseIds) => {
+      if (tenantId !== ids.tenantA || !plans.has(planId)) return false;
+      const list = plans.get(planId)!;
+      for (const id of courseIds) if (!list.includes(id)) list.push(id);
+      return true;
+    },
     createRecordedCourse: async (tenantId, _actor, input) => {
       if (tenantId !== ids.tenantA || input.trainerId !== ids.trainer) return null;
       const id = nextId('course');
@@ -131,6 +147,7 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
   return {
     service: new RecordedCourseService({ repository, youtube }),
     courses,
+    plans,
     posts,
     enroll: (userId: string, courseId: string) => enrollments.add(`${userId}:${courseId}`),
     addPlainCourse: (tenantId: string, courseId: string, hasContent = false) => plainCourses.set(courseId, { tenantId, hasContent }),

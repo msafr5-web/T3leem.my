@@ -62,6 +62,11 @@ export type CreatePostResult = { kind: 'ok'; id: string } | { kind: 'module_not_
 export interface RecordedCourseRepository {
   /** null = the trainer isn't in this academy. */
   createRecordedCourse(tenantId: string, actor: Actor, input: NewRecordedCourse): Promise<string | null>;
+  /** True when the trainer belongs to THIS academy (checked through RLS, since foreign keys are not). */
+  trainerExists(tenantId: string, trainerId: string): Promise<boolean>;
+  planExists(tenantId: string, planId: string): Promise<boolean>;
+  /** Adds courses to the END of a plan (already-present ones are skipped). false = no such plan. */
+  appendCoursesToPlan(tenantId: string, actor: Actor, planId: string, courseIds: string[]): Promise<boolean>;
   /** Adds a YouTube schedule to an existing course that has no content yet. */
   attachRecordedSchedule(tenantId: string, actor: Actor, courseId: string, schedule: RecordedSchedule): Promise<AttachResult>;
   /** Changes channel / start date of a recorded course. false = no such recorded course. */
@@ -130,6 +135,34 @@ const auditSchedule = (tx: Prisma.TransactionClient, tenantId: string, actor: Ac
   tx.auditLog.create({ data: { tenantId, actorId: actor.userId, actorRole: actor.role, action, entityType: 'course', entityId: courseId, metadata, ipAddress: actor.ip } });
 
 export class PrismaRecordedCourseRepository implements RecordedCourseRepository {
+  async trainerExists(tenantId: string, trainerId: string): Promise<boolean> {
+    return (await forTenant(tenantId).trainer.count({ where: { tenantId, id: trainerId } })) > 0;
+  }
+
+  async planExists(tenantId: string, planId: string): Promise<boolean> {
+    return (await forTenant(tenantId).trainingPlan.count({ where: { tenantId, id: planId } })) > 0;
+  }
+
+  appendCoursesToPlan(tenantId: string, actor: Actor, planId: string, courseIds: string[]): Promise<boolean> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const plan = await tx.trainingPlan.findFirst({ where: { tenantId, id: planId }, select: { id: true } });
+      if (!plan) return false;
+      // Same academy only: a course id from another academy would pass the foreign key but must never be linked.
+      const own = await tx.course.findMany({ where: { tenantId, id: { in: courseIds } }, select: { id: true } });
+      const present = new Set((await tx.trainingPlanCourse.findMany({ where: { tenantId, planId }, select: { courseId: true } })).map((c) => c.courseId));
+      const last = await tx.trainingPlanCourse.aggregate({ where: { tenantId, planId }, _max: { sortOrder: true } });
+      let order = (last._max.sortOrder ?? 0) + 1;
+      const fresh = own.map((c) => c.id).filter((id) => !present.has(id));
+      if (fresh.length > 0) {
+        await tx.trainingPlanCourse.createMany({ data: fresh.map((courseId) => ({ tenantId, planId, courseId, sortOrder: order++ })) });
+      }
+      await tx.auditLog.create({
+        data: { tenantId, actorId: actor.userId, actorRole: actor.role, action: 'plan.courses_added', entityType: 'training_plan', entityId: planId, metadata: { added: fresh.length }, ipAddress: actor.ip },
+      });
+      return true;
+    });
+  }
+
   createRecordedCourse(tenantId: string, actor: Actor, input: NewRecordedCourse): Promise<string | null> {
     return withTenantTransaction(tenantId, async (tx) => {
       // FK checks bypass RLS: a trainer id from another academy would satisfy the constraint,

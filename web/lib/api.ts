@@ -177,6 +177,14 @@ export interface EnrollmentOutcome {
   results: { email: string; full_name: string; status: 'enrolled' | 'already_enrolled' | 'error'; account_created: boolean; message: string | null }[];
 }
 
+/** Result of adding several recorded courses at once: one line per YouTube link. */
+export interface RecordedBatchOutcome {
+  plan_linked: boolean;
+  created: number;
+  failed: number;
+  results: { youtube_url: string; status: 'created' | 'error'; id: string | null; title: string | null; training_hours: number | null; days: number | null; code: string | null }[];
+}
+
 export interface MyEnrollment {
   enrollment_id: string;
   course_id: string;
