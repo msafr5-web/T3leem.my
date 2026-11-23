@@ -22,6 +22,7 @@ import type {
   CourseDeletionSummary,
   TraineeEnrollmentResult,
 } from './provider.types';
+import { loadCourseSchedules, orderPlanByStart, type CourseSchedule } from './plan-schedule';
 import type { TraineeDraft } from './trainee.excel';
 
 export interface ProviderRepository {
@@ -66,6 +67,8 @@ export interface ProviderRepository {
    */
   enrollTrainees(tenantId: string, actor: Actor, courseId: string, drafts: TraineeDraft[], passwordHash: string): Promise<TraineeEnrollmentResult[]>;
   listCourseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]>;
+  /** Start and day lengths of the dated recorded courses among these ids (for the plan overlap rule). */
+  loadCourseSchedules(tenantId: string, courseIds: string[]): Promise<CourseSchedule[]>;
 }
 
 const audit = (
@@ -364,6 +367,8 @@ export class PrismaProviderRepository implements ProviderRepository {
           data: courseIds.map((courseId, sortOrder) => ({ tenantId, planId: id, courseId, sortOrder })),
         });
       }
+      // Earliest start first, whatever order the admin ticked the courses in.
+      await orderPlanByStart(tx, tenantId, id);
       await audit(tx, tenantId, actor, 'plan.created', 'training_plan', id, { title: input.title, courses: courseIds.length });
       return id;
     });
@@ -465,6 +470,7 @@ export class PrismaProviderRepository implements ProviderRepository {
         if (courseIds.length) {
           await tx.trainingPlanCourse.createMany({ data: courseIds.map((courseId, sortOrder) => ({ tenantId, planId: id, courseId, sortOrder })) });
         }
+        await orderPlanByStart(tx, tenantId, id);
       }
       await audit(tx, tenantId, actor, 'plan.updated', 'training_plan', id, { fields: Object.keys(input) });
       return true;
@@ -504,6 +510,10 @@ export class PrismaProviderRepository implements ProviderRepository {
       await audit(tx, tenantId, actor, 'classroom.deleted', 'virtual_classroom', id, { title: room.title });
       return true;
     });
+  }
+
+  loadCourseSchedules(tenantId: string, courseIds: string[]): Promise<CourseSchedule[]> {
+    return withTenantTransaction(tenantId, (tx) => loadCourseSchedules(tx, tenantId, courseIds));
   }
 
   async listCourseRoster(tenantId: string, courseId: string): Promise<CourseRosterRow[]> {

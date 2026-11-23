@@ -2,13 +2,15 @@ import Link from 'next/link';
 import { ApiError, ApiUnavailableError, admin, type SchedulePreview } from '@/lib/api';
 import { requireAdmin } from '@/lib/admin';
 import { createRecordedCourseAction } from '@/lib/admin-actions';
-import { formatMinutes, formatNumber } from '@/lib/format';
+import { formatDateTime, formatMinutes, formatNumber } from '@/lib/format';
 import { AdminForm } from '../../admin-form';
 import { AutoDuration } from '../auto-duration';
 import { ScheduleTimeline } from '../schedule-timeline';
 import { SourceFields } from '../source-fields';
 
 type Search = {
+  /** Set when the course is being added from a training plan. */
+  plan?: string;
   url?: string;
   days?: string;
   mode?: string;
@@ -32,11 +34,18 @@ const PREVIEW_ERRORS: Record<string, string> = {
 };
 
 const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function NewRecordedCourse({ params, searchParams }: { params: Promise<{ tenant: string }>; searchParams: Promise<Search> }) {
   const [{ tenant: slug }, q] = await Promise.all([params, searchParams]);
   const token = await requireAdmin(slug);
   const trainers = await admin.trainers(slug, token);
+
+  // Coming from a plan: show which plan, and what its other dated courses already occupy (so the start date can be chosen well).
+  const planId = q.plan && UUID.test(q.plan) ? q.plan : null;
+  const plan = planId ? ((await admin.plans(slug, token)).find((p) => p.id === planId) ?? null) : null;
+  const planCourses = plan ? (await admin.courses(slug, token)).filter((c) => plan.courses.some((pc) => pc.id === c.id)) : [];
+  const backHref = plan ? `/${slug}/dashboard/plans/${plan.id}` : `/${slug}/dashboard/recorded`;
 
   // Settings default to the owner-approved schedule: 10–15 min lectures, 5 min breaks, 15 min discussion.
   const settings = {
@@ -84,16 +93,40 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
           <h1 style={{ fontSize: 28 }}>دورة مسجلة جديدة</h1>
           <p className="muted small">الخطوة ١: الصق رابط الفيديو واضبط الجدولة. الخطوة ٢: راجع الأيام والأجزاء ثم أنشئ الدورة.</p>
         </div>
-        <Link href={`/${slug}/dashboard/recorded`} className="btn btn-ghost">
+        <Link href={backHref} className="btn btn-ghost">
           رجوع
         </Link>
       </div>
+
+      {plan && (
+        <section className="card stack" aria-labelledby="plan-banner">
+          <h2 id="plan-banner" style={{ fontSize: 18 }}>
+            ستُضاف هذه الدورة إلى الخطة «{plan.title}»
+          </h2>
+          <p className="small muted">
+            الخطوات نفسها لأي دورة مسجلة. تُرتَّب دورات الخطة تلقائياً حسب تاريخ بدايتها، ولا يُسمح بتداخل أيام دورتين وأوقاتهما فيها: إن تعارضت ستُعرض لك الدورة المتعارضة وأول موعد متاح. <strong>حدّد تاريخ البداية في الخطوة ٣</strong> ليُتحقق من التعارض (الدورة بلا تاريخ تُضاف في آخر الخطة).
+          </p>
+          {planCourses.some((c) => c.recorded?.starts_at) && (
+            <ul className="small" style={{ margin: 0, paddingInlineStart: 20 }}>
+              {planCourses
+                .filter((c) => c.recorded?.starts_at)
+                .sort((a, b) => new Date(a.recorded?.starts_at as string).getTime() - new Date(b.recorded?.starts_at as string).getTime())
+                .map((c) => (
+                  <li key={c.id}>
+                    {c.title} — يبدأ {formatDateTime(c.recorded?.starts_at as string)}، {formatNumber(c.recorded?.day_count ?? 0)} {c.recorded?.day_count === 1 ? 'يوم' : 'أيام'}
+                  </li>
+                ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="card stack" aria-labelledby="step1">
         <h2 id="step1" style={{ fontSize: 18 }}>
           ١. الفيديو والجدولة
         </h2>
         <form method="get" className="form">
+          {plan && <input type="hidden" name="plan" value={plan.id} />}
           <div className="form-grid">
             <label htmlFor="url" className="full">
               رابط فيديو YouTube
@@ -200,7 +233,8 @@ export default async function NewRecordedCourse({ params, searchParams }: { para
                 أضف مدرباً أولاً من <Link href={`/${slug}/dashboard/trainers`}>صفحة المدربين</Link>.
               </p>
             ) : (
-              <AdminForm action={createRecordedCourseAction.bind(null, slug)} submitLabel="إنشاء الدورة المسجلة">
+              <AdminForm action={createRecordedCourseAction.bind(null, slug)} submitLabel={plan ? 'إنشاء الدورة وإضافتها للخطة' : 'إنشاء الدورة المسجلة'}>
+                {plan && <input type="hidden" name="plan_id" value={plan.id} />}
                 <input type="hidden" name="youtube_url" value={q.url} />
                 <input type="hidden" name="split_mode" value={preview.config.split_mode} />
                 <input type="hidden" name="max_lecture_minutes" value={preview.config.max_lecture_minutes} />

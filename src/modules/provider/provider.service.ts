@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { logger } from '../../shared/services/logger';
 import { HttpError } from '../../shared/utils/http-error';
 import { ManualMeetingScheduler, type MeetingScheduler } from '../live/meeting-scheduler';
+import { firstPairConflict, scheduleConflictError } from './plan-schedule';
 import type { ProviderRepository } from './provider.repository';
 import { buildTraineeTemplate, cleanTrainee, dedupeBatch, parseTraineeSheet, TRAINEE_LIMITS, type TraineeDraft } from './trainee.excel';
 import type {
@@ -204,6 +205,7 @@ export class ProviderService {
       throw HttpError.unprocessable('INVALID_PERIOD', 'The plan must end on or after its start date');
     }
     await this.assertCoursesOwned(tenantId, input.courseIds);
+    await this.assertNoOverlap(tenantId, input.courseIds);
     return this.deps.repository.createPlan(tenantId, actor, input);
   }
 
@@ -307,6 +309,7 @@ export class ProviderService {
         throw HttpError.unprocessable('DUPLICATE_COURSES', 'A course appears more than once in the plan');
       }
       await this.assertCoursesOwned(tenantId, input.courseIds);
+      await this.assertNoOverlap(tenantId, input.courseIds);
     }
     if (input.startsOn && input.endsOn && input.endsOn < input.startsOn) {
       throw HttpError.unprocessable('INVALID_PERIOD', 'The plan must end on or after its start date');
@@ -380,6 +383,12 @@ export class ProviderService {
   }
 
   // ----- ownership guards -----
+
+  /** No two dated recorded courses of a plan may share clock time (days and times); undated courses cannot conflict. */
+  private async assertNoOverlap(tenantId: string, courseIds: string[]): Promise<void> {
+    const pair = firstPairConflict(await this.deps.repository.loadCourseSchedules(tenantId, courseIds));
+    if (pair) throw scheduleConflictError({ ...pair.conflict, withCourseId: pair.b.courseId, withTitle: pair.b.title }, null);
+  }
 
   private async assertCoursesOwned(tenantId: string, courseIds: string[]): Promise<void> {
     if (courseIds.length === 0) return;

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { ApiError, ApiUnavailableError, api, type EnrollmentOutcome, type RecordedBatchOutcome } from './api';
-import { isValidSlug } from './format';
+import { formatDateTime, isValidSlug } from './format';
 import { getSession } from './session';
 
 /**
@@ -142,8 +142,23 @@ const ERROR_MESSAGES: Record<string, string> = {
   POST_NOT_FOUND: 'السؤال لم يعد موجوداً.',
 };
 
+/**
+ * SCHEDULE_CONFLICT: two courses of one plan would run at the same time. Says which course, which day, and (when one fits)
+ * the first free start at the same time of day, so the admin can fix the date and try again.
+ */
+function conflictMessage(err: ApiError): string {
+  const d = err.details as unknown as { conflict?: { title: string; day: number; other_day: number; at: string }; suggested_start?: string | null } | undefined;
+  const c = d?.conflict;
+  if (!c) return 'تتداخل أيام هذه الدورة وأوقاتها مع دورة أخرى في الخطة.';
+  const base = d?.suggested_start
+    ? `تتداخل أيام هذه الدورة وأوقاتها مع «${c.title}» في نفس الخطة (اليوم ${c.day} من هذه الدورة يوافق ${formatDateTime(c.at)}، وهو وقت اليوم ${c.other_day} من «${c.title}»).`
+    : `دورتان في الخطة تتداخل أيامهما وأوقاتهما: «${c.title}» ودورة أخرى (${formatDateTime(c.at)}). عدّل تاريخ بداية إحداهما أو أخرج إحداهما من الخطة.`;
+  return d?.suggested_start ? `${base} أول موعد متاح بنفس وقت المحاضرة: ${formatDateTime(d.suggested_start)}. غيّر تاريخ البداية ثم أعد المحاولة.` : base;
+}
+
 function describeError(err: unknown): AdminFormState {
   if (err instanceof ApiError) {
+    if (err.code === 'SCHEDULE_CONFLICT') return { error: conflictMessage(err) };
     if (err.code === 'VALIDATION_FAILED') return { error: 'تحقق من الحقول المميزة.', fields: [] };
     return { error: ERROR_MESSAGES[err.code] ?? 'تعذّر حفظ البيانات. حاول مرة أخرى.' };
   }
@@ -414,6 +429,9 @@ export async function createRecordedCourseAction(slug: string, _prev: AdminFormS
     price: Number(str(form, 'price') || 0),
     is_published: form.get('is_published') === 'on',
   };
+  // Created from a training plan: the course joins that plan (after the overlap check) and takes its place by start date.
+  const planId = str(form, 'plan_id');
+  if (planId) body.plan_id = planId;
   for (const key of [...SCHEDULE_FIELDS, ...SOURCE_FIELDS]) {
     const v = str(form, key);
     if (v !== '') body[key] = NUMERIC_FIELDS.has(key) ? Number(v) : v;
@@ -429,7 +447,7 @@ export async function createRecordedCourseAction(slug: string, _prev: AdminFormS
     return state;
   }
   revalidatePath(`/${slug}`, 'layout');
-  redirect(`/${slug}/dashboard/recorded/${id}?created=1`);
+  redirect(planId && ID_RE.test(planId) ? `/${slug}/dashboard/plans/${planId}?added=1` : `/${slug}/dashboard/recorded/${id}?created=1`);
 }
 
 /** Channel + start date/time of an existing recorded course. */

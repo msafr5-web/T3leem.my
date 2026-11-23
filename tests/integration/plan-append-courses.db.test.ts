@@ -80,9 +80,9 @@ describeDb('Recorded courses appended to a training plan (real database)', () =>
     expect(await repo.appendCoursesToPlan(tenantA, actor, planA, [c1, c2])).toBe(true);
     expect(await repo.appendCoursesToPlan(tenantA, actor, planA, [c2, c3])).toBe(true);
     expect((await planCourses(tenantA, planA)).map((r) => [r.courseId, r.sortOrder])).toEqual([
-      [c1, 1],
-      [c2, 2],
-      [c3, 3],
+      [c1, 0],
+      [c2, 1],
+      [c3, 2],
     ]);
   });
 

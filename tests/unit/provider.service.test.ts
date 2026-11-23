@@ -38,6 +38,7 @@ function setup(owned = { courses: ['c1', 'c2'], trainers: ['t1'] }) {
     updateClassroom: jest.fn(async () => true),
     deleteClassroom: jest.fn(async () => true),
     listAttendance: jest.fn(async () => []),
+    loadCourseSchedules: jest.fn(async () => []),
   } as unknown as jest.Mocked<ProviderRepository>;
   const hashPassword = jest.fn(async (p: string) => `hash(${p})`);
   const service = new ProviderService({ repository: repo, hashPassword, clock: () => NOW });
@@ -320,5 +321,37 @@ describe('ProviderService', () => {
       await expect(service.createClassroom(T, actor, { ...classroom, courseId: 'foreign' })).rejects.toMatchObject({ code: 'UNKNOWN_COURSE' });
       await expect(service.createClassroom(T, actor, { ...classroom, trainerId: 'foreign' })).rejects.toMatchObject({ code: 'UNKNOWN_TRAINER' });
     });
+  });
+});
+
+describe('ProviderService plans: no two dated recorded courses may overlap', () => {
+  // 1 December 2026, 19:00 Saudi time (16:00 UTC), one 60-minute day.
+  const slot = (courseId: string, title: string, hhmm: string) => ({ courseId, title, startsAt: new Date(`2026-12-01T${hhmm}:00+03:00`), dayMinutes: [60] });
+
+  it('refuses a new plan whose courses overlap, naming the second one, and writes nothing', async () => {
+    const { service, repo } = setup();
+    repo.loadCourseSchedules.mockResolvedValueOnce([slot('c1', 'Alpha', '19:00'), slot('c2', 'Beta', '19:30')]);
+    await expect(service.createPlan(T, actor, plan)).rejects.toMatchObject({ status: 422, code: 'SCHEDULE_CONFLICT', details: { conflict: { title: 'Beta' } } });
+    expect(repo.createPlan).not.toHaveBeenCalled();
+  });
+
+  it('allows courses that follow each other, undated ones, and an empty plan', async () => {
+    const { service, repo } = setup();
+    repo.loadCourseSchedules.mockResolvedValueOnce([slot('c1', 'Alpha', '19:00'), slot('c2', 'Beta', '20:00')]); // back to back
+    await expect(service.createPlan(T, actor, plan)).resolves.toBe('new-plan');
+    repo.loadCourseSchedules.mockResolvedValueOnce([]); // none of them has a start date
+    await expect(service.createPlan(T, actor, plan)).resolves.toBe('new-plan');
+    await expect(service.createPlan(T, actor, { ...plan, courseIds: [] })).resolves.toBe('new-plan');
+  });
+
+  it('checks the same rule when a plan\'s course list is edited, but not when only its title changes', async () => {
+    const { service, repo } = setup();
+    repo.loadCourseSchedules.mockResolvedValueOnce([slot('c1', 'Alpha', '19:00'), slot('c2', 'Beta', '19:59')]);
+    await expect(service.updatePlan(T, actor, 'p1', { courseIds: ['c1', 'c2'] })).rejects.toMatchObject({ code: 'SCHEDULE_CONFLICT' });
+    expect(repo.updatePlan).not.toHaveBeenCalled();
+
+    await service.updatePlan(T, actor, 'p1', { title: 'Renamed' });
+    expect(repo.loadCourseSchedules).toHaveBeenCalledTimes(1);
+    expect(repo.updatePlan).toHaveBeenCalledWith(T, actor, 'p1', { title: 'Renamed' });
   });
 });

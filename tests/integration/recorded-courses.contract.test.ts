@@ -256,3 +256,80 @@ describe('POST /api/v1/admin/recorded-courses/batch (several recorded courses fo
     expect((await request(app).post('/api/v1/admin/recorded-courses/batch').set('x-tenant-id', TENANT_A).send(body)).status).toBe(401);
   });
 });
+
+describe('recorded courses inside a plan: no overlap, ordered by start date', () => {
+  const create = (app: ReturnType<typeof buildApp>, extra: object, video = YT_OK) =>
+    call(app, adminToken).post('/admin/recorded-courses', { youtube_url: `https://youtu.be/${video}`, trainer_id: TRAINER, price: 0, plan_id: PLAN_ID, ...extra });
+  const planOf = (app: ReturnType<typeof buildApp>) => recordedOf(app).plans.get(PLAN_ID)!;
+  const startOf = (app: ReturnType<typeof buildApp>, id: string) => recordedOf(app).courses.get(id)?.startsAt?.toISOString();
+
+  // YT_OK is one 41-minute day: 19:00-19:41 Saudi time.
+  it('adds a dated course to the plan with the normal recorded-course steps and settings', async () => {
+    const app = buildApp();
+    const res = await create(app, { title: 'Ep 1', starts_on: '2026-12-01', lecture_time: '19:00', max_lecture_minutes: 15 });
+    expect(res.status).toBe(201);
+    expect(planOf(app)).toEqual([res.body.data.id]);
+    expect(startOf(app, res.body.data.id)).toBe('2026-12-01T16:00:00.000Z');
+  });
+
+  it('refuses a course that overlaps another one of the plan, says which, and suggests the first free start (same time of day)', async () => {
+    const app = buildApp();
+    await create(app, { title: 'Ep 1', starts_on: '2026-12-01', lecture_time: '19:00' });
+    const clash = await create(app, { title: 'Ep 2', starts_on: '2026-12-01', lecture_time: '19:30' }, YT_OK_2);
+    expect(clash.status).toBe(422);
+    expect(clash.body.error.code).toBe('SCHEDULE_CONFLICT');
+    expect(clash.body.error.details.conflict).toMatchObject({ title: 'Ep 1', day: 1, other_day: 1 });
+    expect(clash.body.error.details.suggested_start).toBe('2026-12-02T16:30:00.000Z'); // 2 December 19:30 Saudi time
+    expect(planOf(app)).toHaveLength(1); // nothing was created
+    expect(recordedOf(app).courses.size).toBe(1);
+  });
+
+  it('accepts the suggested start, and a course that starts exactly when the other ends', async () => {
+    const app = buildApp();
+    await create(app, { title: 'Ep 1', starts_on: '2026-12-01', lecture_time: '19:00' });
+    expect((await create(app, { title: 'Ep 2', starts_on: '2026-12-02', lecture_time: '19:30' }, YT_OK_2)).status).toBe(201);
+    expect((await create(app, { title: 'Ep 3', starts_on: '2026-12-01', lecture_time: '19:41', youtube_url: `https://youtu.be/${YT_OK}` })).status).toBe(201); // 19:41 = end of Ep 1
+  });
+
+  it('keeps the plan ordered by start date whatever order the courses are added in; undated courses stay last', async () => {
+    const app = buildApp();
+    const late = await create(app, { title: 'Late', starts_on: '2026-12-10', lecture_time: '19:00' });
+    const undated = await create(app, { title: 'No date' }, YT_OK_2);
+    const early = await create(app, { title: 'Early', starts_on: '2026-12-03', lecture_time: '19:00' }, YT_OK_2);
+    const middle = await create(app, { title: 'Middle', starts_on: '2026-12-05', lecture_time: '19:00' }, YT_OK_2);
+    expect(planOf(app)).toEqual([early.body.data.id, middle.body.data.id, late.body.data.id, undated.body.data.id]);
+  });
+
+  it('a course without a start date cannot conflict (nothing to compare), and a course outside any plan is unaffected', async () => {
+    const app = buildApp();
+    await create(app, { title: 'Ep 1', starts_on: '2026-12-01', lecture_time: '19:00' });
+    expect((await create(app, { title: 'Undated' }, YT_OK_2)).status).toBe(201);
+    const alone = await call(app, adminToken).post('/admin/recorded-courses', { youtube_url: `https://youtu.be/${YT_OK_2}`, trainer_id: TRAINER, price: 0, starts_on: '2026-12-01', lecture_time: '19:00' });
+    expect(alone.status).toBe(201); // same slot, but not in the plan
+  });
+
+  it('moving a course\'s start date later re-checks every plan it is in, and re-orders them', async () => {
+    const app = buildApp();
+    const a = await create(app, { title: 'Alpha', starts_on: '2026-12-01', lecture_time: '19:00' });
+    const b = await create(app, { title: 'Beta', starts_on: '2026-12-05', lecture_time: '19:00' }, YT_OK_2);
+    const put = (id: string, body: object) => request(app).put(`/api/v1/admin/recorded-courses/${id}/source`).set('x-tenant-id', TENANT_A).set('Authorization', `Bearer ${adminToken}`).send(body);
+
+    const clash = await put(b.body.data.id, { starts_on: '2026-12-01', lecture_time: '19:20' });
+    expect(clash.status).toBe(422);
+    expect(clash.body.error.code).toBe('SCHEDULE_CONFLICT');
+    expect(startOf(app, b.body.data.id)).toBe('2026-12-05T16:00:00.000Z'); // unchanged
+
+    expect((await put(a.body.data.id, { starts_on: '2026-12-09', lecture_time: '19:00' })).status).toBe(200);
+    expect(planOf(app)).toEqual([b.body.data.id, a.body.data.id]); // A now starts after B
+  });
+
+  it('404 for a plan that is not this academy\'s, before anything is created', async () => {
+    const app = buildApp();
+    const res = await create(app, { title: 'Xyz', starts_on: '2026-12-01' }, YT_OK);
+    expect(res.status).toBe(201);
+    const other = await call(app, adminToken).post('/admin/recorded-courses', { youtube_url: `https://youtu.be/${YT_OK}`, trainer_id: TRAINER, price: 0, plan_id: 'b1000000-0000-4000-8000-0000000000ff' });
+    expect(other.status).toBe(404);
+    expect(other.body.error.code).toBe('PLAN_NOT_FOUND');
+    expect(recordedOf(app).courses.size).toBe(1);
+  });
+});

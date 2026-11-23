@@ -1,6 +1,8 @@
 import { logger } from '../../../shared/services/logger';
+import { firstConflict, scheduleConflictError, suggestStart } from '../../provider/plan-schedule';
 import { HttpError } from '../../../shared/utils/http-error';
 import type { Actor } from '../../provider/provider.types';
+import type { CourseSchedule } from '../../provider/plan-schedule';
 import type {
   CreatePostResult,
   DiscussionPostRow,
@@ -36,6 +38,8 @@ export interface SchedulePreview {
 }
 
 export interface CreateRecordedCourseInput extends ScheduleRequest, SourceInput {
+  /** When set, the course is added to this training plan (after the no-overlap check) and takes its place by start date. */
+  planId?: string | null;
   title: string | null;
   description: string | null;
   trainerId: string;
@@ -151,6 +155,13 @@ export class RecordedCourseService {
     if (title.length < 3) throw HttpError.unprocessable('TITLE_REQUIRED', 'Enter a course title');
     const schedule = this.schedule(preview, this.resolveSource(input, preview.video));
 
+    // Into a plan: the plan must exist, and (when a start date is given) the course must not overlap another one of the plan.
+    if (input.planId) {
+      const others = await this.deps.repository.loadPlanSchedules(tenantId, input.planId);
+      if (!others) throw HttpError.notFound('PLAN_NOT_FOUND', 'Plan not found');
+      if (schedule.startsAt) this.assertFits(schedule.startsAt, preview.plan.days.map((d) => d.totalMinutes), others);
+    }
+
     const id = await this.deps.repository.createRecordedCourse(tenantId, actor, {
       ...schedule,
       title: title.slice(0, 200),
@@ -160,7 +171,22 @@ export class RecordedCourseService {
       isPublished: input.isPublished,
     });
     if (!id) throw HttpError.unprocessable('UNKNOWN_TRAINER', 'Trainer not found in this academy');
+    if (input.planId) await this.deps.repository.appendCoursesToPlan(tenantId, actor, input.planId, [id]);
     return { id, preview };
+  }
+
+  /** Throws SCHEDULE_CONFLICT (with the first free start at the same time of day) when the candidate overlaps a course of the plan. */
+  private assertFits(startsAt: Date, dayMinutes: number[], others: CourseSchedule[]): void {
+    const conflict = firstConflict({ startsAt, dayMinutes }, others);
+    if (conflict) throw scheduleConflictError(conflict, suggestStart({ startsAt, dayMinutes }, others));
+  }
+
+  /** A course that is already in plans (or being added to one) must keep fitting every one of them when its start date changes. */
+  private async assertFitsItsPlans(tenantId: string, courseId: string, startsAt: Date | null, dayMinutes: number[] | null): Promise<void> {
+    if (!startsAt) return;
+    const minutes = dayMinutes ?? (await this.deps.repository.loadCourseSchedule(tenantId, courseId))?.dayMinutes ?? null;
+    if (!minutes) return;
+    for (const plan of await this.deps.repository.loadPlansOfCourse(tenantId, courseId)) this.assertFits(startsAt, minutes, plan.others);
   }
 
   /**
@@ -232,14 +258,18 @@ export class RecordedCourseService {
   /** Turns an existing course (from the regular course form) into a recorded YouTube course. */
   async attach(tenantId: string, actor: Actor, courseId: string, input: ScheduleRequest & SourceInput): Promise<SchedulePreview> {
     const preview = await this.preview(input);
-    const result = await this.deps.repository.attachRecordedSchedule(tenantId, actor, courseId, this.schedule(preview, this.resolveSource(input, preview.video)));
+    const schedule = this.schedule(preview, this.resolveSource(input, preview.video));
+    await this.assertFitsItsPlans(tenantId, courseId, schedule.startsAt, preview.plan.days.map((d) => d.totalMinutes));
+    const result = await this.deps.repository.attachRecordedSchedule(tenantId, actor, courseId, schedule);
     if (result === 'not_found') throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
     if (result === 'has_content') throw HttpError.conflict('COURSE_HAS_CONTENT', 'This course already has content; a YouTube schedule can only be added to an empty course');
     return preview;
   }
 
   async updateSource(tenantId: string, actor: Actor, courseId: string, input: SourceInput): Promise<void> {
-    if (!(await this.deps.repository.updateRecordedSource(tenantId, actor, courseId, this.resolveSource(input)))) {
+    const source = this.resolveSource(input);
+    await this.assertFitsItsPlans(tenantId, courseId, source.startsAt, null);
+    if (!(await this.deps.repository.updateRecordedSource(tenantId, actor, courseId, source))) {
       throw HttpError.notFound('COURSE_NOT_FOUND', 'Recorded course not found');
     }
   }

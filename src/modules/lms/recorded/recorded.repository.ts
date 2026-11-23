@@ -1,5 +1,6 @@
 import { Prisma, type UserRole } from '@prisma/client';
 import { forTenant, withTenantTransaction } from '../../../config/database';
+import { loadCourseSchedules, orderPlanByStart, type CourseSchedule } from '../../provider/plan-schedule';
 import type { Actor } from '../../provider/provider.types';
 import type { ScheduleConfig } from './schedule-planner';
 
@@ -65,6 +66,12 @@ export interface RecordedCourseRepository {
   /** True when the trainer belongs to THIS academy (checked through RLS, since foreign keys are not). */
   trainerExists(tenantId: string, trainerId: string): Promise<boolean>;
   planExists(tenantId: string, planId: string): Promise<boolean>;
+  /** Dated recorded courses of the plan (null = no such plan). */
+  loadPlanSchedules(tenantId: string, planId: string): Promise<CourseSchedule[] | null>;
+  /** For each plan holding this course: the OTHER dated courses of that plan. Used when the course's start date changes. */
+  loadPlansOfCourse(tenantId: string, courseId: string): Promise<{ planId: string; others: CourseSchedule[] }[]>;
+  /** This course's own start and day lengths (null when it has no start date). */
+  loadCourseSchedule(tenantId: string, courseId: string): Promise<CourseSchedule | null>;
   /** Adds courses to the END of a plan (already-present ones are skipped). false = no such plan. */
   appendCoursesToPlan(tenantId: string, actor: Actor, planId: string, courseIds: string[]): Promise<boolean>;
   /** Adds a YouTube schedule to an existing course that has no content yet. */
@@ -143,6 +150,30 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
     return (await forTenant(tenantId).trainingPlan.count({ where: { tenantId, id: planId } })) > 0;
   }
 
+  loadPlanSchedules(tenantId: string, planId: string): Promise<CourseSchedule[] | null> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const links = await tx.trainingPlanCourse.findMany({ where: { tenantId, planId }, select: { courseId: true } });
+      const plan = links.length > 0 ? true : (await tx.trainingPlan.count({ where: { tenantId, id: planId } })) > 0;
+      return plan ? loadCourseSchedules(tx, tenantId, links.map((l) => l.courseId)) : null;
+    });
+  }
+
+  loadPlansOfCourse(tenantId: string, courseId: string): Promise<{ planId: string; others: CourseSchedule[] }[]> {
+    return withTenantTransaction(tenantId, async (tx) => {
+      const plans = await tx.trainingPlanCourse.findMany({ where: { tenantId, courseId }, select: { planId: true } });
+      const out: { planId: string; others: CourseSchedule[] }[] = [];
+      for (const { planId } of plans) {
+        const links = await tx.trainingPlanCourse.findMany({ where: { tenantId, planId, courseId: { not: courseId } }, select: { courseId: true } });
+        out.push({ planId, others: await loadCourseSchedules(tx, tenantId, links.map((l) => l.courseId)) });
+      }
+      return out;
+    });
+  }
+
+  loadCourseSchedule(tenantId: string, courseId: string): Promise<CourseSchedule | null> {
+    return withTenantTransaction(tenantId, async (tx) => (await loadCourseSchedules(tx, tenantId, [courseId]))[0] ?? null);
+  }
+
   appendCoursesToPlan(tenantId: string, actor: Actor, planId: string, courseIds: string[]): Promise<boolean> {
     return withTenantTransaction(tenantId, async (tx) => {
       const plan = await tx.trainingPlan.findFirst({ where: { tenantId, id: planId }, select: { id: true } });
@@ -151,10 +182,12 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
       const own = await tx.course.findMany({ where: { tenantId, id: { in: courseIds } }, select: { id: true } });
       const present = new Set((await tx.trainingPlanCourse.findMany({ where: { tenantId, planId }, select: { courseId: true } })).map((c) => c.courseId));
       const last = await tx.trainingPlanCourse.aggregate({ where: { tenantId, planId }, _max: { sortOrder: true } });
-      let order = (last._max.sortOrder ?? 0) + 1;
+      let order = (last._max.sortOrder ?? -1) + 1;
       const fresh = own.map((c) => c.id).filter((id) => !present.has(id));
       if (fresh.length > 0) {
         await tx.trainingPlanCourse.createMany({ data: fresh.map((courseId) => ({ tenantId, planId, courseId, sortOrder: order++ })) });
+        // The new course takes its place by start date (undated ones stay at the end, in the order added).
+        await orderPlanByStart(tx, tenantId, planId);
       }
       await tx.auditLog.create({
         data: { tenantId, actorId: actor.userId, actorRole: actor.role, action: 'plan.courses_added', entityType: 'training_plan', entityId: planId, metadata: { added: fresh.length }, ipAddress: actor.ip },
@@ -215,6 +248,7 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
       });
       await writeDays(tx, tenantId, courseId, schedule);
       await auditSchedule(tx, tenantId, actor, 'course.youtube_attached', courseId, { videoId: schedule.videoId, days: schedule.days.length });
+      for (const { planId } of await tx.trainingPlanCourse.findMany({ where: { tenantId, courseId }, select: { planId: true } })) await orderPlanByStart(tx, tenantId, planId);
       return 'ok';
     });
   }
@@ -225,7 +259,11 @@ export class PrismaRecordedCourseRepository implements RecordedCourseRepository 
         where: { tenantId, id: courseId, sourceVideoId: { not: null } },
         data: { sourceChannelUrl: meta.channelUrl, sourceChannelName: meta.channelName, scheduleStartsAt: meta.startsAt },
       });
-      if (count) await auditSchedule(tx, tenantId, actor, 'course.youtube_source_updated', courseId, { startsAt: meta.startsAt?.toISOString() ?? null });
+      if (count) {
+        await auditSchedule(tx, tenantId, actor, 'course.youtube_source_updated', courseId, { startsAt: meta.startsAt?.toISOString() ?? null });
+        // A moved start date can change its place in every plan that holds the course.
+        for (const { planId } of await tx.trainingPlanCourse.findMany({ where: { tenantId, courseId }, select: { planId: true } })) await orderPlanByStart(tx, tenantId, planId);
+      }
       return count > 0;
     });
   }

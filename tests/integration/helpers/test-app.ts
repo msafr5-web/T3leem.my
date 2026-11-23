@@ -267,6 +267,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     enrollTrainees: async (_t, _a, _c, drafts) => drafts.map((d) => ({ email: d.email, fullName: d.fullName, status: 'enrolled' as const, accountCreated: true })),
     listCourseRoster: async () => [],
     deleteCourse: async (t, _a, id) => (t !== TENANT_A || !ownedCourses.has(id) ? 'not_found' : 'in_use'),
+    loadCourseSchedules: async () => [],
     deleteCourseWithEnrollments: async (t, _a, id) => {
       if (t !== TENANT_A || !ownedCourses.has(id)) return null;
       audits.push(`course.deleted_with_enrollments:${id}`);

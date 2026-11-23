@@ -1,6 +1,7 @@
 /** In-memory recorded-course repository + YouTube source for HTTP contract tests. */
 import type { UserRole } from '@prisma/client';
 import type { DiscussionPostRow, NewRecordedCourse, RecordedCourseRepository } from '../../../src/modules/lms/recorded/recorded.repository';
+import { storedDayMinutes, type CourseSchedule } from '../../../src/modules/provider/plan-schedule';
 import { RecordedCourseService } from '../../../src/modules/lms/recorded/recorded.service';
 import type { YoutubeLookup, YoutubeMetadataSource } from '../../../src/modules/lms/recorded/youtube';
 
@@ -48,6 +49,20 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
 
   /** Training plans for the batch tests: plan id → the course ids appended to it, in order. */
   const plans = new Map<string, string[]>([[PLAN_ID, []]]);
+  /** Same rule as the real repository: earliest start first, undated courses after the dated ones (in the order added). */
+  const orderPlan = (list: string[]): void => {
+    const when = (id: string) => courses.get(id)?.startsAt?.getTime();
+    const dated = list.filter((id) => when(id) !== undefined).sort((a, b) => when(a)! - when(b)!);
+    list.splice(0, list.length, ...dated, ...list.filter((id) => when(id) === undefined));
+  };
+  /** Dated courses among these ids, with the length of each day (same formula as the real loader). */
+  const schedulesOf = (courseIds: string[]): CourseSchedule[] =>
+    courseIds.flatMap((id) => {
+      const c = courses.get(id);
+      return c?.startsAt
+        ? [{ courseId: id, title: c.title, startsAt: c.startsAt, dayMinutes: c.days.map((d) => storedDayMinutes(d.lessons, c.config.breakMinutes, c.config.discussionMinutes)) }]
+        : [];
+    });
 
   const repository: RecordedCourseRepository = {
     trainerExists: async (tenantId, trainerId) => tenantId === ids.tenantA && trainerId === ids.trainer,
@@ -56,8 +71,13 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
       if (tenantId !== ids.tenantA || !plans.has(planId)) return false;
       const list = plans.get(planId)!;
       for (const id of courseIds) if (!list.includes(id)) list.push(id);
+      orderPlan(list);
       return true;
     },
+    loadPlanSchedules: async (tenantId, planId) => (tenantId === ids.tenantA && plans.has(planId) ? schedulesOf(plans.get(planId)!) : null),
+    loadPlansOfCourse: async (tenantId, courseId) =>
+      tenantId !== ids.tenantA ? [] : [...plans.entries()].filter(([, list]) => list.includes(courseId)).map(([planId, list]) => ({ planId, others: schedulesOf(list.filter((id) => id !== courseId)) })),
+    loadCourseSchedule: async (tenantId, courseId) => (tenantId === ids.tenantA ? schedulesOf([courseId])[0] ?? null : null),
     createRecordedCourse: async (tenantId, _actor, input) => {
       if (tenantId !== ids.tenantA || input.trainerId !== ids.trainer) return null;
       const id = nextId('course');
@@ -87,6 +107,7 @@ export function buildRecordedFakes(ids: { tenantA: string; trainer: string; user
       const c = courses.get(courseId);
       if (!c || c.tenantId !== tenantId) return false;
       Object.assign(c, meta);
+      for (const list of plans.values()) if (list.includes(courseId)) orderPlan(list);
       return true;
     },
     listRecordedCourses: async (tenantId) =>

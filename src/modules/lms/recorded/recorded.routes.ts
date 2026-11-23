@@ -153,6 +153,7 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
     body('title').optional({ values: 'falsy' }).isString().trim().isLength({ min: 3, max: 200 }),
     body('description').optional({ values: 'falsy' }).isString().isLength({ max: 5000 }),
     body('trainer_id').isUUID().withMessage('trainer_id must be a UUID'),
+    body('plan_id').optional({ values: 'falsy' }).isUUID().withMessage('plan_id must be a UUID'),
     body('price').isFloat({ min: 0, max: 1_000_000 }).withMessage('price must be 0 - 1,000,000 SAR'),
     body('is_published').optional().isBoolean(),
     validate,
@@ -162,6 +163,7 @@ export function buildRecordedAdminRouter(service: RecordedCourseService, jwt: Jw
       const { id, preview } = await service.create(tenantId, { userId: user.id, role: user.role, ip: req.ip ?? null }, {
         ...scheduleRequest(b),
         ...sourceInput(b),
+        planId: typeof b.plan_id === 'string' && b.plan_id ? b.plan_id : null,
         title: typeof b.title === 'string' ? b.title : null,
         description: typeof b.description === 'string' && b.description.trim() ? b.description.trim() : null,
         trainerId: String(b.trainer_id),
