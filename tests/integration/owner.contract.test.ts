@@ -1,4 +1,5 @@
 /** HTTP contracts for the platform owner console: e-mail code sign-in, approval, plans, subscription, modules. */
+import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { TENANT_A, adminToken, buildApp, jwtOpts, learnerToken, tenants } from './helpers/test-app';
@@ -161,5 +162,61 @@ describe('what an academy may use', () => {
     expect((await learner(app, '/me/health')).status).toBe(200);
     const recorded = await request(app).get('/api/v1/admin/recorded-courses').set('x-tenant-slug', 'rukn').set('Authorization', `Bearer ${adminToken}`);
     expect(recorded.body.error.code).toBe('FEATURE_DISABLED');
+  });
+});
+
+describe('erasing a trainee completely (platform owner only)', () => {
+  const TRAINEE = 'd1000000-0000-4000-8000-000000000001';
+  const seed = (app: ReturnType<typeof buildApp>) =>
+    ownerOf(app).repository.trainees.set(PENDING_TENANT, [
+      { id: TRAINEE, fullName: 'Reem Trainee', email: 'reem@corp.test', phone: '+966551234567', employeeNo: 'E-7', enrollmentCount: 2, certificateCount: 1, createdAt: new Date('2026-10-01T00:00:00Z') },
+    ]);
+
+  it('lists the trainees of an academy, with the counts that will be erased', async () => {
+    const app = buildApp();
+    seed(app);
+    const o = as(app, await signIn(app));
+    const res = await o.get(`/tenants/${PENDING_TENANT}/trainees`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([
+      { id: TRAINEE, full_name: 'Reem Trainee', email: 'reem@corp.test', phone: '+966551234567', employee_no: 'E-7', enrollment_count: 2, certificate_count: 1, created_at: '2026-10-01T00:00:00.000Z' },
+    ]);
+  });
+
+  it('erases only when the typed e-mail matches (case and spaces ignored) and answers with counts', async () => {
+    const app = buildApp();
+    seed(app);
+    const o = as(app, await signIn(app));
+    const wrong = await o.post(`/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`, { confirm_email: 'someone@else.test' });
+    expect(wrong.status).toBe(422);
+    expect(wrong.body.error.code).toBe('EMAIL_MISMATCH');
+    expect(ownerOf(app).repository.erased).toEqual([]);
+
+    const ok = await o.post(`/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`, { confirm_email: '  Reem@Corp.Test ' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data).toMatchObject({ enrollments: 2, certificates: 1, invoices_kept: 0 });
+    expect(ownerOf(app).repository.erased).toEqual([{ tenantId: PENDING_TENANT, userId: TRAINEE }]);
+    expect((await o.get(`/tenants/${PENDING_TENANT}/trainees`)).body.data).toEqual([]);
+  });
+
+  it('404 for an unknown trainee or academy, 422 for a bad id or a missing e-mail', async () => {
+    const app = buildApp();
+    seed(app);
+    const o = as(app, await signIn(app));
+    expect((await o.post(`/tenants/${PENDING_TENANT}/trainees/${randomUUID()}/erase`, { confirm_email: 'a@b.co' })).body.error.code).toBe('TRAINEE_NOT_FOUND');
+    expect((await o.post(`/tenants/${randomUUID()}/trainees/${TRAINEE}/erase`, { confirm_email: 'a@b.co' })).body.error.code).toBe('TENANT_NOT_FOUND');
+    expect((await o.post(`/tenants/${PENDING_TENANT}/trainees/not-a-uuid/erase`, { confirm_email: 'a@b.co' })).status).toBe(422);
+    expect((await o.post(`/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`, {})).status).toBe(422);
+  });
+
+  it('is closed to everyone but the platform owner: anonymous, learner, academy admin', async () => {
+    const app = buildApp();
+    seed(app);
+    const path = `${base}/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`;
+    expect((await request(app).post(path).send({ confirm_email: 'reem@corp.test' })).status).toBe(401);
+    expect((await as(app, learnerToken).post(`/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`, { confirm_email: 'reem@corp.test' })).status).toBe(403);
+    expect((await as(app, adminToken).post(`/tenants/${PENDING_TENANT}/trainees/${TRAINEE}/erase`, { confirm_email: 'reem@corp.test' })).status).toBe(403);
+    expect((await as(app, adminToken).get(`/tenants/${PENDING_TENANT}/trainees`)).status).toBe(403);
+    expect(ownerOf(app).repository.erased).toEqual([]);
   });
 });

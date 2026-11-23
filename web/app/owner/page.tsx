@@ -207,6 +207,9 @@ export default async function OwnerPage() {
                       إرسال بيانات الاشتراك على واتساب
                     </a>
                   )}
+                  <Link className="btn btn-ghost" href={`/owner/${t.id}`}>
+                    المتدربون ومسح البيانات
+                  </Link>
                   {t.status === 'ACTIVE' ? (
                     <OwnerConfirm action={setTenantStatusAction.bind(null, t.id, 'SUSPENDED')} label="إيقاف الأكاديمية" confirmText={`إيقاف «${t.name}»؟ سيتوقف دخول مستخدميها فوراً.`} />
                   ) : (

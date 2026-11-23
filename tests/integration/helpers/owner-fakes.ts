@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { JwtTokenSigner } from '../../../src/modules/auth/token-signer';
 import { OtpLoginService, type OtpChallenge, type OtpRepository, type UserLookup } from '../../../src/modules/auth/otp.service';
-import { OwnerService, type Features, type OwnerRepository, type OwnerTenantRow, type PlanRow, type TenantPatch } from '../../../src/modules/platform/owner.service';
+import { OwnerService, type EraseOutcome, type Features, type OwnerRepository, type OwnerTenantRow, type OwnerTraineeRow, type PlanRow, type TenantPatch } from '../../../src/modules/platform/owner.service';
 import { CapturingMailer } from './registration-fakes';
 
 export class InMemoryOtpRepository implements OtpRepository {
@@ -77,6 +77,22 @@ export class InMemoryOwnerRepository implements OwnerRepository {
     if ([...this.tenants.values()].some((t) => t.planId === id)) return 'in_use' as const;
     this.plans = this.plans.filter((p) => p.id !== id);
     return 'ok' as const;
+  }
+
+  /** Trainees per academy id, for the erase routes. */
+  trainees = new Map<string, OwnerTraineeRow[]>();
+  erased: { tenantId: string; userId: string }[] = [];
+  async listTrainees(tenantId: string) {
+    return [...(this.trainees.get(tenantId) ?? [])];
+  }
+  async eraseTrainee(tenantId: string, userId: string, confirmEmail: string): Promise<EraseOutcome> {
+    const list = this.trainees.get(tenantId) ?? [];
+    const t = list.find((x) => x.id === userId);
+    if (!t) return { kind: 'not_found' };
+    if (t.email !== confirmEmail) return { kind: 'email_mismatch' };
+    this.trainees.set(tenantId, list.filter((x) => x.id !== userId));
+    this.erased.push({ tenantId, userId });
+    return { kind: 'erased', summary: { enrollments: t.enrollmentCount, certificates: t.certificateCount, quizAttempts: 0, discussionPosts: 0, attendanceRecords: 0, invoicesKept: 0 } };
   }
 }
 

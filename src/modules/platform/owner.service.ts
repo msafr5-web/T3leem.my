@@ -31,6 +31,31 @@ export interface PlanRow {
   tenantCount: number;
 }
 
+/** A learner account of one academy, as the platform owner sees it before erasing it. */
+export interface OwnerTraineeRow {
+  id: string;
+  fullName: string | null;
+  email: string;
+  phone: string | null;
+  employeeNo: string | null;
+  enrollmentCount: number;
+  certificateCount: number;
+  createdAt: Date;
+}
+
+/** What a full erasure removed (counts only, never personal data), also what the audit row records. */
+export interface ErasureSummary {
+  enrollments: number;
+  certificates: number;
+  quizAttempts: number;
+  discussionPosts: number;
+  attendanceRecords: number;
+  /** Tax invoices are kept by law; they hold only ids and amounts, no name or contact details. */
+  invoicesKept: number;
+}
+
+export type EraseOutcome = { kind: 'erased'; summary: ErasureSummary } | { kind: 'not_found' } | { kind: 'email_mismatch' };
+
 export interface TenantPatch {
   status?: TenantStatus;
   planId?: string | null;
@@ -48,6 +73,9 @@ export interface OwnerRepository {
   createPlan(input: { name: string; maxStudents: number; maxStorageGb: number; monthlyPrice: number }): Promise<{ kind: 'ok'; id: string } | { kind: 'duplicate' }>;
   updatePlan(id: string, input: { name: string; maxStudents: number; maxStorageGb: number; monthlyPrice: number }): Promise<'ok' | 'not_found' | 'duplicate'>;
   deletePlan(id: string): Promise<'ok' | 'not_found' | 'in_use'>;
+  listTrainees(tenantId: string): Promise<OwnerTraineeRow[]>;
+  /** Everything in one transaction: it either erases the trainee completely or changes nothing. */
+  eraseTrainee(tenantId: string, userId: string, confirmEmail: string): Promise<EraseOutcome>;
 }
 
 interface Deps {
@@ -170,5 +198,22 @@ export class OwnerService {
     const r = await this.deps.repository.deletePlan(id);
     if (r === 'not_found') throw HttpError.notFound('PLAN_NOT_FOUND', 'Plan not found');
     if (r === 'in_use') throw HttpError.conflict('PLAN_IN_USE', 'Academies are on this plan; move them first');
+  }
+
+  async listTrainees(tenantId: string): Promise<OwnerTraineeRow[]> {
+    await this.load(tenantId);
+    return this.deps.repository.listTrainees(tenantId);
+  }
+
+  /**
+   * Permanently erases one trainee of an academy with all their data (the right to erasure). The caller must type the
+   * trainee's e-mail as a second confirmation, so a wrong row or a stale page cannot erase the wrong person.
+   */
+  async eraseTrainee(tenantId: string, userId: string, confirmEmail: string): Promise<ErasureSummary> {
+    await this.load(tenantId);
+    const r = await this.deps.repository.eraseTrainee(tenantId, userId, confirmEmail.trim().toLowerCase());
+    if (r.kind === 'not_found') throw HttpError.notFound('TRAINEE_NOT_FOUND', 'Trainee not found in this academy');
+    if (r.kind === 'email_mismatch') throw HttpError.unprocessable('EMAIL_MISMATCH', 'The e-mail typed does not match this trainee');
+    return r.summary;
   }
 }

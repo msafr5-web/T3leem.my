@@ -134,6 +134,50 @@ export function buildOwnerRouter(otp: OtpLoginService, service: OwnerService, jw
     res.json(ok(tenantJson(await service.extend(req.params.id, Number(req.body.months)))));
   });
 
+  // ---- trainees of an academy: list, and erase one completely (owner only; the owner token is the only way in) ----
+  router.get('/tenants/:id/trainees', guard, uuid('id'), validate, async (req: Request<{ id: string }>, res: Response) => {
+    const rows = await service.listTrainees(req.params.id);
+    noStore(res);
+    res.json(
+      ok(
+        rows.map((t) => ({
+          id: t.id,
+          full_name: t.fullName,
+          email: t.email,
+          phone: t.phone,
+          employee_no: t.employeeNo,
+          enrollment_count: t.enrollmentCount,
+          certificate_count: t.certificateCount,
+          created_at: t.createdAt.toISOString(),
+        })),
+      ),
+    );
+  });
+
+  // POST, not DELETE: the confirmation e-mail travels in the body.
+  router.post(
+    '/tenants/:id/trainees/:userId/erase',
+    guard,
+    uuid('id'),
+    uuid('userId'),
+    body('confirm_email').isString().trim().isEmail().withMessage('confirm_email must be the trainee e-mail'),
+    validate,
+    async (req: Request<{ id: string; userId: string }>, res: Response) => {
+      const s = await service.eraseTrainee(req.params.id, req.params.userId, String(req.body.confirm_email));
+      noStore(res);
+      res.json(
+        ok({
+          enrollments: s.enrollments,
+          certificates: s.certificates,
+          quiz_attempts: s.quizAttempts,
+          discussion_posts: s.discussionPosts,
+          attendance_records: s.attendanceRecords,
+          invoices_kept: s.invoicesKept,
+        }),
+      );
+    },
+  );
+
   router.get('/plans', guard, async (_req: Request, res: Response) => {
     noStore(res);
     res.json(ok((await service.listPlans()).map(planJson)));

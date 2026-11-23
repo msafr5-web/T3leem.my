@@ -563,6 +563,18 @@ export interface OwnerTenant {
   created_at: string;
 }
 
+/** A learner account of an academy as the platform owner sees it (for the full-erasure screen). */
+export interface OwnerTrainee {
+  id: string;
+  full_name: string | null;
+  email: string;
+  phone: string | null;
+  employee_no: string | null;
+  enrollment_count: number;
+  certificate_count: number;
+  created_at: string;
+}
+
 export interface OwnerOverview {
   total: number;
   pending: number;
@@ -805,6 +817,7 @@ export const admin = {
 export const owner = {
   overview: (token: string) => platformApi<OwnerOverview>('/owner/overview', { token }),
   plans: (token: string) => platformApi<OwnerPlan[]>('/owner/plans', { token }),
+  trainees: (token: string, tenantId: string) => platformApi<OwnerTrainee[]>(`/owner/tenants/${encodeURIComponent(tenantId)}/trainees`, { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */

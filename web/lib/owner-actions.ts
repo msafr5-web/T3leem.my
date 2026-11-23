@@ -20,6 +20,8 @@ const MESSAGES: Record<string, string> = {
   MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الآن (إعدادات SMTP).',
   LOGIN_UNAVAILABLE: 'تسجيل الدخول غير مفعّل على هذا الخادم.',
   TENANT_NOT_FOUND: 'الأكاديمية غير موجودة.',
+  TRAINEE_NOT_FOUND: 'المتدرب غير موجود (ربما مُسح قبل قليل).',
+  EMAIL_MISMATCH: 'البريد المكتوب لا يطابق بريد المتدرب. لم يُمسح شيء.',
   UNKNOWN_PLAN: 'الباقة غير موجودة.',
   PLAN_EXISTS: 'توجد باقة بهذا الاسم.',
   PLAN_NOT_FOUND: 'الباقة غير موجودة.',
@@ -142,4 +144,26 @@ export async function updatePlanAction(planId: string, _prev: OwnerFormState, fo
 
 export async function deletePlanAction(planId: string, _prev: OwnerFormState): Promise<OwnerFormState> {
   return run((t) => platformApi(`/owner/plans/${encodeURIComponent(planId)}`, { method: 'DELETE', token: t }), 'تم حذف الباقة.');
+}
+
+/** Permanently erases one trainee with all their data. The e-mail typed must match; nothing can be undone afterwards. */
+export async function eraseTraineeAction(tenantId: string, userId: string, _prev: OwnerFormState, form: FormData): Promise<OwnerFormState> {
+  const t = await token();
+  const confirmEmail = String(form.get('confirm_email') ?? '').trim();
+  if (!confirmEmail) return { error: 'اكتب بريد المتدرب للتأكيد.' };
+  let erased: { enrollments: number; certificates: number };
+  try {
+    erased = await platformApi<{ enrollments: number; certificates: number }>(`/owner/tenants/${encodeURIComponent(tenantId)}/trainees/${encodeURIComponent(userId)}/erase`, {
+      method: 'POST',
+      token: t,
+      body: { confirm_email: confirmEmail },
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirect('/owner');
+    return { error: describe(err) };
+  }
+  revalidatePath(`/owner/${tenantId}`);
+  revalidatePath('/owner');
+  // The row disappears from the list, so the confirmation travels in the address.
+  redirect(`/owner/${encodeURIComponent(tenantId)}?erased=${erased.enrollments}.${erased.certificates}`);
 }
