@@ -88,7 +88,7 @@ export function storedDayMinutes(lectures: { startSecond: number | null; endSeco
   return Math.round(videoSeconds / 60) + Math.max(0, parts.length - 1) * breakMinutes + discussionMinutes;
 }
 
-const minutesOf = (cfg: Prisma.JsonValue | null, key: 'breakMinutes' | 'discussionMinutes'): number => {
+export const minutesOf = (cfg: Prisma.JsonValue | null, key: 'breakMinutes' | 'discussionMinutes'): number => {
   const v = cfg && typeof cfg === 'object' && !Array.isArray(cfg) ? (cfg as Record<string, unknown>)[key] : undefined;
   return typeof v === 'number' && Number.isFinite(v) ? v : DEFAULT_SCHEDULE[key];
 };

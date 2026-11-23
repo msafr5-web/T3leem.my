@@ -175,6 +175,9 @@ input[type='email'], input[type='password'], input[type='tel'], input[type='sear
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .badge.ok { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
 .badge.draft { border-color: transparent; background: var(--amber-soft); color: var(--amber); }
+.badge.bad { border-color: transparent; background: var(--danger-soft); color: var(--danger); }
+.att-matrix th, .att-matrix td { white-space: nowrap; }
+.att-matrix th:first-child, .att-matrix td:first-child { position: sticky; inset-inline-start: 0; background: var(--card, #fff); z-index: 1; }
 
 /* trainer + session cards */
 .person { display: flex; gap: 12px; align-items: flex-start; }

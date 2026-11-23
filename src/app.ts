@@ -27,6 +27,8 @@ import type { OwnerService } from './modules/platform/owner.service';
 import type { OtpLoginService } from './modules/auth/otp.service';
 import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/lms/recorded/recorded.routes';
 import { buildTrainerPortalRouter } from './modules/provider/trainer-portal.routes';
+import { buildAttendanceAdminRouter, buildAttendanceLearnerRouter } from './modules/attendance/attendance.routes';
+import type { AttendanceService } from './modules/attendance/attendance.service';
 import type { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import type { RecordedCourseService } from './modules/lms/recorded/recorded.service';
 import { buildContentAdminRouter } from './modules/lms/content/content.routes';
@@ -59,6 +61,7 @@ export interface AppDependencies {
   enrollmentController: EnrollmentController;
   providerController: ProviderController;
   trainerPortalService: TrainerPortalService;
+  attendanceService: AttendanceService;
   providerDirectory: ProviderDirectorySource;
   brandingService: BrandingService;
   registrationService: RegistrationService;
@@ -135,6 +138,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/enrollments', buildEnrollmentRouter(deps.enrollmentController, deps.jwt));
   api.use('/me', buildLearnerRouter(deps.learningService, deps.videoService, deps.jwt));
   api.use('/trainer', buildTrainerPortalRouter(deps.trainerPortalService, deps.jwt));
+  api.use('/me', buildAttendanceLearnerRouter(deps.attendanceService, deps.jwt));
   api.use('/me', buildRecordedLearnerRouter(deps.recordedCourseService, deps.jwt));
   api.use('/me', buildQuizLearnerRouter(deps.quizService, deps.jwt));
   api.use('/me', buildHealthLearnerRouter(deps.healthService, deps.jwt));
@@ -146,6 +150,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/admin', buildAcademicRouter(deps.academicService, deps.jwt));
   api.use('/admin', buildFinanceRouter(deps.financeService, deps.jwt));
   api.use('/admin', buildCostRouter(deps.costService, deps.jwt));
+  api.use('/admin', buildAttendanceAdminRouter(deps.attendanceService, deps.jwt));
   api.use('/admin', buildProviderAdminRouter(deps.providerController, deps.jwt));
   api.use('/admin', buildContentAdminRouter(deps.contentService, deps.videoService, deps.learningService, deps.jwt));
   api.use('/admin', buildRecordedAdminRouter(deps.recordedCourseService, deps.jwt));

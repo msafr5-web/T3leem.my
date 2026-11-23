@@ -177,6 +177,45 @@ export interface EnrollmentOutcome {
   results: { email: string; full_name: string; status: 'enrolled' | 'already_enrolled' | 'error'; account_created: boolean; message: string | null }[];
 }
 
+/** Attendance and check-out. */
+export type AttendanceStatus = 'PENDING' | 'PRESENT' | 'LATE' | 'ABSENT';
+
+export interface AttendanceSession {
+  kind: 'LIVE' | 'DAY';
+  ref: string;
+  title: string;
+  course_title: string;
+  starts_at: string;
+  ends_at: string;
+  state: 'UPCOMING' | 'OPEN' | 'CHECKED_IN' | 'ENDED';
+  check_in_opens_at: string;
+  checked_in_at: string | null;
+  result: AttendanceStatus | null;
+}
+
+export interface AttendanceCourseSummary {
+  course_id: string;
+  title: string;
+  sessions: number;
+  held: number;
+  trainees: number;
+  passing_trainees: number;
+}
+
+export interface AttendanceReport {
+  course: { id: string; title: string };
+  rules: { pass_percent: number; late_percent_of_session: number; leave_grace_minutes: number };
+  passing_trainees: number;
+  sessions: { kind: 'LIVE' | 'DAY'; ref: string; title: string; starts_at: string; ends_at: string; held: boolean }[];
+  trainees: {
+    user_id: string;
+    name: string;
+    admin_enrolled: boolean;
+    statuses: Record<string, AttendanceStatus>;
+    summary: { held: number; attended: number; late: number; absent: number; percent: number | null; passes: boolean | null };
+  }[];
+}
+
 /** The trainer's own page (a trainer login: INSTRUCTOR). */
 export interface TrainerOverview {
   trainer: { id: string; full_name: string; specialization: string | null; bio: string | null };
@@ -812,6 +851,8 @@ export const admin = {
   course: (slug: string, token: string, id: string) => api<AdminCourse>(slug, `/admin/courses/${encodeURIComponent(id)}`, { token }),
   trainers: (slug: string, token: string) => api<AdminTrainer[]>(slug, '/admin/trainers', { token }),
   trainees: (slug: string, token: string) => api<Trainee[]>(slug, '/admin/trainees', { token }),
+  attendanceCourses: (slug: string, token: string) => api<AttendanceCourseSummary[]>(slug, '/admin/attendance/courses', { token }),
+  attendanceReport: (slug: string, token: string, courseId: string) => api<AttendanceReport>(slug, `/admin/attendance/courses/${encodeURIComponent(courseId)}`, { token }),
   courseRoster: (slug: string, token: string, courseId: string) => api<CourseRosterRow[]>(slug, `/admin/courses/${encodeURIComponent(courseId)}/enrollments`, { token }),
   plans: (slug: string, token: string) => api<Plan[]>(slug, '/admin/plans', { token }),
   classrooms: (slug: string, token: string) => api<Classroom[]>(slug, '/admin/classrooms', { token }),
@@ -851,6 +892,7 @@ export const me = {
   enrollments: (slug: string, token: string) => api<MyEnrollment[]>(slug, '/me/enrollments', { token }),
   course: (slug: string, token: string, courseId: string) => api<MyCourse>(slug, `/me/courses/${encodeURIComponent(courseId)}`, { token }),
   classrooms: (slug: string, token: string) => api<MyClassroom[]>(slug, '/me/classrooms', { token }),
+  attendanceSessions: (slug: string, token: string) => api<AttendanceSession[]>(slug, '/me/attendance/sessions', { token }),
   discussion: (slug: string, token: string, moduleId: string) => api<DiscussionThread[]>(slug, `/me/modules/${encodeURIComponent(moduleId)}/discussion`, { token }),
   health: (slug: string, token: string) => api<HealthStatus>(slug, '/me/health', { token }),
   healthQuestions: (slug: string, token: string, qs: string) => api<HealthQuestionPage>(slug, `/me/health/questions?${qs}`, { token }),

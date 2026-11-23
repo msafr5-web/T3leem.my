@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { me } from '@/lib/api';
+import { confirmCheckInAction, requestCheckInAction } from '@/lib/actions';
+import { CheckInCard } from './check-in-card';
 import { formatDateTime, formatNumber, meetingProviderLabel } from '@/lib/format';
 import { getSession } from '@/lib/session';
 
@@ -12,7 +14,7 @@ export default async function MyCourses({ params }: { params: Promise<{ tenant: 
   const session = await getSession(slug);
   if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/my`)}`);
 
-  const [enrollments, sessions] = await Promise.all([me.enrollments(slug, session.token), me.classrooms(slug, session.token)]);
+  const [enrollments, sessions, attendance] = await Promise.all([me.enrollments(slug, session.token), me.classrooms(slug, session.token), me.attendanceSessions(slug, session.token)]);
 
   return (
     <div className="stack" style={{ gap: 32 }}>
@@ -20,6 +22,23 @@ export default async function MyCourses({ params }: { params: Promise<{ tenant: 
         <h1>دوراتي</h1>
         <p className="muted">تابع تقدمك، واحضر جلساتك المباشرة، واطّلع على شهاداتك.</p>
       </div>
+
+      {attendance.length > 0 && (
+        <section className="stack" aria-labelledby="attendance-heading">
+          <h2 id="attendance-heading">تسجيل الحضور</h2>
+          <p className="small muted">سجّل حضورك في كل جلسة برمز يصلك على بريدك. يُحتسب تأخراً من مضى أكثر من ١٠٪ من مدة الجلسة، ويلزم البقاء حتى نهايتها (أو إكمال دروس اليوم في الدورة المسجلة).</p>
+          <div className="grid">
+            {attendance.map((a) => (
+              <CheckInCard
+                key={`${a.kind}:${a.ref}`}
+                session={a}
+                requestAction={requestCheckInAction.bind(null, slug, a.kind, a.ref)}
+                confirmAction={confirmCheckInAction.bind(null, slug, a.kind, a.ref)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {sessions.length > 0 && (
         <section className="stack" aria-labelledby="live-heading">

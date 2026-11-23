@@ -344,3 +344,55 @@ export async function checkoutAction(slug: string, courseId: string, _prev: Chec
     return { error: describe(err) };
   }
 }
+
+
+// ---- Attendance: check in to a session with an e-mailed code -------------------------------------------------------
+
+const CHECKIN_ERRORS: Record<string, string> = {
+  CHECKIN_CLOSED: 'تسجيل الحضور مفتوح قبل بدء الجلسة بـ١٥ دقيقة وحتى نهايتها.',
+  ALREADY_CHECKED_IN: 'سجّلت حضورك في هذه الجلسة من قبل.',
+  SESSION_NOT_FOUND: 'الجلسة غير موجودة.',
+  FORBIDDEN: 'أنت غير مسجّل في دورة هذه الجلسة.',
+};
+
+const checkInMessage = (err: unknown): string => (err instanceof ApiError && (CHECKIN_ERRORS[err.code] ?? OTP_ERRORS[err.code]) ? (CHECKIN_ERRORS[err.code] ?? OTP_ERRORS[err.code]) as string : describe(err));
+
+export interface CheckInState extends FormState {
+  /** Step 1 done: the code was e-mailed. */
+  challengeId?: string;
+  /** Step 2 done: checked in. */
+  done?: { late: boolean; joinUrl: string | null };
+}
+
+async function learnerToken(slug: string): Promise<string> {
+  if (!isValidSlug(slug)) redirect('/');
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/my`)}`);
+  return session.token;
+}
+
+/** Step 1: e-mails the confirmation code (it proves it is the trainee who is checking in). */
+export async function requestCheckInAction(slug: string, kind: 'LIVE' | 'DAY', ref: string, _prev: CheckInState): Promise<CheckInState> {
+  const token = await learnerToken(slug);
+  try {
+    const r = await api<{ challenge_id: string }>(slug, '/me/attendance/request', { method: 'POST', token, body: { kind, ref } });
+    return { challengeId: r.challenge_id };
+  } catch (err) {
+    return { error: checkInMessage(err) };
+  }
+}
+
+/** Step 2: the right code records the check-in; the live link (if any) is returned to open the session. */
+export async function confirmCheckInAction(slug: string, kind: 'LIVE' | 'DAY', ref: string, challengeId: string, _prev: CheckInState, form: FormData): Promise<CheckInState> {
+  const token = await learnerToken(slug);
+  const code = String(form.get('code') ?? '').replace(/\D/g, '');
+  if (code.length !== 6) return { challengeId, error: 'اكتب الرمز المكوّن من ٦ أرقام.' };
+  try {
+    const r = await api<{ late: boolean; join_url: string | null }>(slug, '/me/attendance/confirm', { method: 'POST', token, body: { kind, ref, challenge_id: challengeId, code } });
+    revalidatePath(`/${slug}/my`);
+    return { done: { late: r.late, joinUrl: r.join_url } };
+  } catch (err) {
+    // A wrong code keeps the form open; anything else starts over.
+    return err instanceof ApiError && err.code === 'OTP_INVALID' ? { challengeId, error: checkInMessage(err) } : { error: checkInMessage(err) };
+  }
+}

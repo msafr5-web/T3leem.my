@@ -44,6 +44,9 @@ import { FfmpegTranscoder } from './modules/lms/media/transcoder';
 import { VideoService, type MediaToken, type VideoJob, type VideoQueue } from './modules/lms/media/video.service';
 import { ProviderController } from './modules/provider/provider.controller';
 import { PrismaTrainerPortalRepository } from './modules/provider/trainer-portal.repository';
+import { PrismaAttendanceRepository } from './modules/attendance/attendance.repository';
+import { AttendanceService } from './modules/attendance/attendance.service';
+import { AttendanceSweeper } from './modules/attendance/attendance.sweeper';
 import { TrainerPortalService } from './modules/provider/trainer-portal.service';
 import { PrismaProviderRepository } from './modules/provider/provider.repository';
 import { ProviderService } from './modules/provider/provider.service';
@@ -66,6 +69,8 @@ import { hashPassword, verifyPassword } from './shared/utils/password';
 
 export interface ServerApp {
   app: Express;
+  /** Runs the once-a-minute attendance sweep (late alerts, settling finished sessions). Started by the long-running server only. */
+  attendanceSweeper: AttendanceSweeper;
   /** Releases pools and connections (graceful shutdown). */
   close(): Promise<void>;
 }
@@ -159,6 +164,17 @@ export function createServerApp(): ServerApp {
   const catalogService = new CourseCatalogService(new PrismaCourseCatalogRepository(), env.VAT_RATE_PERCENT);
   const meetings = zoomCredentials ? new ZoomMeetingScheduler(zoomCredentials) : new ManualMeetingScheduler();
   if (!zoomCredentials) logger.info('Zoom not configured: virtual classroom links are entered manually');
+  // Attendance and check-out: the trainee proves who they are with an e-mailed code bound to the session.
+  const attendanceRepository = new PrismaAttendanceRepository();
+  const attendanceService = new AttendanceService({
+    repository: attendanceRepository,
+    otp: {
+      request: (tenantId, tenantName, userId, ref) => otpLogin.requestStepUp(tenantId, tenantName, userId, 'attendance', ref),
+      confirm: (tenantId, userId, ref, challengeId, code) => otpLogin.confirmStepUp(tenantId, userId, 'attendance', challengeId, code, ref),
+    },
+  });
+  const attendanceSweeper = new AttendanceSweeper({ repository: attendanceRepository, service: attendanceService, mailer });
+
   const providerService = new ProviderService({
     repository: new PrismaProviderRepository(),
     hashPassword,
@@ -194,6 +210,7 @@ export function createServerApp(): ServerApp {
     courseController: new CourseController(catalogService),
     enrollmentController: new EnrollmentController(checkoutService),
     trainerPortalService: new TrainerPortalService(new PrismaTrainerPortalRepository()),
+    attendanceService,
     providerController: new ProviderController(providerService, catalogService),
     providerDirectory: tenantRepository,
     brandingService: new BrandingService(tenantRepository, (id) => invalidateTenant(id)),
@@ -230,6 +247,7 @@ export function createServerApp(): ServerApp {
     videoService: media.video,
     zoomWebhooks: new ZoomWebhookService({
       secretToken: env.ZOOM_WEBHOOK_SECRET_TOKEN,
+      attendance: { onPresence: (tenantId, classroomId, email, event, at) => attendanceService.onZoomPresence(tenantId, classroomId, email, event, at) },
       repository: new PrismaZoomWebhookRepository(),
       // Zoom wants a 200 within 3 s: queue the download + transcode, never do it in the request.
       enqueueRecording: (job) => media.queue.enqueue(job),
@@ -238,6 +256,7 @@ export function createServerApp(): ServerApp {
 
   return {
     app,
+    attendanceSweeper,
     async close() {
       await Promise.allSettled([queueProducer?.close(), media.close(), prisma.$disconnect(), redis?.quit(), bullConnection?.quit()]);
     },

@@ -42,6 +42,7 @@ import { CostService } from '../../../src/modules/institute/cost/cost.service';
 import { buildRegistrationFakes } from './registration-fakes';
 import { buildOtpFakes, buildOwnerFakes } from './owner-fakes';
 import { TrainerPortalService } from '../../../src/modules/provider/trainer-portal.service';
+import { buildAttendanceFakes } from './attendance-fakes';
 import type { ResolvedTenant } from '../../../src/shared/types/express';
 
 export const TENANT_A = '7d1c1a52-3b55-4c0f-9a8a-1b5b6f0c2e11';
@@ -194,6 +195,17 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   });
   const otp = buildOtpFakes({ users: authRepo, signer });
   const owner = buildOwnerFakes({ mailer: otp.mailer });
+  const attendance = buildAttendanceFakes({
+    tenant: TENANT_A,
+    course: COURSE,
+    courseTitle: 'PMP',
+    learner: USER,
+    otherLearner: ADMIN,
+    otp: {
+      request: (tenantId, tenantName, userId, ref) => otp.service.requestStepUp(tenantId, tenantName, userId, 'attendance', ref),
+      confirm: (tenantId, userId, ref, challengeId, code) => otp.service.confirmStepUp(tenantId, userId, 'attendance', challengeId, code, ref),
+    },
+  });
   const passThrough: RequestHandler = (_req, _res, next) => next();
 
   // In-memory provider data; only TENANT_A owns anything (mimics RLS + the ownership checks).
@@ -382,6 +394,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
     ownerService: owner.service,
     courseController: new CourseController(catalog),
     enrollmentController: new EnrollmentController(checkout),
+    attendanceService: attendance.service,
     trainerPortalService: new TrainerPortalService({
       findTrainerByUser: async (t, userId) => (t === TENANT_A && userId === INSTRUCTOR ? { id: TRAINER, fullName: 'Khalid', specialization: 'PM', bio: 'Consultant' } : null),
       listCourses: async (_t, trainerId) =>
@@ -441,6 +454,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
   app.locals.institute = institute;
   app.locals.registration = registration;
   app.locals.otp = otp;
+  app.locals.attendance = attendance;
   app.locals.owner = owner;
   return app;
 }

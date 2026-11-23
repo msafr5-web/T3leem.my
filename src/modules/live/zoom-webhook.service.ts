@@ -24,8 +24,14 @@ export interface RecordingImportJob {
   topic: string;
 }
 
+/** Join / leave events feed the attendance (check-out) records. */
+export interface AttendanceSink {
+  onPresence(tenantId: string, classroomId: string, email: string | null, event: 'join' | 'leave', at: Date): Promise<void>;
+}
+
 export interface ZoomWebhookDeps {
   secretToken: string | undefined;
+  attendance?: AttendanceSink;
   repository: ZoomWebhookRepository;
   enqueueRecording: (job: RecordingImportJob) => Promise<void>;
   now?: () => number;
@@ -41,7 +47,7 @@ interface ZoomEvent {
     object?: {
       id?: number | string;
       topic?: string;
-      participant?: { user_name?: string; email?: string; participant_user_id?: string; user_id?: string; id?: string; join_time?: string };
+      participant?: { user_name?: string; email?: string; participant_user_id?: string; user_id?: string; id?: string; join_time?: string; leave_time?: string };
       recording_files?: { file_type?: string; status?: string; download_url?: string; recording_type?: string }[];
     };
   };
@@ -57,6 +63,15 @@ export class ZoomWebhookService {
 
   constructor(private readonly deps: ZoomWebhookDeps) {
     this.now = deps.now ?? Date.now;
+  }
+
+  /** Attendance bookkeeping must never make Zoom's webhook fail (Zoom retries and eventually disables the endpoint). */
+  private async safeAttendance(tenantId: string, classroomId: string, email: string | null, event: 'join' | 'leave', at: Date): Promise<void> {
+    try {
+      await this.deps.attendance?.onPresence(tenantId, classroomId, email, event, at);
+    } catch (err) {
+      logger.warn('Zoom attendance bookkeeping failed', { event, err: err instanceof Error ? err.message : err });
+    }
   }
 
   verifySignature(rawBody: Buffer, timestamp: string | undefined, signature: string | undefined): void {
@@ -108,6 +123,12 @@ export class ZoomWebhookService {
         email,
         joinedAt: p.join_time ? new Date(p.join_time) : new Date(this.now()),
       });
+      await this.safeAttendance(meeting.tenantId, meeting.classroomId, email, 'join', p.join_time ? new Date(p.join_time) : new Date(this.now()));
+    }
+
+    if (event.event === 'meeting.participant_left') {
+      const p = event.payload?.object?.participant ?? {};
+      await this.safeAttendance(meeting.tenantId, meeting.classroomId, p.email?.trim().toLowerCase() || null, 'leave', p.leave_time ? new Date(p.leave_time) : new Date(this.now()));
     }
 
     if (event.event === 'recording.completed') {

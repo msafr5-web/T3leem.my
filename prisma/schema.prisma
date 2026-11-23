@@ -1259,3 +1259,60 @@ model InstructorPayout {
   @@index([tenantId, branchId, paidOn])
   @@map("instructor_payouts")
 }
+
+// ---------------------------------------------------------------------------------------------
+// Attendance and check-out (corporate training). Foreign keys to users / courses (ON DELETE CASCADE) are in the migration.
+// ---------------------------------------------------------------------------------------------
+model SessionAttendance {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  courseId        String    @map("course_id") @db.Uuid
+  // LIVE = a virtual classroom; DAY = one day (module) of a recorded course.
+  kind            String
+  sessionRef      String    @map("session_ref") @db.Uuid
+  startsAt        DateTime  @map("starts_at") @db.Timestamptz(3)
+  endsAt          DateTime  @map("ends_at") @db.Timestamptz(3)
+  // PENDING until the session is over; then PRESENT | LATE | ABSENT.
+  status          String    @default("PENDING")
+  otpVerifiedAt   DateTime? @map("otp_verified_at") @db.Timestamptz(3)
+  firstJoinAt     DateTime? @map("first_join_at") @db.Timestamptz(3)
+  lastLeaveAt     DateTime? @map("last_leave_at") @db.Timestamptz(3)
+  attendedSeconds Int       @default(0) @map("attended_seconds")
+  source          String    @default("OTP")
+  finalizedAt     DateTime? @map("finalized_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([userId, kind, sessionRef])
+  @@index([tenantId, courseId, startsAt])
+  @@map("session_attendance")
+}
+
+model AttendanceInterval {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  kind       String
+  sessionRef String    @map("session_ref") @db.Uuid
+  joinedAt   DateTime  @map("joined_at") @db.Timestamptz(3)
+  // Null while still in the session (or when Zoom never reported the leave).
+  leftAt     DateTime? @map("left_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, userId, kind, sessionRef])
+  @@map("attendance_intervals")
+}
+
+model AttendanceAlert {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  kind        String
+  sessionRef  String    @map("session_ref") @db.Uuid
+  absentCount Int       @map("absent_count")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, kind, sessionRef])
+  @@map("attendance_alerts")
+}

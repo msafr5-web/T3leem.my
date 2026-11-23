@@ -20,6 +20,7 @@ export default async function DashboardLayout({ children, params }: { children: 
         { href: `${b}/recorded`, label: 'دورات مسجلة', icon: 'video' },
         { href: `${b}/plans`, label: 'الخطط التدريبية والتطويرية', icon: 'plans' },
         { href: `${b}/classrooms`, label: 'الفصول الافتراضية', icon: 'live' },
+        { href: `${b}/attendance`, label: 'الحضور والانصراف', icon: 'people' },
       ],
     },
     {
