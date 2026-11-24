@@ -24,7 +24,7 @@ function courseValidators(mode: 'create' | 'update'): ValidationChain[] {
     optionalText('license_authority', 200),
     optionalDate('license_expires_on'),
     optionalText('accreditation_number', 100),
-    body('training_hours').optional({ values: 'falsy' }).isFloat({ min: 0.5, max: 2000 }).withMessage('training_hours must be 0.5 - 2000'),
+    body('training_hours').optional({ values: 'falsy' }).isFloat({ min: 0.1, max: 2000 }).withMessage('training_hours must be 0.1 - 2000'),
     body('duration_days').optional({ values: 'falsy' }).isInt({ min: 1, max: 730 }).withMessage('duration_days must be 1 - 730'),
     body('is_published').optional().isBoolean(),
   ];

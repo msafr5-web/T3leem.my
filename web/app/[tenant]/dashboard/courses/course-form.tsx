@@ -141,7 +141,7 @@ export function CourseForm({
         <div className="form-grid">
           <label htmlFor="training_hours">
             عدد الساعات التدريبية
-            <input id="training_hours" name="training_hours" type="number" min={0.5} max={2000} step={0.5} defaultValue={course?.training_hours ?? ''} />
+            <input id="training_hours" name="training_hours" type="number" min={0.1} max={2000} step={0.1} defaultValue={course?.training_hours ?? ''} />
             {type === 'RECORDED' && !course?.recorded && <span className="hint">مع رابط YouTube تُحسب تلقائياً إن تركتها فارغة.</span>}
           </label>
           <label htmlFor="duration_days">
