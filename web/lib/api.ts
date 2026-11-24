@@ -919,6 +919,8 @@ export const owner = {
 export const trainerPortal = {
   overview: (slug: string, token: string) => api<TrainerOverview>(slug, '/trainer/overview', { token }),
   courseTrainees: (slug: string, token: string, courseId: string) => api<TrainerCourseTrainees>(slug, `/trainer/courses/${encodeURIComponent(courseId)}/trainees`, { token }),
+  /** The trainer's own question bank for one of their recorded courses (same shape as the admin's). */
+  quiz: (slug: string, token: string, courseId: string) => api<AdminQuiz>(slug, `/trainer/courses/${encodeURIComponent(courseId)}/quiz`, { token }),
 };
 
 /** Learner portal reads (the learner's own token; never cached). */

@@ -28,6 +28,10 @@ export class PrismaTrainerPortalRepository implements TrainerPortalRepository {
     return rows.map((r) => ({ id: r.id, title: r.title, startsAt: r.startsAt, durationMinutes: r.durationMinutes, provider: r.provider, joinUrl: r.joinUrl, courseTitle: r.course?.title ?? null }));
   }
 
+  async ownsRecordedCourse(tenantId: string, trainerId: string, courseId: string): Promise<boolean> {
+    return (await forTenant(tenantId).course.count({ where: { tenantId, id: courseId, trainerId, type: 'RECORDED' } })) > 0;
+  }
+
   async listCourseTrainees(tenantId: string, trainerId: string, courseId: string): Promise<{ title: string; trainees: TrainerTraineeRow[] } | null> {
     const course = await forTenant(tenantId).course.findFirst({
       where: { tenantId, id: courseId, trainerId },

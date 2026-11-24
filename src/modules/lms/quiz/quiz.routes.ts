@@ -11,9 +11,9 @@ import { QUIZ_SETTING_LIMITS, type QuestionDraft, type QuizResult, type QuizServ
 
 const uuid = (name: string) => param(name).isUUID().withMessage(`${name} must be a UUID`);
 
-const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-const questionJson = (q: QuizQuestionRow) => ({
+export const questionJson = (q: QuizQuestionRow) => ({
   id: q.id,
   code: q.code,
   body: q.body,
@@ -67,7 +67,7 @@ const statusJson = (s: QuizStatus) => ({
           },
 });
 
-const questionRules = [
+export const questionRules = [
   body('day_id').optional({ values: 'null' }).isUUID().withMessage('day_id must be a UUID'),
   body('body').isString().trim().isLength({ min: 1, max: QUIZ_LIMITS.maxBodyLength }).withMessage('body is required'),
   body('type').isIn(['MCQ', 'CHECKBOX', 'SHORT', 'TEXT', 'RATING']),
@@ -81,7 +81,7 @@ const questionRules = [
   body('difficulty').optional().isIn(['EASY', 'MEDIUM', 'HARD']),
 ];
 
-const draftOf = (b: Record<string, unknown>): QuestionDraft => ({
+export const draftOf = (b: Record<string, unknown>): QuestionDraft => ({
   dayId: typeof b.day_id === 'string' && b.day_id ? b.day_id : null,
   body: String(b.body),
   type: ['CHECKBOX', 'SHORT', 'TEXT', 'RATING'].includes(String(b.type)) ? (b.type as QuestionDraft['type']) : 'MCQ',

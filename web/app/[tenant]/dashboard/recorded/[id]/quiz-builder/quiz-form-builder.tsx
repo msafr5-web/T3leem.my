@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { saveQuizFormAction } from '@/lib/admin-actions';
+import { saveQuizFormAction, saveTrainerQuizFormAction } from '@/lib/admin-actions';
 import { formatNumber } from '@/lib/format';
 import { LIMITS, QUESTION_TYPES, blankQuestion, buildPayload, duplicateOf, fingerprint, hasOptions, isGraded, validateQuestion, type BuilderQuestion, type Difficulty, type QuestionType } from './builder-model';
 
@@ -15,6 +15,8 @@ interface Props {
   initial: BuilderQuestion[];
   perLearner: number;
   durationMinutes: number;
+  /** Whose bank this is: the academy admin's (default) or a trainer's own. */
+  scope?: 'admin' | 'trainer';
 }
 
 type Status = { kind: 'idle' | 'saving' | 'saved' | 'error'; text: string };
@@ -34,7 +36,7 @@ const scrollToQuestion = (key: string) =>
  * course day (like a form's sections), add/duplicate/delete, answer key by clicking the right
  * option, a learner preview, and one Save that sends only what changed.
  */
-export function QuizFormBuilder({ slug, courseId, days, initial, perLearner, durationMinutes }: Props) {
+export function QuizFormBuilder({ slug, courseId, days, initial, perLearner, durationMinutes, scope = 'admin' }: Props) {
   const [questions, setQuestions] = useState<BuilderQuestion[]>(initial);
   const [savedMap, setSavedMap] = useState<Record<string, string>>(() => Object.fromEntries(initial.map((q) => [q.key, fingerprint(q)])));
   const [deleted, setDeleted] = useState<string[]>([]);
@@ -195,7 +197,7 @@ export function QuizFormBuilder({ slug, courseId, days, initial, perLearner, dur
     }
     setStatus({ kind: 'saving', text: 'جارٍ الحفظ…' });
     setFailedKey(null);
-    const res = await saveQuizFormAction(slug, courseId, JSON.stringify(payload)).catch(() => null);
+    const res = await (scope === 'trainer' ? saveTrainerQuizFormAction : saveQuizFormAction)(slug, courseId, JSON.stringify(payload)).catch(() => null);
     if (!res) {
       setStatus({ kind: 'error', text: 'تعذّر الاتصال بالخادم. تغييراتك ما زالت هنا، حاول مرة أخرى.' });
       return;

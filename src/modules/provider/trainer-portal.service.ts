@@ -49,6 +49,8 @@ export interface TrainerPortalRepository {
   listUpcomingSessions(tenantId: string, trainerId: string, from: Date, take: number): Promise<TrainerSessionRow[]>;
   /** Null when the course does not exist OR belongs to another trainer: a trainer never sees someone else's trainees. */
   listCourseTrainees(tenantId: string, trainerId: string, courseId: string): Promise<{ title: string; trainees: TrainerTraineeRow[] } | null>;
+  /** True only for a RECORDED course of this academy that this trainer teaches. */
+  ownsRecordedCourse(tenantId: string, trainerId: string, courseId: string): Promise<boolean>;
 }
 
 export class TrainerPortalService {
@@ -73,6 +75,12 @@ export class TrainerPortalService {
     const from = new Date(this.clock().getTime() - 12 * 3_600_000);
     const [courses, sessions] = await Promise.all([this.repository.listCourses(tenantId, trainer.id), this.repository.listUpcomingSessions(tenantId, trainer.id, from, 20)]);
     return { trainer, courses, sessions };
+  }
+
+  /** Throws 404 unless the course is a recorded course this trainer teaches (another trainer's course looks like it does not exist). */
+  async assertOwnsRecordedCourse(tenantId: string, userId: string, courseId: string): Promise<void> {
+    const trainer = await this.trainerOf(tenantId, userId);
+    if (!(await this.repository.ownsRecordedCourse(tenantId, trainer.id, courseId))) throw HttpError.notFound('COURSE_NOT_FOUND', 'Course not found');
   }
 
   async courseTrainees(tenantId: string, userId: string, courseId: string): Promise<{ title: string; trainees: TrainerTraineeRow[] }> {

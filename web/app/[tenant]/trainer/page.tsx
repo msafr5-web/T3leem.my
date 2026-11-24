@@ -89,6 +89,11 @@ export default async function TrainerHome({ params }: { params: Promise<{ tenant
                   <tr key={c.id}>
                     <td>
                       <Link href={`/${slug}/trainer/courses/${c.id}`}>{c.title}</Link>
+                      {c.type === 'RECORDED' && (
+                        <div className="small">
+                          <Link href={`/${slug}/trainer/courses/${c.id}/quiz`}>أسئلة الاختبار</Link>
+                        </div>
+                      )}
                     </td>
                     <td>{courseTypeLabel[c.type]}</td>
                     <td>{c.is_published ? <span className="badge ok">منشورة</span> : <span className="badge draft">مسودة</span>}</td>

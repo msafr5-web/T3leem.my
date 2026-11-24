@@ -26,6 +26,7 @@ import { buildOwnerRouter } from './modules/platform/owner.routes';
 import type { OwnerService } from './modules/platform/owner.service';
 import type { OtpLoginService } from './modules/auth/otp.service';
 import { buildRecordedAdminRouter, buildRecordedLearnerRouter } from './modules/lms/recorded/recorded.routes';
+import { buildTrainerQuizRouter } from './modules/provider/trainer-quiz.routes';
 import { buildTrainerPortalRouter } from './modules/provider/trainer-portal.routes';
 import { buildAttendanceAdminRouter, buildAttendanceLearnerRouter } from './modules/attendance/attendance.routes';
 import type { AttendanceService } from './modules/attendance/attendance.service';
@@ -144,6 +145,7 @@ export function createApp(deps: AppDependencies): Express {
   api.use('/enrollments', buildEnrollmentRouter(deps.enrollmentController, deps.jwt));
   api.use('/me', buildLearnerRouter(deps.learningService, deps.videoService, deps.jwt));
   api.use('/trainer', buildTrainerPortalRouter(deps.trainerPortalService, deps.jwt));
+  api.use('/trainer', buildTrainerQuizRouter(deps.trainerPortalService, deps.quizService, deps.jwt));
   api.use('/me', buildAttendanceLearnerRouter(deps.attendanceService, deps.jwt));
   api.use('/me', buildBadgeOwnerRouter(deps.badgeService, deps.jwt));
   api.use('/me', buildRecordedLearnerRouter(deps.recordedCourseService, deps.jwt));

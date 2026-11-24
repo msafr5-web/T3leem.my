@@ -448,6 +448,7 @@ export function buildApp(opts: { signingKey?: string | null; meetings?: MeetingS
         trainerId === TRAINER ? [{ id: COURSE, title: 'PMP', type: 'RECORDED' as const, isPublished: true, enrollmentCount: 2, startsAt: new Date('2027-01-10T16:00:00Z'), durationDays: 5 }] : [],
       listUpcomingSessions: async (_t, trainerId) =>
         trainerId === TRAINER ? [{ id: classroom.id, title: classroom.title, startsAt: classroom.startsAt, durationMinutes: 90, provider: 'ZOOM' as const, joinUrl: classroom.joinUrl, courseTitle: 'PMP' }] : [],
+      ownsRecordedCourse: async (t, trainerId, courseId) => t === TENANT_A && trainerId === TRAINER && (courseId === COURSE || courseId === QUIZ_COURSE),
       listCourseTrainees: async (_t, trainerId, courseId) =>
         trainerId === TRAINER && courseId === COURSE
           ? { title: 'PMP', trainees: [{ name: 'Abdullah', progress: 40, completionStatus: 'ENROLLED' as const, status: 'ACTIVE' as const, enrolledAt: new Date('2026-10-24T00:00:00Z') }] }

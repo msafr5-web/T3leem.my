@@ -184,6 +184,20 @@ async function adminToken(slug: string): Promise<string> {
   return session.token;
 }
 
+async function trainerToken(slug: string, courseId: string): Promise<string> {
+  if (!isValidSlug(slug)) redirect('/');
+  const session = await getSession(slug);
+  if (!session) redirect(`/${slug}/login?next=${encodeURIComponent(`/${slug}/trainer/courses/${courseId}/quiz`)}`);
+  if (session.role !== 'INSTRUCTOR') redirect(`/${slug}`);
+  return session.token;
+}
+
+/** Where a question bank lives: the academy admin's recorded-course routes, or the trainer's own (ownership-checked) ones. */
+type BankScope = 'admin' | 'trainer';
+const bankApi = (scope: BankScope, courseId: string) => (scope === 'admin' ? `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz` : `/trainer/courses/${encodeURIComponent(courseId)}/quiz`);
+const bankPage = (scope: BankScope, slug: string, courseId: string) => (scope === 'admin' ? `/${slug}/dashboard/recorded/${courseId}` : `/${slug}/trainer/courses/${courseId}/quiz`);
+const bankToken = (scope: BankScope, slug: string, courseId: string) => (scope === 'admin' ? adminToken(slug) : trainerToken(slug, courseId));
+
 const str = (form: FormData, key: string): string => String(form.get(key) ?? '').trim();
 const optional = (form: FormData, key: string): string | null => str(form, key) || null;
 const optionalNumber = (form: FormData, key: string): number | null => {
@@ -552,20 +566,27 @@ export interface QuizImportState extends AdminFormState {
 
 const MAX_SHEET = 2 * 1024 * 1024;
 
-export async function importQuizAction(slug: string, courseId: string, _prev: QuizImportState, form: FormData): Promise<QuizImportState> {
-  const token = await adminToken(slug);
+export async function importQuizAction(slug: string, courseId: string, prev: QuizImportState, form: FormData): Promise<QuizImportState> {
+  return importBank('admin', slug, courseId, prev, form);
+}
+export async function importTrainerQuizAction(slug: string, courseId: string, prev: QuizImportState, form: FormData): Promise<QuizImportState> {
+  return importBank('trainer', slug, courseId, prev, form);
+}
+
+async function importBank(scope: BankScope, slug: string, courseId: string, _prev: QuizImportState, form: FormData): Promise<QuizImportState> {
+  const token = await bankToken(scope, slug, courseId);
   const file = form.get('file');
   if (!(file instanceof File) || file.size === 0) return { error: ERROR_MESSAGES.FILE_REQUIRED };
   if (file.size > MAX_SHEET) return { error: ERROR_MESSAGES.FILE_TOO_LARGE };
   const mode = form.get('mode') === 'replace' ? 'replace' : 'append';
   try {
     const data = new Uint8Array(await file.arrayBuffer());
-    const r = await api<{ created: number; updated: number; removed: number }>(slug, `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/import?mode=${mode}`, {
+    const r = await api<{ created: number; updated: number; removed: number }>(slug, `${bankApi(scope, courseId)}/import?mode=${mode}`, {
       method: 'POST',
       token,
       raw: { data, contentType: 'application/octet-stream' },
     });
-    revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
+    revalidatePath(bankPage(scope, slug, courseId));
     const parts = [`أُضيف ${r.created}`, `حُدّث ${r.updated}`];
     if (r.removed > 0) parts.push(`حُذف ${r.removed}`);
     return { done: `تم الاستيراد: ${parts.join('، ')} سؤالاً.` };
@@ -630,7 +651,14 @@ const QUESTION_TYPES = new Set(['MCQ', 'CHECKBOX', 'SHORT', 'TEXT', 'RATING']);
  * Sequential on purpose: question codes are numbered by the API, and parallel creates would collide.
  */
 export async function saveQuizFormAction(slug: string, courseId: string, raw: string): Promise<QuizFormResult> {
-  const token = await adminToken(slug);
+  return saveBankForm('admin', slug, courseId, raw);
+}
+export async function saveTrainerQuizFormAction(slug: string, courseId: string, raw: string): Promise<QuizFormResult> {
+  return saveBankForm('trainer', slug, courseId, raw);
+}
+
+async function saveBankForm(scope: BankScope, slug: string, courseId: string, raw: string): Promise<QuizFormResult> {
+  const token = await bankToken(scope, slug, courseId);
   const created: Record<string, string> = {};
   const fail = (error: string, failedKey?: string): QuizFormResult => ({ ok: false, error, created, ...(failedKey ? { failedKey } : {}) });
 
@@ -647,7 +675,7 @@ export async function saveQuizFormAction(slug: string, courseId: string, raw: st
   const deletes = input.deletes.filter((id): id is string => typeof id === 'string' && UUID.test(id));
   if (deletes.length !== input.deletes.length) return fail('بيانات غير صالحة.');
 
-  const base = `/admin/recorded-courses/${encodeURIComponent(courseId)}/quiz/questions`;
+  const base = `${bankApi(scope, courseId)}/questions`;
   try {
     for (const item of input.upserts as Record<string, unknown>[]) {
       const key = typeof item.key === 'string' ? item.key : '';
@@ -683,7 +711,7 @@ export async function saveQuizFormAction(slug: string, courseId: string, raw: st
   } catch (err) {
     return fail(describeError(err).error ?? 'حدث خطأ غير متوقع.');
   }
-  revalidatePath(`/${slug}/dashboard/recorded/${courseId}`);
+  revalidatePath(bankPage(scope, slug, courseId));
   return { ok: true, created };
 }
 
